@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { UsersPage } from '@/pages/UsersPage'
+import { RolesPage } from '@/pages/RolesPage'
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth()
@@ -21,7 +22,16 @@ function AppRoutes() {
         }
       >
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/users" element={<UsersPage />} />
+        <Route path="/users" element={
+          <ProtectedRoute requiredPermissions={['VIEW_USER']}>
+            <UsersPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/roles" element={
+          <ProtectedRoute requiredPermissions={['VIEW_ROLE']}>
+            <RolesPage />
+          </ProtectedRoute>
+        } />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
     </Routes>
