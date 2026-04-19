@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+
+type FormMode = 'view' | 'create' | 'edit'
 
 interface Role {
   id: number
@@ -19,23 +21,104 @@ interface Role {
 interface Permission {
   id: number
   name: string
+  description: string | null
 }
 
+type RoleForm = {
+  name: string
+  displayName: string
+  selectedPermissions: Set<string>
+}
+
+function emptyForm(): RoleForm {
+  return { name: '', displayName: '', selectedPermissions: new Set() }
+}
+
+function roleToForm(role: Role): RoleForm {
+  return {
+    name: role.name,
+    displayName: role.displayName ?? '',
+    selectedPermissions: new Set(role.permissions),
+  }
+}
+
+// ── Permissions field ─────────────────────────────────────────────────────────
+function PermissionsField({
+  allPermissions,
+  selected,
+  onToggle,
+  readOnly,
+  search,
+  onSearchChange,
+}: {
+  allPermissions: Permission[]
+  selected: Set<string>
+  onToggle: (name: string) => void
+  readOnly: boolean
+  search: string
+  onSearchChange: (v: string) => void
+}) {
+  const term = search.toLowerCase()
+  const filtered = allPermissions.filter(p =>
+    p.name.toLowerCase().includes(term) ||
+    (p.description ?? '').toLowerCase().includes(term)
+  )
+
+  function label(p: Permission) {
+    return p.description ?? p.name
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label>Permissions</Label>
+      {!readOnly && (
+        <Input
+          placeholder="Search permissions..."
+          value={search}
+          onChange={e => onSearchChange(e.target.value)}
+        />
+      )}
+      <div className="max-h-48 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
+        {readOnly ? (
+          selected.size > 0
+            ? allPermissions
+                .filter(p => selected.has(p.name))
+                .map(p => (
+                  <div key={p.name} className="text-sm py-0.5">{label(p)}</div>
+                ))
+            : <div className="text-sm text-[hsl(var(--muted-foreground))]">No permissions assigned.</div>
+        ) : (
+          filtered.map(p => (
+            <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.has(p.name)}
+                onChange={() => onToggle(p.name)}
+                className="accent-[hsl(var(--primary))]"
+              />
+              {label(p)}
+            </label>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export function RolesPage() {
   const { toast } = useToast()
   const { hasPermission } = useAuth()
-  const [roles, setRoles] = useState<Role[]>([])
+
+  const [roles, setRoles]               = useState<Role[]>([])
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
 
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createLoading, setCreateLoading] = useState(false)
-  const [createForm, setCreateForm] = useState({ name: '', displayName: '' })
-
-  const [editOpen, setEditOpen] = useState(false)
-  const [editLoading, setEditLoading] = useState(false)
-  const [editingRole, setEditingRole] = useState<Role | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', displayName: '', selectedPermissions: new Set<string>() })
-  const [permissionSearch, setPermissionSearch] = useState('')
+  const [open, setOpen]               = useState(false)
+  const [mode, setMode]               = useState<FormMode>('view')
+  const [activeRole, setActiveRole]   = useState<Role | null>(null)
+  const [form, setForm]               = useState<RoleForm>(emptyForm())
+  const [permSearch, setPermSearch]   = useState('')
+  const [loading, setLoading]         = useState(false)
 
   useEffect(() => {
     apiFetch<Role[]>('/roles')
@@ -47,49 +130,70 @@ export function RolesPage() {
       .catch(() => toast('Failed to load permissions.', 'error'))
   }, [])
 
+  function openView(role: Role) {
+    setActiveRole(role)
+    setForm(roleToForm(role))
+    setPermSearch('')
+    setMode('view')
+    setOpen(true)
+  }
+
   function openEdit(role: Role) {
-    setEditingRole(role)
-    setEditForm({
-      name: role.name,
-      displayName: role.displayName ?? '',
-      selectedPermissions: new Set(role.permissions),
-    })
-    setPermissionSearch('')
-    setEditOpen(true)
+    setActiveRole(role)
+    setForm(roleToForm(role))
+    setPermSearch('')
+    setMode('edit')
+    setOpen(true)
   }
 
-  function handleCreateChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setCreateForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  function openCreate() {
+    setActiveRole(null)
+    setForm(emptyForm())
+    setPermSearch('')
+    setMode('create')
+    setOpen(true)
   }
 
-  function handleEditChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setEditForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  function switchToEdit() {
+    setMode('edit')
   }
 
-  function togglePermission(permName: string) {
-    setEditForm(prev => {
+  function togglePermission(name: string) {
+    setForm(prev => {
       const next = new Set(prev.selectedPermissions)
-      next.has(permName) ? next.delete(permName) : next.add(permName)
+      next.has(name) ? next.delete(name) : next.add(name)
       return { ...prev, selectedPermissions: next }
     })
   }
 
-  async function handleCreate(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setCreateLoading(true)
+    setLoading(true)
     try {
-      const created = await apiFetch<Role>('/roles', {
-        method: 'POST',
-        body: JSON.stringify({ name: createForm.name, displayName: createForm.displayName, permissionIds: [] }),
-      })
-      setRoles(prev => [...prev, created])
-      toast('Role created successfully.', 'success')
-      setCreateOpen(false)
-      setCreateForm({ name: '', displayName: '' })
+      if (mode === 'create') {
+        const created = await apiFetch<Role>('/roles', {
+          method: 'POST',
+          body: JSON.stringify({ name: form.name, displayName: form.displayName, permissionIds: [] }),
+        })
+        setRoles(prev => [...prev, created])
+        toast('Role created successfully.', 'success')
+      } else {
+        const permissionIds = allPermissions
+          .filter(p => form.selectedPermissions.has(p.name))
+          .map(p => p.id)
+
+        const updated = await apiFetch<Role>(`/roles/${activeRole!.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: form.name, displayName: form.displayName, permissionIds }),
+        })
+        setRoles(prev => prev.map(r => r.id === updated.id ? updated : r))
+        toast('Role updated successfully.', 'success')
+      }
+      setOpen(false)
     } catch {
-      toast('Failed to create role.', 'error')
+      toast(mode === 'create' ? 'Failed to create role.' : 'Failed to update role.', 'error')
     } finally {
-      setCreateLoading(false)
+      setLoading(false)
     }
   }
 
@@ -104,106 +208,65 @@ export function RolesPage() {
     }
   }
 
-  async function handleEdit(e: FormEvent) {
-    e.preventDefault()
-    if (!editingRole) return
-    setEditLoading(true)
-    try {
-      const permissionIds = allPermissions
-        .filter(p => editForm.selectedPermissions.has(p.name))
-        .map(p => p.id)
-
-      const updated = await apiFetch<Role>(`/roles/${editingRole.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ name: editForm.name, displayName: editForm.displayName, permissionIds }),
-      })
-      setRoles(prev => prev.map(r => r.id === updated.id ? updated : r))
-      toast('Role updated successfully.', 'success')
-      setEditOpen(false)
-    } catch {
-      toast('Failed to update role.', 'error')
-    } finally {
-      setEditLoading(false)
-    }
-  }
+  const ro = mode === 'view'
+  const dialogTitle = mode === 'view' ? 'Role Details' : mode === 'create' ? 'New Role' : 'Edit Role'
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Roles</h1>
-
         {hasPermission('CREATE_ROLE') && (
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4" />
-              New Role
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Role</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4 mt-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="create-name">Role Name</Label>
-                <Input id="create-name" name="name" value={createForm.name} onChange={handleCreateChange} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="create-displayName">Display Name</Label>
-                <Input id="create-displayName" name="displayName" value={createForm.displayName} onChange={handleCreateChange} />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                <Button type="submit" loading={createLoading}>Create</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+          <Button onClick={openCreate}>
+            <Plus className="w-4 h-4" />
+            New Role
+          </Button>
         )}
       </div>
 
-      {/* Edit dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Edit Role</DialogTitle>
+            <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-4 mt-2">
+          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-name">Role Name</Label>
-              <Input id="edit-name" name="name" value={editForm.name} onChange={handleEditChange} required />
+              <Label htmlFor="form-name">Role Name</Label>
+              <Input id="form-name" value={form.name} readOnly={ro || mode === 'edit'}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-displayName">Display Name</Label>
-              <Input id="edit-displayName" name="displayName" value={editForm.displayName} onChange={handleEditChange} />
+              <Label htmlFor="form-displayName">Display Name</Label>
+              <Input id="form-displayName" value={form.displayName} readOnly={ro}
+                onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
             </div>
-            <div className="space-y-2">
-              <Label>Permissions</Label>
-              <Input
-                placeholder="Search permissions..."
-                value={permissionSearch}
-                onChange={e => setPermissionSearch(e.target.value)}
+
+            {(mode === 'edit' || mode === 'view') && (
+              <PermissionsField
+                allPermissions={allPermissions}
+                selected={form.selectedPermissions}
+                onToggle={togglePermission}
+                readOnly={ro}
+                search={permSearch}
+                onSearchChange={setPermSearch}
               />
-              <div className="max-h-48 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
-                {allPermissions
-                  .filter(p => p.name.toLowerCase().includes(permissionSearch.toLowerCase()))
-                  .map(p => (
-                    <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={editForm.selectedPermissions.has(p.name)}
-                        onChange={() => togglePermission(p.name)}
-                        className="accent-[hsl(var(--primary))]"
-                      />
-                      {p.name}
-                    </label>
-                  ))}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-              <Button type="submit" loading={editLoading}>Save</Button>
+            )}
+
+            <div key={mode} className="flex justify-end gap-2 pt-2">
+              {mode === 'view' ? (
+                <>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  {hasPermission('UPDATE_ROLE') && (
+                    <Button type="button" onClick={switchToEdit}>Edit</Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="submit" loading={loading}>
+                    {mode === 'create' ? 'Create' : 'Save'}
+                  </Button>
+                </>
+              )}
             </div>
           </form>
         </DialogContent>
@@ -225,12 +288,21 @@ export function RolesPage() {
               </thead>
               <tbody>
                 {roles.map(role => (
-                  <tr key={role.id} className="border-b border-[hsl(var(--border))] last:border-0">
+                  <tr
+                    key={role.id}
+                    onClick={() => openView(role)}
+                    className="border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors"
+                  >
                     <td className="py-2 px-4">{role.displayName ?? '—'}</td>
                     <td className="py-2 px-4">{role.name}</td>
-                    <td className="py-2 px-4">{role.permissions.join(', ') || '—'}</td>
-                    <td className="py-2 px-4 text-right">
+                    <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
+                      {role.permissions.length > 0 ? role.permissions.join(', ') : '—'}
+                    </td>
+                    <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openView(role)}>
+                          <Eye className="w-4 h-4" />
+                        </Button>
                         {hasPermission('UPDATE_ROLE') && (
                           <Button variant="ghost" size="sm" onClick={() => openEdit(role)}>
                             <Pencil className="w-4 h-4" />

@@ -7,6 +7,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { UsersPage } from '@/pages/UsersPage'
 import { RolesPage } from '@/pages/RolesPage'
+import { ItemsPage } from '@/pages/ItemsPage'
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth()
@@ -30,6 +31,11 @@ function AppRoutes() {
         <Route path="/roles" element={
           <ProtectedRoute requiredPermissions={['VIEW_ROLE']}>
             <RolesPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/items" element={
+          <ProtectedRoute requiredPermissions={['VIEW_ITEM']}>
+            <ItemsPage />
           </ProtectedRoute>
         } />
       </Route>

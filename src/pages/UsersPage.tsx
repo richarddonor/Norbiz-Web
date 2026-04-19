@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+
+type FormMode = 'view' | 'create' | 'edit'
+
+interface CompanyInfo {
+  id: number
+  name: string
+}
 
 interface User {
   id: number
@@ -16,6 +23,7 @@ interface User {
   email: string
   roles: string[]
   roleIds: number[]
+  companies: CompanyInfo[]
 }
 
 interface Role {
@@ -24,20 +32,121 @@ interface Role {
   displayName: string | null
 }
 
+type UserForm = {
+  username: string
+  displayName: string
+  email: string
+  password: string
+}
+
+function emptyForm(): UserForm {
+  return { username: '', displayName: '', email: '', password: '' }
+}
+
+// ── Company selector (only shown to SUPER_ADMIN) ──────────────────────────────
+function CompanyCheckboxes({
+  allCompanies,
+  selectedIds,
+  onChange,
+  readOnly,
+}: {
+  allCompanies: CompanyInfo[]
+  selectedIds: Set<number>
+  onChange: (id: number) => void
+  readOnly: boolean
+}) {
+  if (readOnly) {
+    const selected = allCompanies.filter(c => selectedIds.has(c.id))
+    return (
+      <div className="space-y-1.5">
+        <Label>Companies</Label>
+        <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
+          {selected.length > 0 ? selected.map(c => c.name).join(', ') : '—'}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1.5">
+      <Label>Companies</Label>
+      <div className="max-h-36 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
+        {allCompanies.map(c => (
+          <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(c.id)}
+              onChange={() => onChange(c.id)}
+              className="accent-[hsl(var(--primary))]"
+            />
+            {c.name}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Roles selector ────────────────────────────────────────────────────────────
+function RolesField({
+  allRoles,
+  selectedIds,
+  onToggle,
+  readOnly,
+  userRoleNames,
+}: {
+  allRoles: Role[]
+  selectedIds: Set<number>
+  onToggle: (id: number) => void
+  readOnly: boolean
+  userRoleNames?: string[]
+}) {
+  if (readOnly) {
+    return (
+      <div className="space-y-1.5">
+        <Label>Roles</Label>
+        <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
+          {userRoleNames && userRoleNames.length > 0 ? userRoleNames.join(', ') : '—'}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1.5">
+      <Label>Roles</Label>
+      <div className="max-h-36 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
+        {allRoles.map(role => (
+          <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(role.id)}
+              onChange={() => onToggle(role.id)}
+              className="accent-[hsl(var(--primary))]"
+            />
+            {role.displayName ?? role.name}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export function UsersPage() {
   const { toast } = useToast()
-  const { hasPermission } = useAuth()
-  const [users, setUsers] = useState<User[]>([])
-  const [allRoles, setAllRoles] = useState<Role[]>([])
+  const { hasPermission, activeCompanyId } = useAuth()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
 
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createLoading, setCreateLoading] = useState(false)
-  const [createForm, setCreateForm] = useState({ username: '', displayName: '', email: '', password: '' })
+  const [users, setUsers]               = useState<User[]>([])
+  const [allRoles, setAllRoles]         = useState<Role[]>([])
+  const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([])
 
-  const [editOpen, setEditOpen] = useState(false)
-  const [editLoading, setEditLoading] = useState(false)
-  const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [editForm, setEditForm] = useState({ username: '', displayName: '', email: '', selectedRoleIds: new Set<number>() })
+  const [open, setOpen]               = useState(false)
+  const [mode, setMode]               = useState<FormMode>('view')
+  const [activeUser, setActiveUser]   = useState<User | null>(null)
+  const [form, setForm]               = useState<UserForm>(emptyForm())
+  const [roleIds, setRoleIds]         = useState<Set<number>>(new Set())
+  const [companyIds, setCompanyIds]   = useState<Set<number>>(new Set())
+  const [loading, setLoading]         = useState(false)
 
   useEffect(() => {
     apiFetch<User[]>('/users')
@@ -47,64 +156,92 @@ export function UsersPage() {
     apiFetch<Role[]>('/roles')
       .then(data => setAllRoles(data.filter(r => r.name !== 'SUPER_ADMIN')))
       .catch(() => toast('Failed to load roles.', 'error'))
+
+    if (isSuperAdmin) {
+      apiFetch<CompanyInfo[]>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
   }, [])
 
+  function toggleSet(prev: Set<number>, id: number): Set<number> {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  }
+
+  function openView(user: User) {
+    setActiveUser(user)
+    setForm({ username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' })
+    setRoleIds(new Set(user.roleIds))
+    setCompanyIds(new Set(user.companies.map(c => c.id)))
+    setMode('view')
+    setOpen(true)
+  }
+
   function openEdit(user: User) {
-    setEditingUser(user)
-    setEditForm({
-      username: user.username,
-      displayName: user.displayName ?? '',
-      email: user.email,
-      selectedRoleIds: new Set(user.roleIds),
-    })
-    setEditOpen(true)
+    setActiveUser(user)
+    setForm({ username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' })
+    setRoleIds(new Set(user.roleIds))
+    setCompanyIds(
+      isSuperAdmin
+        ? new Set(user.companies.map(c => c.id))
+        : activeCompanyId ? new Set([activeCompanyId]) : new Set()
+    )
+    setMode('edit')
+    setOpen(true)
   }
 
-  function toggleRole(roleId: number) {
-    setEditForm(prev => {
-      const next = new Set(prev.selectedRoleIds)
-      next.has(roleId) ? next.delete(roleId) : next.add(roleId)
-      return { ...prev, selectedRoleIds: next }
-    })
+  function openCreate() {
+    setActiveUser(null)
+    setForm(emptyForm())
+    setRoleIds(new Set())
+    setCompanyIds(
+      isSuperAdmin ? new Set() : activeCompanyId ? new Set([activeCompanyId]) : new Set()
+    )
+    setMode('create')
+    setOpen(true)
   }
 
-  async function handleCreate(e: FormEvent) {
+  function switchToEdit() {
+    if (!activeUser) return
+    setCompanyIds(
+      isSuperAdmin
+        ? new Set(activeUser.companies.map(c => c.id))
+        : activeCompanyId ? new Set([activeCompanyId]) : new Set()
+    )
+    setMode('edit')
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setCreateLoading(true)
+    setLoading(true)
     try {
-      await apiFetch('/users', { method: 'POST', body: JSON.stringify(createForm) })
-      toast('User created successfully.', 'success')
-      setCreateOpen(false)
-      setCreateForm({ username: '', displayName: '', email: '', password: '' })
-      apiFetch<User[]>('/users').then(setUsers).catch(() => {})
+      if (mode === 'create') {
+        const body = { ...form, companyIds: Array.from(companyIds) }
+        const created = await apiFetch<User>('/users', { method: 'POST', body: JSON.stringify(body) })
+        setUsers(prev => [...prev, created])
+        toast('User created successfully.', 'success')
+      } else {
+        const body = {
+          username: form.username,
+          displayName: form.displayName,
+          email: form.email,
+          roleIds: Array.from(roleIds),
+          companyIds: Array.from(companyIds),
+        }
+        const updated = await apiFetch<User>(`/users/${activeUser!.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        })
+        setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
+        toast('User updated successfully.', 'success')
+      }
+      setOpen(false)
     } catch {
-      toast('Failed to create user.', 'error')
+      toast(mode === 'create' ? 'Failed to create user.' : 'Failed to update user.', 'error')
     } finally {
-      setCreateLoading(false)
-    }
-  }
-
-  async function handleEdit(e: FormEvent) {
-    e.preventDefault()
-    if (!editingUser) return
-    setEditLoading(true)
-    try {
-      const updated = await apiFetch<User>(`/users/${editingUser.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          username: editForm.username,
-          displayName: editForm.displayName,
-          email: editForm.email,
-          roleIds: Array.from(editForm.selectedRoleIds),
-        }),
-      })
-      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
-      toast('User updated successfully.', 'success')
-      setEditOpen(false)
-    } catch {
-      toast('Failed to update user.', 'error')
-    } finally {
-      setEditLoading(false)
+      setLoading(false)
     }
   }
 
@@ -119,95 +256,100 @@ export function UsersPage() {
     }
   }
 
+  const ro = mode === 'view'
+  const dialogTitle = mode === 'view' ? 'User Details' : mode === 'create' ? 'New User' : 'Edit User'
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Users</h1>
-
         {hasPermission('CREATE_USER') && (
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4" />
-                New User
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create User</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreate} className="space-y-4 mt-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="create-username">Username</Label>
-                  <Input id="create-username" value={createForm.username}
-                    onChange={e => setCreateForm(p => ({ ...p, username: e.target.value }))} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="create-displayName">Display Name</Label>
-                  <Input id="create-displayName" value={createForm.displayName}
-                    onChange={e => setCreateForm(p => ({ ...p, displayName: e.target.value }))} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="create-email">Email</Label>
-                  <Input id="create-email" type="email" value={createForm.email}
-                    onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="create-password">Password</Label>
-                  <Input id="create-password" type="password" value={createForm.password}
-                    onChange={e => setCreateForm(p => ({ ...p, password: e.target.value }))} required />
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                  <Button type="submit" loading={createLoading}>Create</Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={openCreate}>
+            <Plus className="w-4 h-4" />
+            New User
+          </Button>
         )}
       </div>
 
-      {/* Edit dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
+            <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-4 mt-2">
+          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-username">Username</Label>
-              <Input id="edit-username" value={editForm.username}
-                onChange={e => setEditForm(p => ({ ...p, username: e.target.value }))} required />
+              <Label htmlFor="form-username">Username</Label>
+              <Input id="form-username" value={form.username} readOnly={ro || mode === 'edit'}
+                onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required={!ro} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-displayName">Display Name</Label>
-              <Input id="edit-displayName" value={editForm.displayName}
-                onChange={e => setEditForm(p => ({ ...p, displayName: e.target.value }))} required />
+              <Label htmlFor="form-displayName">Display Name</Label>
+              <Input id="form-displayName" value={form.displayName} readOnly={ro}
+                onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input id="edit-email" type="email" value={editForm.email}
-                onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} required />
+              <Label htmlFor="form-email">Email</Label>
+              <Input id="form-email" type={ro ? 'text' : 'email'} value={form.email} readOnly={ro}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required={!ro} />
             </div>
-            <div className="space-y-2">
-              <Label>Roles</Label>
-              <div className="max-h-48 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
-                {allRoles.map(role => (
-                  <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editForm.selectedRoleIds.has(role.id)}
-                      onChange={() => toggleRole(role.id)}
-                      className="accent-[hsl(var(--primary))]"
-                    />
-                    {role.displayName ?? role.name}
-                  </label>
-                ))}
+            {mode === 'create' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="form-password">Password</Label>
+                <Input id="form-password" type="password" value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
               </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-              <Button type="submit" loading={editLoading}>Save</Button>
+            )}
+
+            {mode !== 'create' && (
+              <RolesField
+                allRoles={allRoles}
+                selectedIds={roleIds}
+                onToggle={id => setRoleIds(prev => toggleSet(prev, id))}
+                readOnly={ro}
+                userRoleNames={activeUser?.roles}
+              />
+            )}
+
+            {isSuperAdmin ? (
+              <CompanyCheckboxes
+                allCompanies={allCompanies}
+                selectedIds={companyIds}
+                onChange={id => setCompanyIds(prev => toggleSet(prev, id))}
+                readOnly={ro}
+              />
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Company</Label>
+                {ro ? (
+                  <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
+                    {activeUser?.companies.map(c => c.name).join(', ') || '—'}
+                  </div>
+                ) : (
+                  <p className="text-sm text-[hsl(var(--muted-foreground))] px-1">
+                    {mode === 'create'
+                      ? 'User will be added to your current company.'
+                      : 'User will remain in your current company.'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div key={mode} className="flex justify-end gap-2 pt-2">
+              {mode === 'view' ? (
+                <>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  {hasPermission('UPDATE_USER') && (
+                    <Button type="button" onClick={switchToEdit}>Edit</Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="submit" loading={loading}>
+                    {mode === 'create' ? 'Create' : 'Save'}
+                  </Button>
+                </>
+              )}
             </div>
           </form>
         </DialogContent>
@@ -225,18 +367,29 @@ export function UsersPage() {
                   <th className="text-left py-2 px-4 font-medium">Username</th>
                   <th className="text-left py-2 px-4 font-medium">Email</th>
                   <th className="text-left py-2 px-4 font-medium">Roles</th>
+                  <th className="text-left py-2 px-4 font-medium">Companies</th>
                   <th className="py-2 px-4" />
                 </tr>
               </thead>
               <tbody>
                 {users.map(user => (
-                  <tr key={user.id} className="border-b border-[hsl(var(--border))] last:border-0">
+                  <tr
+                    key={user.id}
+                    onClick={() => openView(user)}
+                    className="border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors"
+                  >
                     <td className="py-2 px-4">{user.displayName ?? '—'}</td>
                     <td className="py-2 px-4">{user.username}</td>
                     <td className="py-2 px-4">{user.email}</td>
                     <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>
-                    <td className="py-2 px-4 text-right">
+                    <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
+                      {user.companies?.map(c => c.name).join(', ') || '—'}
+                    </td>
+                    <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openView(user)}>
+                          <Eye className="w-4 h-4" />
+                        </Button>
                         {hasPermission('UPDATE_USER') && (
                           <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>
                             <Pencil className="w-4 h-4" />

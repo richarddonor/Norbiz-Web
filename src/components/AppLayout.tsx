@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Users, KeyRound, ShieldCheck, ChevronDown, ChevronRight, LogOut, CircleUser } from 'lucide-react'
+import { LayoutDashboard, Users, KeyRound, ShieldCheck, ChevronDown, ChevronRight, LogOut, CircleUser, Package } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 const topNavItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+]
+
+const catalogItems = [
+  { to: '/items', label: 'Items', icon: Package, permission: 'VIEW_ITEM' },
 ]
 
 const accessControlItems = [
@@ -18,6 +22,7 @@ export function AppLayout() {
   const { logout, hasPermission, displayName, username } = useAuth()
   const [accessControlOpen, setAccessControlOpen] = useState(true)
 
+  const visibleCatalogItems = catalogItems.filter(item => hasPermission(item.permission))
   const visibleAccessControlItems = accessControlItems.filter(item => hasPermission(item.permission))
 
   return (
@@ -46,6 +51,38 @@ export function AppLayout() {
               {label}
             </NavLink>
           ))}
+
+          {/* Catalog group */}
+          {visibleCatalogItems.length > 0 && (
+            <div className="pt-2">
+              <button
+                onClick={() => {}}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-[hsl(var(--muted-foreground))]"
+              >
+                <Package className="w-5 h-5 shrink-0" />
+                <span className="flex-1 text-left">Catalog</span>
+              </button>
+              <div className="mt-1 ml-4 pl-3 space-y-1 border-l border-[hsl(var(--border))]">
+                {visibleCatalogItems.map(({ to, label, icon: Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
+                          : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]'
+                      )
+                    }
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Access Control collapsible group — only shown if user has at least one item */}
           {visibleAccessControlItems.length > 0 && (
