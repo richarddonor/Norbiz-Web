@@ -2,6 +2,13 @@ const API_BASE = import.meta.env.VITE_API_BASE as string
 
 const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+// Backend wraps every JSON body in an envelope: { data: T }.
+function unwrap<T>(text: string): T {
+  if (!text) return undefined as T
+  const parsed = JSON.parse(text)
+  return parsed && typeof parsed === 'object' && 'data' in parsed ? parsed.data : parsed
+}
+
 function getToken() {
   return localStorage.getItem('auth_token')
 }
@@ -43,8 +50,7 @@ export async function apiUpload<T>(url: string, file: File, fieldName = 'file'):
     throw new Error(`${response.status} ${response.statusText}`)
   }
 
-  const text = await response.text()
-  return text ? (JSON.parse(text) as T) : (undefined as T)
+  return unwrap<T>(await response.text())
 }
 
 export async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -67,6 +73,5 @@ export async function apiFetch<T>(url: string, options: RequestInit = {}): Promi
     throw new Error(`${response.status} ${response.statusText}`)
   }
 
-  const text = await response.text()
-  return text ? (JSON.parse(text) as T) : (undefined as T)
+  return unwrap<T>(await response.text())
 }

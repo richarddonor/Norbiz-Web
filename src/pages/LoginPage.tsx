@@ -65,6 +65,7 @@ export function LoginPage() {
                   onChange={e => setUsername(e.target.value)}
                   placeholder="Enter username"
                   autoComplete="username"
+                  autoFocus
                   required
                 />
               </div>

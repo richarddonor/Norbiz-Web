@@ -1,5 +1,5 @@
-import { useState, useEffect, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -8,6 +8,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useHotkeys } from '@/hooks/useHotkeys'
+import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useContentFocus } from '@/components/AppLayout'
+import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
+import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ColumnFilterRow } from '@/components/ColumnFilterRow'
+import { Pagination } from '@/components/Pagination'
+import { exportToXlsx } from '@/lib/exportXlsx'
+import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create' | 'edit'
 
@@ -39,8 +50,20 @@ type UserForm = {
   password: string
 }
 
+const COLUMNS: readonly ColumnDef[] = [
+  { key: 'displayName', label: 'Display Name' },
+  { key: 'username', label: 'Username' },
+  { key: 'email', label: 'Email' },
+  { key: 'roles', label: 'Roles' },
+  { key: 'companies', label: 'Companies' },
+]
+
 function emptyForm(): UserForm {
   return { username: '', displayName: '', email: '', password: '' }
+}
+
+function userSearchText(user: User): string {
+  return [user.username, user.displayName ?? '', user.email, ...user.roles, ...user.companies.map(c => c.name)].join(' ')
 }
 
 // ── Company selector (only shown to SUPER_ADMIN) ──────────────────────────────
@@ -134,9 +157,21 @@ function RolesField({
 export function UsersPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId } = useAuth()
+  const { zone } = useContentFocus()
   const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
 
-  const [users, setUsers]               = useState<User[]>([])
+  const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState<Record<string, string>>({})
+  const debouncedSearch = useDebouncedValue(search)
+  const debouncedFilters = useDebouncedValue(filters)
+  const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
+
+  const { items: users, page, setPage, totalPages, totalElements, reload } = usePagedList<User>('/users', {
+    onError: () => toast('Failed to load users.', 'error'),
+    search: debouncedSearch,
+    filters: debouncedFilters,
+    searchText: userSearchText,
+  })
   const [allRoles, setAllRoles]         = useState<Role[]>([])
   const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([])
 
@@ -147,18 +182,35 @@ export function UsersPage() {
   const [roleIds, setRoleIds]         = useState<Set<number>>(new Set())
   const [companyIds, setCompanyIds]   = useState<Set<number>>(new Set())
   const [loading, setLoading]         = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const { isVisible, toggle: toggleColumn } = useColumnVisibility('users')
+
+  const canCreate = hasPermission('CREATE_USER')
+  const canUpdate = hasPermission('UPDATE_USER')
+  const canDeleteUser = hasPermission('DELETE_USER')
+
+  const { activeIndex, setActiveIndex } = useListKeyboardNav({
+    items: users,
+    onView: openView,
+    onEdit: canUpdate ? openEdit : undefined,
+    onDelete: canDeleteUser ? handleDelete : undefined,
+    canEdit: canUpdate,
+    canDelete: canDeleteUser,
+    enabled: !open && zone === 'content',
+  })
+
+  useHotkeys([
+    { key: 'n', handler: () => canCreate && openCreate() },
+    { key: '/', handler: () => searchInputRef.current?.focus() },
+  ], !open && zone === 'content')
 
   useEffect(() => {
-    apiFetch<User[]>('/users')
-      .then(setUsers)
-      .catch(() => toast('Failed to load users.', 'error'))
-
-    apiFetch<Role[]>('/roles')
+    fetchAllContent<Role>('/roles')
       .then(data => setAllRoles(data.filter(r => r.name !== 'SUPER_ADMIN')))
       .catch(() => toast('Failed to load roles.', 'error'))
 
     if (isSuperAdmin) {
-      apiFetch<CompanyInfo[]>('/companies')
+      fetchAllContent<CompanyInfo>('/companies')
         .then(setAllCompanies)
         .catch(() => toast('Failed to load companies.', 'error'))
     }
@@ -219,8 +271,7 @@ export function UsersPage() {
     try {
       if (mode === 'create') {
         const body = { ...form, companyIds: Array.from(companyIds) }
-        const created = await apiFetch<User>('/users', { method: 'POST', body: JSON.stringify(body) })
-        setUsers(prev => [...prev, created])
+        await apiFetch<User>('/users', { method: 'POST', body: JSON.stringify(body) })
         toast('User created successfully.', 'success')
       } else {
         const body = {
@@ -230,14 +281,14 @@ export function UsersPage() {
           roleIds: Array.from(roleIds),
           companyIds: Array.from(companyIds),
         }
-        const updated = await apiFetch<User>(`/users/${activeUser!.id}`, {
+        await apiFetch<User>(`/users/${activeUser!.id}`, {
           method: 'PUT',
           body: JSON.stringify(body),
         })
-        setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
         toast('User updated successfully.', 'success')
       }
       setOpen(false)
+      reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create user.' : 'Failed to update user.', 'error')
     } finally {
@@ -249,11 +300,26 @@ export function UsersPage() {
     if (!window.confirm(`Delete user "${user.username}"?`)) return
     try {
       await apiFetch(`/users/${user.id}`, { method: 'DELETE' })
-      setUsers(prev => prev.filter(u => u.id !== user.id))
       toast('User deleted.', 'success')
+      reload()
     } catch {
       toast('Failed to delete user.', 'error')
     }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(debouncedFilters)
+    const all = await fetchAllContent<User>(qs ? `/users?${qs}` : '/users', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(u => userSearchText(u).toLowerCase().includes(term)) : all
+    const rows = matching.map(u => ({
+      displayName: u.displayName ?? '',
+      username: u.username,
+      email: u.email,
+      roles: u.roles.join(', '),
+      companies: u.companies.map(c => c.name).join(', '),
+    }))
+    exportToXlsx('users', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   const ro = mode === 'view'
@@ -261,14 +327,32 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Users</h1>
-        {hasPermission('CREATE_USER') && (
-          <Button onClick={openCreate}>
-            <Plus className="w-4 h-4" />
-            New User
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
+            <Input
+              ref={searchInputRef}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search users… (/)"
+              className="pl-8 w-56"
+            />
+          </div>
+          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <Button variant="outline" onClick={handleExport}>
+            <FileDown className="w-4 h-4" />
+            Export
           </Button>
-        )}
+          {canCreate && (
+            <Button onClick={openCreate}>
+              <Plus className="w-4 h-4" />
+              New User
+              <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
+            </Button>
+          )}
+        </div>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -279,7 +363,7 @@ export function UsersPage() {
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
             <div className="space-y-1.5">
               <Label htmlFor="form-username">Username</Label>
-              <Input id="form-username" value={form.username} readOnly={ro || mode === 'edit'}
+              <Input id="form-username" value={form.username} readOnly={ro || mode === 'edit'} autoFocus
                 onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required={!ro} />
             </div>
             <div className="space-y-1.5">
@@ -357,45 +441,60 @@ export function UsersPage() {
 
       <Card>
         <CardContent className="pt-6">
-          {users.length === 0 ? (
-            <p className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">No users to display.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[hsl(var(--border))]">
-                  <th className="text-left py-2 px-4 font-medium">Display Name</th>
-                  <th className="text-left py-2 px-4 font-medium">Username</th>
-                  <th className="text-left py-2 px-4 font-medium">Email</th>
-                  <th className="text-left py-2 px-4 font-medium">Roles</th>
-                  <th className="text-left py-2 px-4 font-medium">Companies</th>
-                  <th className="py-2 px-4" />
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[hsl(var(--border))]">
+                {isVisible('displayName') && <th className="text-left py-2 px-4 font-medium">Display Name</th>}
+                {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Username</th>}
+                {isVisible('email') && <th className="text-left py-2 px-4 font-medium">Email</th>}
+                {isVisible('roles') && <th className="text-left py-2 px-4 font-medium">Roles</th>}
+                {isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
+                <th className="py-2 px-4" />
+              </tr>
+              <ColumnFilterRow
+                columns={COLUMNS}
+                isVisible={isVisible}
+                values={filters}
+                onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
+              />
+            </thead>
+            <tbody>
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
+                    {isFiltering ? 'No users match your search/filters.' : 'No users to display.'}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {users.map(user => (
+              ) : (
+                users.map((user, i) => (
                   <tr
                     key={user.id}
-                    onClick={() => openView(user)}
-                    className="border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors"
+                    onClick={() => { setActiveIndex(i); openView(user) }}
+                    className={cn(
+                      'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
+                      i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
+                    )}
                   >
-                    <td className="py-2 px-4">{user.displayName ?? '—'}</td>
-                    <td className="py-2 px-4">{user.username}</td>
-                    <td className="py-2 px-4">{user.email}</td>
-                    <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>
-                    <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
-                      {user.companies?.map(c => c.name).join(', ') || '—'}
-                    </td>
+                    {isVisible('displayName') && <td className="py-2 px-4">{user.displayName ?? '—'}</td>}
+                    {isVisible('username') && <td className="py-2 px-4">{user.username}</td>}
+                    {isVisible('email') && <td className="py-2 px-4">{user.email}</td>}
+                    {isVisible('roles') && <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>}
+                    {isVisible('companies') && (
+                      <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
+                        {user.companies?.map(c => c.name).join(', ') || '—'}
+                      </td>
+                    )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(user)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {hasPermission('UPDATE_USER') && (
+                        {canUpdate && (
                           <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>
                             <Pencil className="w-4 h-4" />
                           </Button>
                         )}
-                        {hasPermission('DELETE_USER') && (
+                        {canDeleteUser && (
                           <Button variant="ghost" size="sm" onClick={() => handleDelete(user)}>
                             <Trash2 className="w-4 h-4 text-[hsl(var(--destructive))]" />
                           </Button>
@@ -403,10 +502,11 @@ export function UsersPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                ))
+              )}
+            </tbody>
+          </table>
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
     </div>

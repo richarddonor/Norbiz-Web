@@ -1,5 +1,5 @@
-import { useState, useEffect, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, Eye } from 'lucide-react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -8,6 +8,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useHotkeys } from '@/hooks/useHotkeys'
+import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useContentFocus } from '@/components/AppLayout'
+import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
+import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ColumnFilterRow } from '@/components/ColumnFilterRow'
+import { Pagination } from '@/components/Pagination'
+import { exportToXlsx } from '@/lib/exportXlsx'
+import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create' | 'edit'
 
@@ -23,6 +34,12 @@ interface Permission {
   name: string
   description: string | null
 }
+
+const COLUMNS: readonly ColumnDef[] = [
+  { key: 'displayName', label: 'Display Name' },
+  { key: 'name', label: 'Name' },
+  { key: 'permissions', label: 'Permissions' },
+]
 
 type RoleForm = {
   name: string
@@ -40,6 +57,10 @@ function roleToForm(role: Role): RoleForm {
     displayName: role.displayName ?? '',
     selectedPermissions: new Set(role.permissions),
   }
+}
+
+function roleSearchText(role: Role): string {
+  return [role.name, role.displayName ?? '', ...role.permissions].join(' ')
 }
 
 // ── Permissions field ─────────────────────────────────────────────────────────
@@ -109,8 +130,20 @@ function PermissionsField({
 export function RolesPage() {
   const { toast } = useToast()
   const { hasPermission } = useAuth()
+  const { zone } = useContentFocus()
 
-  const [roles, setRoles]               = useState<Role[]>([])
+  const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState<Record<string, string>>({})
+  const debouncedSearch = useDebouncedValue(search)
+  const debouncedFilters = useDebouncedValue(filters)
+  const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
+
+  const { items: roles, page, setPage, totalPages, totalElements, reload } = usePagedList<Role>('/roles', {
+    onError: () => toast('Failed to load roles.', 'error'),
+    search: debouncedSearch,
+    filters: debouncedFilters,
+    searchText: roleSearchText,
+  })
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
 
   const [open, setOpen]               = useState(false)
@@ -119,13 +152,30 @@ export function RolesPage() {
   const [form, setForm]               = useState<RoleForm>(emptyForm())
   const [permSearch, setPermSearch]   = useState('')
   const [loading, setLoading]         = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const { isVisible, toggle: toggleColumn } = useColumnVisibility('roles')
+
+  const canCreate = hasPermission('CREATE_ROLE')
+  const canUpdate = hasPermission('UPDATE_ROLE')
+  const canDeleteRole = hasPermission('DELETE_ROLE')
+
+  const { activeIndex, setActiveIndex } = useListKeyboardNav({
+    items: roles,
+    onView: openView,
+    onEdit: canUpdate ? openEdit : undefined,
+    onDelete: canDeleteRole ? handleDelete : undefined,
+    canEdit: canUpdate,
+    canDelete: canDeleteRole,
+    enabled: !open && zone === 'content',
+  })
+
+  useHotkeys([
+    { key: 'n', handler: () => canCreate && openCreate() },
+    { key: '/', handler: () => searchInputRef.current?.focus() },
+  ], !open && zone === 'content')
 
   useEffect(() => {
-    apiFetch<Role[]>('/roles')
-      .then(data => setRoles(data.filter(r => r.name !== 'SUPER_ADMIN')))
-      .catch(() => toast('Failed to load roles.', 'error'))
-
-    apiFetch<Permission[]>('/permissions')
+    fetchAllContent<Permission>('/permissions')
       .then(setAllPermissions)
       .catch(() => toast('Failed to load permissions.', 'error'))
   }, [])
@@ -171,25 +221,24 @@ export function RolesPage() {
     setLoading(true)
     try {
       if (mode === 'create') {
-        const created = await apiFetch<Role>('/roles', {
+        await apiFetch<Role>('/roles', {
           method: 'POST',
           body: JSON.stringify({ name: form.name, displayName: form.displayName, permissionIds: [] }),
         })
-        setRoles(prev => [...prev, created])
         toast('Role created successfully.', 'success')
       } else {
         const permissionIds = allPermissions
           .filter(p => form.selectedPermissions.has(p.name))
           .map(p => p.id)
 
-        const updated = await apiFetch<Role>(`/roles/${activeRole!.id}`, {
+        await apiFetch<Role>(`/roles/${activeRole!.id}`, {
           method: 'PUT',
           body: JSON.stringify({ name: form.name, displayName: form.displayName, permissionIds }),
         })
-        setRoles(prev => prev.map(r => r.id === updated.id ? updated : r))
         toast('Role updated successfully.', 'success')
       }
       setOpen(false)
+      reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create role.' : 'Failed to update role.', 'error')
     } finally {
@@ -201,11 +250,24 @@ export function RolesPage() {
     if (!window.confirm(`Delete role "${role.displayName ?? role.name}"? It will be removed from all users.`)) return
     try {
       await apiFetch(`/roles/${role.id}`, { method: 'DELETE' })
-      setRoles(prev => prev.filter(r => r.id !== role.id))
       toast('Role deleted.', 'success')
+      reload()
     } catch {
       toast('Failed to delete role.', 'error')
     }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(debouncedFilters)
+    const all = await fetchAllContent<Role>(qs ? `/roles?${qs}` : '/roles', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(r => roleSearchText(r).toLowerCase().includes(term)) : all
+    const rows = matching.map(r => ({
+      displayName: r.displayName ?? '',
+      name: r.name,
+      permissions: r.permissions.join(', '),
+    }))
+    exportToXlsx('roles', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   const ro = mode === 'view'
@@ -213,14 +275,32 @@ export function RolesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Roles</h1>
-        {hasPermission('CREATE_ROLE') && (
-          <Button onClick={openCreate}>
-            <Plus className="w-4 h-4" />
-            New Role
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
+            <Input
+              ref={searchInputRef}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search roles… (/)"
+              className="pl-8 w-56"
+            />
+          </div>
+          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <Button variant="outline" onClick={handleExport}>
+            <FileDown className="w-4 h-4" />
+            Export
           </Button>
-        )}
+          {canCreate && (
+            <Button onClick={openCreate}>
+              <Plus className="w-4 h-4" />
+              New Role
+              <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
+            </Button>
+          )}
+        </div>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -231,7 +311,7 @@ export function RolesPage() {
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
             <div className="space-y-1.5">
               <Label htmlFor="form-name">Role Name</Label>
-              <Input id="form-name" value={form.name} readOnly={ro || mode === 'edit'}
+              <Input id="form-name" value={form.name} readOnly={ro || mode === 'edit'} autoFocus
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
             </div>
             <div className="space-y-1.5">
@@ -274,41 +354,56 @@ export function RolesPage() {
 
       <Card>
         <CardContent className="pt-6">
-          {roles.length === 0 ? (
-            <p className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">No roles to display.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[hsl(var(--border))]">
-                  <th className="text-left py-2 px-4 font-medium">Display Name</th>
-                  <th className="text-left py-2 px-4 font-medium">Name</th>
-                  <th className="text-left py-2 px-4 font-medium">Permissions</th>
-                  <th className="py-2 px-4" />
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[hsl(var(--border))]">
+                {isVisible('displayName') && <th className="text-left py-2 px-4 font-medium">Display Name</th>}
+                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
+                {isVisible('permissions') && <th className="text-left py-2 px-4 font-medium">Permissions</th>}
+                <th className="py-2 px-4" />
+              </tr>
+              <ColumnFilterRow
+                columns={COLUMNS}
+                isVisible={isVisible}
+                values={filters}
+                onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
+              />
+            </thead>
+            <tbody>
+              {roles.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
+                    {isFiltering ? 'No roles match your search/filters.' : 'No roles to display.'}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {roles.map(role => (
+              ) : (
+                roles.map((role, i) => (
                   <tr
                     key={role.id}
-                    onClick={() => openView(role)}
-                    className="border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors"
+                    onClick={() => { setActiveIndex(i); openView(role) }}
+                    className={cn(
+                      'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
+                      i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
+                    )}
                   >
-                    <td className="py-2 px-4">{role.displayName ?? '—'}</td>
-                    <td className="py-2 px-4">{role.name}</td>
-                    <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
-                      {role.permissions.length > 0 ? role.permissions.join(', ') : '—'}
-                    </td>
+                    {isVisible('displayName') && <td className="py-2 px-4">{role.displayName ?? '—'}</td>}
+                    {isVisible('name') && <td className="py-2 px-4">{role.name}</td>}
+                    {isVisible('permissions') && (
+                      <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
+                        {role.permissions.length > 0 ? role.permissions.join(', ') : '—'}
+                      </td>
+                    )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(role)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {hasPermission('UPDATE_ROLE') && (
+                        {canUpdate && (
                           <Button variant="ghost" size="sm" onClick={() => openEdit(role)}>
                             <Pencil className="w-4 h-4" />
                           </Button>
                         )}
-                        {hasPermission('DELETE_ROLE') && (
+                        {canDeleteRole && (
                           <Button variant="ghost" size="sm" onClick={() => handleDelete(role)}>
                             <Trash2 className="w-4 h-4 text-[hsl(var(--destructive))]" />
                           </Button>
@@ -316,10 +411,11 @@ export function RolesPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                ))
+              )}
+            </tbody>
+          </table>
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
     </div>
