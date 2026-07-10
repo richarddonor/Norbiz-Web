@@ -12,8 +12,8 @@ interface Props {
 
 /** A floating filter row rendered under the table header — one small text
  * input (or, for `type: 'date'` columns, a from/to range picker with quick
- * presets) per currently-visible column, combined (AND) with the global
- * search box. */
+ * presets; or for `type: 'boolean'` columns, a True/False/(blank) select)
+ * per currently-visible column, combined (AND) with the global search box. */
 export function ColumnFilterRow({ columns, isVisible, values, onChange, filterable }: Props) {
   return (
     <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40">
@@ -30,6 +30,16 @@ export function ColumnFilterRow({ columns, isVisible, values, onChange, filterab
                   onChange(`${col.key}To`, to)
                 }}
               />
+            ) : col.type === 'boolean' ? (
+              <select
+                value={values[col.key] ?? ''}
+                onChange={e => onChange(col.key, e.target.value)}
+                className="w-full h-7 px-1 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
+              >
+                <option value="">All</option>
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </select>
             ) : (
               <input
                 value={values[col.key] ?? ''}

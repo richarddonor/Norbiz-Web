@@ -37,6 +37,7 @@ Every request is implicitly scoped to the active company via `X-Company-Id`, so 
 - On mount/token-change, `AuthProvider` calls `GET /auth/me` to populate `roles`, `permissions`, and the user's `companies`. It auto-selects the company if there's only one, and clears the stored `active_company_id` if it's no longer valid for the user.
 - Permission checks are done with `hasPermission(...perms)` (OR semantics — true if the user has *any* of the listed permissions), backed by the `permissions` string array from `/auth/me`. `MANAGE_SYSTEM` denotes a super-admin (platform-level user, not scoped to a single company) and unlocks cross-company UI (e.g. company checkboxes instead of an implicit single company).
 - Routes are gated in `src/App.tsx` via `<ProtectedRoute requiredPermissions={[...]}>` wrapping each page `<Route>`; `ProtectedRoute` (`src/components/ProtectedRoute.tsx`) redirects to `/login` if unauthenticated or to `/dashboard` if the permission check fails. Sidebar nav items (`src/components/AppLayout.tsx`) are filtered by the same permission strings so nav and routing stay consistent — when adding a page, gate both.
+- Users that belong to more than one Company should see the Company column or fields throughout the application otherwise those should be hidden
 
 ### Page pattern
 
@@ -66,6 +67,7 @@ The Column filters will query the backend for partial matching
 Date columns should be filterable by range. Add a utility for commonly used date ranges: Today, Current Week, Current Month, Last 30 Days, Last 3 Months, Current Year
 All lists should be by default paginated. Have 50 record per page as default. This should be supported by the backend
 All list and report pages should be exportable to a spreadsheet. The columns exported should be based on the visible columns
+Boolean columns should be filterable by True, False or non filtered
 
 ### Formatting
 Currencies are all in Philippine peso by default. Follow the ,0.00 patern. Don't include the Peso sign

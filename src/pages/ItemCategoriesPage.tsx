@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from 'react'
+import { useState, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -34,12 +34,15 @@ interface ItemCategory {
   updatedBy: string | null
 }
 
-const COLUMNS: readonly ColumnDef[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'company', label: 'Company' },
-  { key: 'createdBy', label: 'Created by' },
-  { key: 'updatedAt', label: 'Last updated', type: 'date' },
-]
+function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
+  const columns: ColumnDef[] = [{ key: 'name', label: 'Name' }]
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push(
+    { key: 'createdBy', label: 'Created by' },
+    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+  )
+  return columns
+}
 
 function categorySearchText(c: ItemCategory): string {
   return [c.name, c.companyName, c.createdBy ?? '', c.updatedBy ?? ''].join(' ')
@@ -47,8 +50,9 @@ function categorySearchText(c: ItemCategory): string {
 
 export function ItemCategoriesPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId } = useAuth()
+  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
   const { zone } = useContentFocus()
+  const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -216,10 +220,12 @@ export function ItemCategoriesPage() {
 
             {ro && activeCategory && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                <div className="flex justify-between">
-                  <span>Company</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeCategory.companyName}</span>
-                </div>
+                {showCompanyColumn && (
+                  <div className="flex justify-between">
+                    <span>Company</span>
+                    <span className="text-[hsl(var(--foreground))]">{activeCategory.companyName}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeCategory.createdBy ?? '—'}</span>
@@ -266,7 +272,7 @@ export function ItemCategoriesPage() {
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
                 <th className="py-2 px-4" />
@@ -296,7 +302,7 @@ export function ItemCategoriesPage() {
                     )}
                   >
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{category.name}</td>}
-                    {isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{category.companyName}</td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{category.companyName}</td>}
                     {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{category.createdBy ?? '—'}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(category.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>

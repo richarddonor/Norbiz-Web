@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -61,17 +61,20 @@ type EmployeeForm = {
   userId: number | ''
 }
 
-const COLUMNS: readonly ColumnDef[] = [
-  { key: 'employeeCode', label: 'Employee Code' },
-  { key: 'firstName', label: 'First Name' },
-  { key: 'lastName', label: 'Last Name' },
-  { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Phone' },
-  { key: 'active', label: 'Active' },
-  { key: 'tags', label: 'Tags' },
-  { key: 'username', label: 'Linked User' },
-  { key: 'company', label: 'Company' },
-]
+function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
+  const columns: ColumnDef[] = [
+    { key: 'employeeCode', label: 'Employee Code' },
+    { key: 'firstName', label: 'First Name' },
+    { key: 'lastName', label: 'Last Name' },
+    { key: 'email', label: 'Email' },
+    { key: 'phone', label: 'Phone' },
+    { key: 'active', label: 'Active' },
+    { key: 'tags', label: 'Tags' },
+    { key: 'username', label: 'Linked User' },
+  ]
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  return columns
+}
 
 function emptyForm(): EmployeeForm {
   return { employeeCode: '', firstName: '', lastName: '', email: '', phone: '', active: true, tags: new Set(), userId: '' }
@@ -96,8 +99,9 @@ function employeeSearchText(e: Employee): string {
 
 export function EmployeesPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId } = useAuth()
+  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
   const { zone } = useContentFocus()
+  const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -331,10 +335,12 @@ export function EmployeesPage() {
 
             {ro && activeEmployee && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                <div className="flex justify-between">
-                  <span>Company</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeEmployee.companyName}</span>
-                </div>
+                {showCompanyColumn && (
+                  <div className="flex justify-between">
+                    <span>Company</span>
+                    <span className="text-[hsl(var(--foreground))]">{activeEmployee.companyName}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeEmployee.createdBy ?? '—'}</span>
@@ -388,7 +394,7 @@ export function EmployeesPage() {
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
                 {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Linked User</th>}
-                {isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 <th className="py-2 px-4" />
               </tr>
             </thead>
@@ -428,7 +434,7 @@ export function EmployeesPage() {
                     )}
                     {isVisible('tags') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.tags.join(', ') || '—'}</td>}
                     {isVisible('username') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.username ?? '—'}</td>}
-                    {isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.companyName}</td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.companyName}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(employee)}>

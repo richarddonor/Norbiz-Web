@@ -12,8 +12,9 @@ import {
 export interface ColumnDef {
   key: string
   label: string
-  /** 'date' renders a from/to range filter (with quick presets) instead of a plain text filter */
-  type?: 'text' | 'date'
+  /** 'date' renders a from/to range filter (with quick presets); 'boolean' renders
+   * a True/False/(blank) select — both replace the default plain text filter */
+  type?: 'text' | 'date' | 'boolean'
 }
 
 interface Props {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -50,13 +50,16 @@ type UserForm = {
   password: string
 }
 
-const COLUMNS: readonly ColumnDef[] = [
-  { key: 'displayName', label: 'Display Name' },
-  { key: 'username', label: 'Username' },
-  { key: 'email', label: 'Email' },
-  { key: 'roles', label: 'Roles' },
-  { key: 'companies', label: 'Companies' },
-]
+function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
+  const columns: ColumnDef[] = [
+    { key: 'displayName', label: 'Display Name' },
+    { key: 'username', label: 'Username' },
+    { key: 'email', label: 'Email' },
+    { key: 'roles', label: 'Roles' },
+  ]
+  if (showCompanyColumn) columns.push({ key: 'companies', label: 'Companies' })
+  return columns
+}
 
 function emptyForm(): UserForm {
   return { username: '', displayName: '', email: '', password: '' }
@@ -156,9 +159,10 @@ function RolesField({
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function UsersPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId } = useAuth()
+  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
   const { zone } = useContentFocus()
   const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
+  const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -448,7 +452,7 @@ export function UsersPage() {
                 {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Username</th>}
                 {isVisible('email') && <th className="text-left py-2 px-4 font-medium">Email</th>}
                 {isVisible('roles') && <th className="text-left py-2 px-4 font-medium">Roles</th>}
-                {isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
+                {showCompanyColumn && isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -479,7 +483,7 @@ export function UsersPage() {
                     {isVisible('username') && <td className="py-2 px-4">{user.username}</td>}
                     {isVisible('email') && <td className="py-2 px-4">{user.email}</td>}
                     {isVisible('roles') && <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>}
-                    {isVisible('companies') && (
+                    {showCompanyColumn && isVisible('companies') && (
                       <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
                         {user.companies?.map(c => c.name).join(', ') || '—'}
                       </td>

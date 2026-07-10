@@ -20,6 +20,11 @@ interface AuthContextType {
   companies: CompanyInfo[]
   activeCompanyId: number | null
   activeCompany: CompanyInfo | null
+  /** True when the user should see Company columns/fields throughout the app —
+   * either they belong to more than one Company, or they're a platform-level
+   * SUPER_ADMIN not scoped to a single one. False means every record they can
+   * see belongs to the same Company, so the column would be redundant. */
+  showCompanyColumn: boolean
   isAuthenticated: boolean
   hasPermission: (...required: string[]) => boolean
   login: (username: string, password: string) => Promise<LoginResult>
@@ -125,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const companies = me?.companies ?? []
   const activeCompany = companies.find(c => c.id === activeCompanyId) ?? null
+  const showCompanyColumn = companies.length > 1 || (me?.permissions ?? []).includes('MANAGE_SYSTEM')
 
   return (
     <AuthContext.Provider value={{
@@ -136,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       companies,
       activeCompanyId,
       activeCompany,
+      showCompanyColumn,
       isAuthenticated: !!token,
       hasPermission,
       login,

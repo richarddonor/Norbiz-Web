@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, ImageOff, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch, apiUpload } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -26,16 +26,21 @@ const API_BASE = import.meta.env.VITE_API_BASE as string
 
 type FormMode = 'view' | 'create' | 'edit'
 
-const COLUMNS: readonly ColumnDef[] = [
-  { key: 'image', label: 'Image' },
-  { key: 'itemCode', label: 'Item Code' },
-  { key: 'name', label: 'Name' },
-  { key: 'category', label: 'Category' },
-  { key: 'company', label: 'Company' },
-  { key: 'skus', label: 'SKUs' },
-  { key: 'unitPrice', label: 'Unit Price' },
-  { key: 'tags', label: 'Tags' },
-]
+function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
+  const columns: ColumnDef[] = [
+    { key: 'image', label: 'Image' },
+    { key: 'itemCode', label: 'Item Code' },
+    { key: 'name', label: 'Name' },
+    { key: 'category', label: 'Category' },
+  ]
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push(
+    { key: 'skus', label: 'SKUs' },
+    { key: 'unitPrice', label: 'Unit Price' },
+    { key: 'tags', label: 'Tags' },
+  )
+  return columns
+}
 
 const ITEM_TAGS = [{ value: 'INVENTORY', label: 'Inventory' }]
 
@@ -348,8 +353,9 @@ function ItemFormFields({
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function ItemsPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId } = useAuth()
+  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
   const { zone } = useContentFocus()
+  const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -582,7 +588,7 @@ export function ItemsPage() {
                 {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
                 {isVisible('category') && <th className="text-left py-2 px-4 font-medium">Category</th>}
-                {isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('skus') && <th className="text-left py-2 px-4 font-medium">SKUs</th>}
                 {isVisible('unitPrice') && <th className="text-left py-2 px-4 font-medium">Unit Price</th>}
                 {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
@@ -628,7 +634,7 @@ export function ItemsPage() {
                     {isVisible('itemCode') && <td className="py-2 px-4 font-mono text-xs">{item.itemCode}</td>}
                     {isVisible('name') && <td className="py-2 px-4">{item.name}</td>}
                     {isVisible('category') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.itemCategoryName}</td>}
-                    {isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.companyName}</td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.companyName}</td>}
                     {isVisible('skus') && (
                       <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
                         {item.skus.length > 0 ? item.skus.join(', ') : '—'}

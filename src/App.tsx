@@ -15,6 +15,11 @@ import { ItemSkusPage } from '@/pages/ItemSkusPage'
 import { BrandsPage } from '@/pages/BrandsPage'
 import { WarehousesPage } from '@/pages/WarehousesPage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
+import { CustomersPage } from '@/pages/CustomersPage'
+import { SuppliersPage } from '@/pages/SuppliersPage'
+import { InventoryAdjustmentsPage } from '@/pages/InventoryAdjustmentsPage'
+import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
+import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
 
 // Maps each nav path (defined once in src/lib/nav.ts) to its page component.
 const pageComponents: Record<string, ComponentType> = {
@@ -27,6 +32,11 @@ const pageComponents: Record<string, ComponentType> = {
   '/brands': BrandsPage,
   '/warehouses': WarehousesPage,
   '/employees': EmployeesPage,
+  '/customers': CustomersPage,
+  '/suppliers': SuppliersPage,
+  '/inventory-adjustments': InventoryAdjustmentsPage,
+  '/reports/inventory-balance': InventoryBalancePage,
+  '/reports/inventory-ledger': InventoryLedgerPage,
 }
 
 function AppRoutes() {

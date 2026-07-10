@@ -14,6 +14,7 @@ export function Breadcrumbs() {
   ]
   if (!onDashboard && current) {
     if (current.group) crumbs.push({ label: current.group })
+    if (current.subGroup) crumbs.push({ label: current.subGroup })
     crumbs.push({ label: current.label, to: current.to })
   }
 

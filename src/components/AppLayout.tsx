@@ -58,24 +58,41 @@ export function AppLayout() {
     for (const item of navItems) {
       if (item.group && !order.includes(item.group)) order.push(item.group)
     }
-    return order.map(group => ({
-      group,
-      items: navItems.filter(item => item.group === group && (!item.permission || hasPermission(item.permission))),
-    })).filter(g => g.items.length > 0)
+    return order.map(group => {
+      const visible = navItems.filter(item => item.group === group && (!item.permission || hasPermission(item.permission)))
+      const directItems = visible.filter(item => !item.subGroup)
+      const subGroupOrder: string[] = []
+      for (const item of visible) {
+        if (item.subGroup && !subGroupOrder.includes(item.subGroup)) subGroupOrder.push(item.subGroup)
+      }
+      const subGroups = subGroupOrder
+        .map(subGroup => ({ subGroup, items: visible.filter(item => item.subGroup === subGroup) }))
+        .filter(sg => sg.items.length > 0)
+      return { group, directItems, subGroups }
+    }).filter(g => g.directItems.length > 0 || g.subGroups.length > 0)
   }, [hasPermission])
 
-  function isGroupOpen(group: string) {
-    return openGroups[group] ?? true
+  function isGroupOpen(key: string) {
+    return openGroups[key] ?? true
   }
 
   // Flattened, visible sidebar entries in visual order — used for ↑↓ traversal.
   const sidebarEntries = useMemo(() => {
     const entries: SidebarEntry[] = topLevelItems.map(item => ({ key: item.to, type: 'link', label: item.label, to: item.to }))
-    for (const { group, items } of groups) {
+    for (const { group, directItems, subGroups } of groups) {
       entries.push({ key: `group:${group}`, type: 'group', label: group })
       if (openGroups[group] ?? true) {
-        for (const item of items) {
+        for (const item of directItems) {
           entries.push({ key: item.to, type: 'link', label: item.label, to: item.to })
+        }
+        for (const { subGroup, items } of subGroups) {
+          const subKey = `${group}::${subGroup}`
+          entries.push({ key: `group:${subKey}`, type: 'group', label: subGroup })
+          if (openGroups[subKey] ?? true) {
+            for (const item of items) {
+              entries.push({ key: item.to, type: 'link', label: item.label, to: item.to })
+            }
+          }
         }
       }
     }
@@ -106,7 +123,8 @@ export function AppLayout() {
         const entry = sidebarEntries[sidebarActiveIndex]
         if (!entry) return
         if (entry.type === 'group') {
-          setOpenGroups(prev => ({ ...prev, [entry.label]: !(prev[entry.label] ?? true) }))
+          const groupKey = entry.key.slice('group:'.length)
+          setOpenGroups(prev => ({ ...prev, [groupKey]: !(prev[groupKey] ?? true) }))
         } else if (entry.to) {
           navigate(entry.to)
         }
@@ -125,8 +143,8 @@ export function AppLayout() {
     )
   }
 
-  function groupHeaderClass(group: string) {
-    const focused = zone === 'sidebar' && sidebarEntries[sidebarActiveIndex]?.key === `group:${group}`
+  function groupHeaderClass(groupKey: string) {
+    const focused = zone === 'sidebar' && sidebarEntries[sidebarActiveIndex]?.key === `group:${groupKey}`
     return cn(
       'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))] transition-colors',
       focused && 'ring-2 ring-inset ring-[hsl(var(--primary))]'
@@ -149,7 +167,7 @@ export function AppLayout() {
             </NavLink>
           ))}
 
-          {groups.map(({ group, items }) => (
+          {groups.map(({ group, directItems, subGroups }) => (
             <div key={group} className="pt-2">
               <button
                 onClick={() => setOpenGroups(prev => ({ ...prev, [group]: !isGroupOpen(group) }))}
@@ -161,12 +179,38 @@ export function AppLayout() {
 
               {isGroupOpen(group) && (
                 <div className="mt-1 ml-4 pl-3 space-y-1 border-l border-[hsl(var(--border))]">
-                  {items.map(({ to, label, icon: Icon }) => (
+                  {directItems.map(({ to, label, icon: Icon }) => (
                     <NavLink key={to} to={to} className={navLinkClass(to)}>
                       <Icon className="w-5 h-5 shrink-0" />
                       {label}
                     </NavLink>
                   ))}
+
+                  {subGroups.map(({ subGroup, items }) => {
+                    const subKey = `${group}::${subGroup}`
+                    return (
+                      <div key={subKey} className="pt-1">
+                        <button
+                          onClick={() => setOpenGroups(prev => ({ ...prev, [subKey]: !isGroupOpen(subKey) }))}
+                          className={groupHeaderClass(subKey)}
+                        >
+                          <span className="flex-1 text-left">{subGroup}</span>
+                          {isGroupOpen(subKey) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
+
+                        {isGroupOpen(subKey) && (
+                          <div className="mt-1 ml-4 pl-3 space-y-1 border-l border-[hsl(var(--border))]">
+                            {items.map(({ to, label, icon: Icon }) => (
+                              <NavLink key={to} to={to} className={navLinkClass(to)}>
+                                <Icon className="w-5 h-5 shrink-0" />
+                                {label}
+                              </NavLink>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
