@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Barcode, Warehouse, Contact,
-  Store, Truck, ClipboardList, Scale, ScrollText,
+  Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -30,6 +30,7 @@ export const navItems: NavItem[] = [
   { to: '/reports/inventory-ledger', label: 'Inventory Ledger', icon: ScrollText, permission: 'VIEW_INVENTORY_REPORT', group: 'Reports', subGroup: 'Inventory' },
   { to: '/users', label: 'Users', icon: Users, permission: 'VIEW_USER', group: 'Access Control' },
   { to: '/roles', label: 'Roles', icon: KeyRound, permission: 'VIEW_ROLE', group: 'Access Control' },
+  { to: '/document-templates', label: 'Document Templates', icon: LayoutTemplate, permission: 'MANAGE_DOCUMENT_TEMPLATES', group: 'Access Control' },
 ]
 
 export function findNavItem(pathname: string): NavItem | undefined {

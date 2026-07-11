@@ -46,3 +46,24 @@
     margin: 0;
   }
 }
+
+#document-print-root {
+  position: fixed;
+  top: -99999px;
+  left: -99999px;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #document-print-root,
+  #document-print-root * {
+    visibility: visible;
+  }
+  #document-print-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+}

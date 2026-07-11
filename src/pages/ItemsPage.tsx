@@ -17,6 +17,7 @@ import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { TagCheckboxes } from '@/components/TagCheckboxes'
+import { CompanyField } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatCurrency } from '@/lib/format'
@@ -26,15 +27,19 @@ const API_BASE = import.meta.env.VITE_API_BASE as string
 
 type FormMode = 'view' | 'create' | 'edit'
 
+interface CompanyOption {
+  id: number
+  name: string
+}
+
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [
+  const columns: ColumnDef[] = []
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push(
     { key: 'image', label: 'Image' },
     { key: 'itemCode', label: 'Item Code' },
     { key: 'name', label: 'Name' },
     { key: 'category', label: 'Category' },
-  ]
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
-  columns.push(
     { key: 'skus', label: 'SKUs' },
     { key: 'unitPrice', label: 'Unit Price' },
     { key: 'tags', label: 'Tags' },
@@ -206,6 +211,7 @@ function ItemImage({
 
 // ── Form fields ───────────────────────────────────────────────────────────────
 function ItemFormFields({
+  codeAutoFocus,
   form,
   setForm,
   categories,
@@ -216,6 +222,7 @@ function ItemFormFields({
   cacheBust,
   canViewCostPrice,
 }: {
+  codeAutoFocus: boolean
   form: ItemForm
   setForm: React.Dispatch<React.SetStateAction<ItemForm>>
   categories: ItemCategory[]
@@ -237,7 +244,7 @@ function ItemFormFields({
       <div className="flex-1 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="form-code">Item Code</Label>
-          <Input id="form-code" value={form.itemCode} readOnly={ro || mode === 'edit'} autoFocus
+          <Input id="form-code" value={form.itemCode} readOnly={ro || mode === 'edit'} autoFocus={codeAutoFocus}
             onChange={e => setForm(f => ({ ...f, itemCode: e.target.value }))} required={!ro} />
         </div>
         <div className="space-y-1.5">
@@ -353,9 +360,12 @@ function ItemFormFields({
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function ItemsPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -376,6 +386,7 @@ export function ItemsPage() {
   const [mode, setMode]               = useState<FormMode>('view')
   const [activeItem, setActiveItem]   = useState<Item | null>(null)
   const [form, setForm]               = useState<ItemForm>({ itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() })
+  const [companyId, setCompanyId]     = useState<number | ''>('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imageVersions, setImageVersions] = useState<Record<number, number>>({})
@@ -408,6 +419,11 @@ export function ItemsPage() {
     fetchAllContent<ItemSku>('/item-skus')
       .then(setAllSkus)
       .catch(() => toast('Failed to load SKUs.', 'error'))
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
   }, [])
 
   function openView(item: Item) {
@@ -429,6 +445,7 @@ export function ItemsPage() {
   function openCreate() {
     setActiveItem(null)
     setForm({ itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() })
+    setCompanyId(activeCompanyId ?? '')
     setSelectedFile(null)
     setMode('create')
     setOpen(true)
@@ -451,12 +468,16 @@ export function ItemsPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     setLoading(true)
     try {
       if (mode === 'create') {
         const created = await apiFetch<Item>('/items', {
           method: 'POST',
-          body: JSON.stringify(formToPayload(form, activeCompanyId!)),
+          body: JSON.stringify(formToPayload(form, companyId as number)),
         })
         if (selectedFile) {
           await uploadImage(created.id, selectedFile)
@@ -465,7 +486,7 @@ export function ItemsPage() {
       } else {
         const updated = await apiFetch<Item>(`/items/${activeItem!.id}`, {
           method: 'PUT',
-          body: JSON.stringify(formToPayload(form, activeCompanyId!)),
+          body: JSON.stringify(formToPayload(form, activeItem!.companyId)),
         })
         if (selectedFile) {
           await uploadImage(updated.id, selectedFile)
@@ -547,7 +568,17 @@ export function ItemsPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <CompanyField
+              id="item-company"
+              readOnly={mode !== 'create' || !showCompanyColumn}
+              name={mode === 'create' ? activeCompany?.name : activeItem?.companyName}
+              companies={companyOptions}
+              value={companyId}
+              onChange={setCompanyId}
+              autoFocus={mode === 'create' && showCompanyColumn}
+            />
             <ItemFormFields
+              codeAutoFocus={!(mode === 'create' && showCompanyColumn)}
               form={form}
               setForm={setForm}
               categories={categories}
@@ -584,11 +615,11 @@ export function ItemsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('image') && <th className="text-left py-2 px-4 font-medium w-12" />}
                 {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
                 {isVisible('category') && <th className="text-left py-2 px-4 font-medium">Category</th>}
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('skus') && <th className="text-left py-2 px-4 font-medium">SKUs</th>}
                 {isVisible('unitPrice') && <th className="text-left py-2 px-4 font-medium">Unit Price</th>}
                 {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
@@ -619,6 +650,7 @@ export function ItemsPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.companyName}</td>}
                     {isVisible('image') && (
                       <td className="py-2 px-4">
                         {item.imagePath ? (
@@ -634,7 +666,6 @@ export function ItemsPage() {
                     {isVisible('itemCode') && <td className="py-2 px-4 font-mono text-xs">{item.itemCode}</td>}
                     {isVisible('name') && <td className="py-2 px-4">{item.name}</td>}
                     {isVisible('category') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.itemCategoryName}</td>}
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.companyName}</td>}
                     {isVisible('skus') && (
                       <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
                         {item.skus.length > 0 ? item.skus.join(', ') : '—'}

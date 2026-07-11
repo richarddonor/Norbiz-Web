@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -16,12 +16,18 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
+import { CompanyField } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create' | 'edit'
+
+interface CompanyOption {
+  id: number
+  name: string
+}
 
 interface Brand {
   id: number
@@ -35,8 +41,9 @@ interface Brand {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [{ key: 'name', label: 'Name' }]
+  const columns: ColumnDef[] = []
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push({ key: 'name', label: 'Name' })
   columns.push(
     { key: 'createdBy', label: 'Created by' },
     { key: 'updatedAt', label: 'Last updated', type: 'date' },
@@ -51,9 +58,12 @@ function brandSearchText(b: Brand): string {
 
 export function BrandsPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -72,6 +82,7 @@ export function BrandsPage() {
   const [mode, setMode]               = useState<FormMode>('view')
   const [activeBrand, setActiveBrand] = useState<Brand | null>(null)
   const [name, setName]               = useState('')
+  const [companyId, setCompanyId]     = useState<number | ''>('')
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('brands')
@@ -95,6 +106,14 @@ export function BrandsPage() {
     { key: '/', handler: () => searchInputRef.current?.focus() },
   ], !open && zone === 'content')
 
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
+  }, [])
+
   function openView(brand: Brand) {
     setActiveBrand(brand)
     setName(brand.name)
@@ -112,18 +131,23 @@ export function BrandsPage() {
   function openCreate() {
     setActiveBrand(null)
     setName('')
+    setCompanyId(activeCompanyId ?? '')
     setMode('create')
     setOpen(true)
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     setLoading(true)
     try {
       if (mode === 'create') {
         await apiFetch<Brand>('/brands', {
           method: 'POST',
-          body: JSON.stringify({ name, companyId: activeCompanyId }),
+          body: JSON.stringify({ name, companyId }),
         })
         toast('Brand created successfully.', 'success')
       } else {
@@ -206,13 +230,22 @@ export function BrandsPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <CompanyField
+              id="brand-company"
+              readOnly={mode !== 'create' || !showCompanyColumn}
+              name={mode === 'create' ? activeCompany?.name : activeBrand?.companyName}
+              companies={companyOptions}
+              value={companyId}
+              onChange={setCompanyId}
+              autoFocus={mode === 'create' && showCompanyColumn}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="brand-name">Name</Label>
               <Input
                 id="brand-name"
                 value={name}
                 readOnly={ro}
-                autoFocus
+                autoFocus={!(mode === 'create' && showCompanyColumn)}
                 onChange={e => setName(e.target.value)}
                 placeholder={ro ? undefined : 'e.g. Acme'}
                 required={!ro}
@@ -221,12 +254,6 @@ export function BrandsPage() {
 
             {ro && activeBrand && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeBrand.companyName}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeBrand.createdBy ?? '—'}</span>
@@ -272,8 +299,8 @@ export function BrandsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
+                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
                 <th className="py-2 px-4" />
@@ -302,8 +329,8 @@ export function BrandsPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {isVisible('name') && <td className="py-2 px-4 font-medium">{brand.name}</td>}
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{brand.companyName}</td>}
+                    {isVisible('name') && <td className="py-2 px-4 font-medium">{brand.name}</td>}
                     {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{brand.createdBy ?? '—'}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(brand.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>

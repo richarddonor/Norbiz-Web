@@ -51,13 +51,14 @@ type UserForm = {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [
+  const columns: ColumnDef[] = []
+  if (showCompanyColumn) columns.push({ key: 'companies', label: 'Companies' })
+  columns.push(
     { key: 'displayName', label: 'Display Name' },
     { key: 'username', label: 'Username' },
     { key: 'email', label: 'Email' },
     { key: 'roles', label: 'Roles' },
-  ]
-  if (showCompanyColumn) columns.push({ key: 'companies', label: 'Companies' })
+  )
   return columns
 }
 
@@ -448,11 +449,11 @@ export function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
                 {isVisible('displayName') && <th className="text-left py-2 px-4 font-medium">Display Name</th>}
                 {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Username</th>}
                 {isVisible('email') && <th className="text-left py-2 px-4 font-medium">Email</th>}
                 {isVisible('roles') && <th className="text-left py-2 px-4 font-medium">Roles</th>}
-                {showCompanyColumn && isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -479,15 +480,15 @@ export function UsersPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {isVisible('displayName') && <td className="py-2 px-4">{user.displayName ?? '—'}</td>}
-                    {isVisible('username') && <td className="py-2 px-4">{user.username}</td>}
-                    {isVisible('email') && <td className="py-2 px-4">{user.email}</td>}
-                    {isVisible('roles') && <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>}
                     {showCompanyColumn && isVisible('companies') && (
                       <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
                         {user.companies?.map(c => c.name).join(', ') || '—'}
                       </td>
                     )}
+                    {isVisible('displayName') && <td className="py-2 px-4">{user.displayName ?? '—'}</td>}
+                    {isVisible('username') && <td className="py-2 px-4">{user.username}</td>}
+                    {isVisible('email') && <td className="py-2 px-4">{user.email}</td>}
+                    {isVisible('roles') && <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(user)}>

@@ -16,6 +16,7 @@ import { usePagedList, fetchAllContent } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { TagCheckboxes } from '@/components/TagCheckboxes'
+import { CompanyField } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
@@ -24,6 +25,11 @@ import { cn } from '@/lib/utils'
 type FormMode = 'view' | 'create' | 'edit'
 
 const EMPLOYEE_TAGS = [{ value: 'AGENT', label: 'Agent' }]
+
+interface CompanyOption {
+  id: number
+  name: string
+}
 
 interface UserOption {
   id: number
@@ -62,7 +68,9 @@ type EmployeeForm = {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [
+  const columns: ColumnDef[] = []
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push(
     { key: 'employeeCode', label: 'Employee Code' },
     { key: 'firstName', label: 'First Name' },
     { key: 'lastName', label: 'Last Name' },
@@ -71,8 +79,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'active', label: 'Active' },
     { key: 'tags', label: 'Tags' },
     { key: 'username', label: 'Linked User' },
-  ]
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  )
   return columns
 }
 
@@ -99,9 +106,12 @@ function employeeSearchText(e: Employee): string {
 
 export function EmployeesPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -118,6 +128,7 @@ export function EmployeesPage() {
   const [mode, setMode]                   = useState<FormMode>('view')
   const [activeEmployee, setActiveEmployee] = useState<Employee | null>(null)
   const [form, setForm]                   = useState<EmployeeForm>(emptyForm())
+  const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('employees')
@@ -145,6 +156,11 @@ export function EmployeesPage() {
     fetchAllContent<UserOption>('/users')
       .then(setAllUsers)
       .catch(() => toast('Failed to load users.', 'error'))
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
   }, [])
 
   function openView(employee: Employee) {
@@ -164,17 +180,22 @@ export function EmployeesPage() {
   function openCreate() {
     setActiveEmployee(null)
     setForm(emptyForm())
+    setCompanyId(activeCompanyId ?? '')
     setMode('create')
     setOpen(true)
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     setLoading(true)
     try {
-      const companyId = mode === 'create' ? activeCompanyId : activeEmployee!.companyId
+      const submitCompanyId = mode === 'create' ? companyId : activeEmployee!.companyId
       const body = {
-        companyId,
+        companyId: submitCompanyId,
         userId: form.userId || null,
         employeeCode: form.employeeCode,
         firstName: form.firstName,
@@ -268,10 +289,19 @@ export function EmployeesPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <CompanyField
+              id="emp-company"
+              readOnly={mode !== 'create' || !showCompanyColumn}
+              name={mode === 'create' ? activeCompany?.name : activeEmployee?.companyName}
+              companies={companyOptions}
+              value={companyId}
+              onChange={setCompanyId}
+              autoFocus={mode === 'create' && showCompanyColumn}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="emp-code">Employee Code</Label>
-                <Input id="emp-code" value={form.employeeCode} readOnly={ro} autoFocus
+                <Input id="emp-code" value={form.employeeCode} readOnly={ro} autoFocus={!(mode === 'create' && showCompanyColumn)}
                   onChange={e => setForm(f => ({ ...f, employeeCode: e.target.value }))} required={!ro} />
               </div>
               <div className="space-y-1.5">
@@ -335,12 +365,6 @@ export function EmployeesPage() {
 
             {ro && activeEmployee && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeEmployee.companyName}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeEmployee.createdBy ?? '—'}</span>
@@ -386,6 +410,7 @@ export function EmployeesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('employeeCode') && <th className="text-left py-2 px-4 font-medium">Employee Code</th>}
                 {isVisible('firstName') && <th className="text-left py-2 px-4 font-medium">First Name</th>}
                 {isVisible('lastName') && <th className="text-left py-2 px-4 font-medium">Last Name</th>}
@@ -394,7 +419,6 @@ export function EmployeesPage() {
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
                 {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Linked User</th>}
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 <th className="py-2 px-4" />
               </tr>
             </thead>
@@ -415,6 +439,7 @@ export function EmployeesPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.companyName}</td>}
                     {isVisible('employeeCode') && <td className="py-2 px-4 font-mono text-xs">{employee.employeeCode}</td>}
                     {isVisible('firstName') && <td className="py-2 px-4">{employee.firstName}</td>}
                     {isVisible('lastName') && <td className="py-2 px-4">{employee.lastName}</td>}
@@ -434,7 +459,6 @@ export function EmployeesPage() {
                     )}
                     {isVisible('tags') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.tags.join(', ') || '—'}</td>}
                     {isVisible('username') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.username ?? '—'}</td>}
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{employee.companyName}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(employee)}>

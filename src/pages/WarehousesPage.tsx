@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -16,10 +16,16 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
+import { CompanyField } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+interface CompanyOption {
+  id: number
+  name: string
+}
 
 type FormMode = 'view' | 'create' | 'edit'
 
@@ -43,8 +49,9 @@ type WarehouseForm = {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }]
+  const columns: ColumnDef[] = []
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push({ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' })
   columns.push(
     { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
@@ -67,9 +74,12 @@ function warehouseSearchText(w: Warehouse): string {
 
 export function WarehousesPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -88,6 +98,7 @@ export function WarehousesPage() {
   const [mode, setMode]                   = useState<FormMode>('view')
   const [activeWarehouse, setActiveWarehouse] = useState<Warehouse | null>(null)
   const [form, setForm]                   = useState<WarehouseForm>(emptyForm())
+  const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('warehouses')
@@ -111,6 +122,14 @@ export function WarehousesPage() {
     { key: '/', handler: () => searchInputRef.current?.focus() },
   ], !open && zone === 'content')
 
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
+  }, [])
+
   function openView(warehouse: Warehouse) {
     setActiveWarehouse(warehouse)
     setForm(warehouseToForm(warehouse))
@@ -128,16 +147,21 @@ export function WarehousesPage() {
   function openCreate() {
     setActiveWarehouse(null)
     setForm(emptyForm())
+    setCompanyId(activeCompanyId ?? '')
     setMode('create')
     setOpen(true)
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     setLoading(true)
     try {
-      const companyId = mode === 'create' ? activeCompanyId : activeWarehouse!.companyId
-      const body = { companyId, code: form.code || null, name: form.name, active: form.active }
+      const submitCompanyId = mode === 'create' ? companyId : activeWarehouse!.companyId
+      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, active: form.active }
       if (mode === 'create') {
         await apiFetch<Warehouse>('/warehouses', { method: 'POST', body: JSON.stringify(body) })
         toast('Warehouse created successfully.', 'success')
@@ -220,13 +244,22 @@ export function WarehousesPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <CompanyField
+              id="warehouse-company"
+              readOnly={mode !== 'create' || !showCompanyColumn}
+              name={mode === 'create' ? activeCompany?.name : activeWarehouse?.companyName}
+              companies={companyOptions}
+              value={companyId}
+              onChange={setCompanyId}
+              autoFocus={mode === 'create' && showCompanyColumn}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="warehouse-code">Code</Label>
               <Input
                 id="warehouse-code"
                 value={form.code}
                 readOnly={ro}
-                autoFocus
+                autoFocus={!(mode === 'create' && showCompanyColumn)}
                 onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
                 placeholder={ro ? undefined : 'e.g. WH-01'}
               />
@@ -256,12 +289,6 @@ export function WarehousesPage() {
 
             {ro && activeWarehouse && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeWarehouse.companyName}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeWarehouse.createdBy ?? '—'}</span>
@@ -307,9 +334,9 @@ export function WarehousesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
@@ -339,9 +366,9 @@ export function WarehousesPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{warehouse.companyName}</td>}
                     {isVisible('code') && <td className="py-2 px-4 font-mono text-xs">{warehouse.code ?? '—'}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{warehouse.name}</td>}
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{warehouse.companyName}</td>}
                     {isVisible('active') && (
                       <td className="py-2 px-4">
                         <span className={cn(

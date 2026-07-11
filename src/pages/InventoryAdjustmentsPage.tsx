@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Eye, Search, FileDown, X } from 'lucide-react'
+import { Plus, Eye, Search, FileDown, Printer, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -14,6 +14,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useDocumentPrint } from '@/hooks/useDocumentPrint'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
@@ -23,14 +24,21 @@ import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create'
 
+interface CompanyOption {
+  id: number
+  name: string
+}
+
 interface WarehouseOption {
   id: number
+  companyId: number
   name: string
   active: boolean
 }
 
 interface ItemOption {
   id: number
+  companyId: number
   itemCode: string
   name: string
   tags: string[]
@@ -66,14 +74,15 @@ interface LineDraft {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [
+  const columns: ColumnDef[] = []
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push(
     { key: 'referenceNumber', label: 'Reference #' },
     { key: 'sheetNumber', label: 'Sheet #' },
     { key: 'warehouse', label: 'Warehouse' },
     { key: 'date', label: 'Adjustment Date', type: 'date' },
     { key: 'reason', label: 'Reason' },
-  ]
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  )
   return columns
 }
 
@@ -88,8 +97,9 @@ function adjustmentSearchText(a: Adjustment): string {
 
 export function InventoryAdjustmentsPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
@@ -106,21 +116,28 @@ export function InventoryAdjustmentsPage() {
   })
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([])
   const [items, setItems] = useState<ItemOption[]>([])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [open, setOpen]                       = useState(false)
   const [mode, setMode]                       = useState<FormMode>('view')
   const [activeAdjustment, setActiveAdjustment] = useState<Adjustment | null>(null)
+  const [companyId, setCompanyId]             = useState<number | ''>('')
   const [warehouseId, setWarehouseId]         = useState<number | ''>('')
   const [adjustmentDate, setAdjustmentDate]   = useState(todayIso())
   const [reason, setReason]                   = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
   const [lines, setLines]                     = useState<LineDraft[]>([{ itemId: '', quantity: '' }])
   const [loading, setLoading]                 = useState(false)
+  const formWarehouses = companyId ? warehouses.filter(w => w.companyId === companyId) : warehouses
+  const formInventoryItems = (companyId ? items.filter(i => i.companyId === companyId) : items).filter(i => i.tags.includes('INVENTORY'))
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-adjustments')
+  const { print, printPortal } = useDocumentPrint()
+  const [printing, setPrinting] = useState(false)
 
   const canCreate = hasPermission('CREATE_INVENTORY_ADJUSTMENT')
-  const inventoryItems = items.filter(i => i.tags.includes('INVENTORY'))
+  const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: adjustments,
@@ -140,6 +157,11 @@ export function InventoryAdjustmentsPage() {
     fetchAllContent<ItemOption>('/items')
       .then(data => setItems(data.filter(i => i.active)))
       .catch(() => toast('Failed to load items.', 'error'))
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
   }, [])
 
   function openView(adjustment: Adjustment) {
@@ -150,6 +172,7 @@ export function InventoryAdjustmentsPage() {
 
   function openCreate() {
     setActiveAdjustment(null)
+    setCompanyId(activeCompanyId ?? '')
     setWarehouseId('')
     setAdjustmentDate(todayIso())
     setReason('')
@@ -157,6 +180,12 @@ export function InventoryAdjustmentsPage() {
     setLines([{ itemId: '', quantity: '' }])
     setMode('create')
     setOpen(true)
+  }
+
+  function handleCompanyChange(value: number | '') {
+    setCompanyId(value)
+    setWarehouseId('')
+    setLines([{ itemId: '', quantity: '' }])
   }
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
@@ -173,6 +202,10 @@ export function InventoryAdjustmentsPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     const validLines = lines.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
     if (validLines.length === 0) {
       toast('Add at least one line with an item and quantity.', 'error')
@@ -181,7 +214,7 @@ export function InventoryAdjustmentsPage() {
     setLoading(true)
     try {
       const body = {
-        companyId: activeCompanyId,
+        companyId,
         warehouseId,
         adjustmentDate,
         reason: reason || null,
@@ -213,6 +246,23 @@ export function InventoryAdjustmentsPage() {
       company: a.companyName,
     }))
     exportToXlsx('inventory-adjustments', COLUMNS.filter(c => isVisible(c.key)), rows)
+  }
+
+  async function handlePrint() {
+    if (!activeAdjustment) return
+    setPrinting(true)
+    try {
+      await print(activeAdjustment.companyId, 'INVENTORY_ADJUSTMENT', activeAdjustment as unknown as Record<string, unknown>)
+    } catch {
+      // Template lookup is scoped to the adjustment's own company — a default template
+      // configured under a different company (e.g. while a different one was active) won't match.
+      toast(
+        `No default print template configured for Inventory Adjustments under ${activeAdjustment.companyName}. Create one under Document Templates while ${activeAdjustment.companyName} is your active company.`,
+        'error'
+      )
+    } finally {
+      setPrinting(false)
+    }
   }
 
   const dialogTitle = mode === 'view' ? 'Inventory Adjustment Details' : 'New Inventory Adjustment'
@@ -327,12 +377,36 @@ export function InventoryAdjustmentsPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end gap-2 pt-2">
+                {canPrint && (
+                  <Button type="button" variant="outline" onClick={handlePrint} loading={printing}>
+                    <Printer className="w-4 h-4" />
+                    Print
+                  </Button>
+                )}
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
               </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              {showCompanyColumn && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="adj-company">Company</Label>
+                  <select
+                    id="adj-company"
+                    value={companyId}
+                    onChange={e => handleCompanyChange(e.target.value ? Number(e.target.value) : '')}
+                    required
+                    autoFocus
+                    className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                  >
+                    <option value="">Select a company…</option>
+                    {companyOptions.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="adj-warehouse">Warehouse</Label>
@@ -341,11 +415,11 @@ export function InventoryAdjustmentsPage() {
                     value={warehouseId}
                     onChange={e => setWarehouseId(e.target.value ? Number(e.target.value) : '')}
                     required
-                    autoFocus
+                    autoFocus={!showCompanyColumn}
                     className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
                   >
                     <option value="">Select a warehouse…</option>
-                    {warehouses.map(w => (
+                    {formWarehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
@@ -382,7 +456,7 @@ export function InventoryAdjustmentsPage() {
                         className="flex h-9 flex-1 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
                       >
                         <option value="">Select an item…</option>
-                        {inventoryItems.map(item => (
+                        {formInventoryItems.map(item => (
                           <option key={item.id} value={item.id}>{item.itemCode} — {item.name}</option>
                         ))}
                       </select>
@@ -400,7 +474,7 @@ export function InventoryAdjustmentsPage() {
                     </div>
                   ))}
                 </div>
-                {inventoryItems.length === 0 && (
+                {formInventoryItems.length === 0 && (
                   <p className="text-xs text-[hsl(var(--muted-foreground))]">
                     No items are tagged Inventory — tag an item on the Items page before posting an adjustment.
                   </p>
@@ -421,12 +495,12 @@ export function InventoryAdjustmentsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
                 {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Adjustment Date</th>}
                 {isVisible('reason') && <th className="text-left py-2 px-4 font-medium">Reason</th>}
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -454,12 +528,12 @@ export function InventoryAdjustmentsPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.companyName}</td>}
                     {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{adjustment.referenceNumber}</td>}
                     {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.sheetNumber ?? '—'}</td>}
                     {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.warehouseName}</td>}
                     {isVisible('date') && <td className="py-2 px-4">{formatDate(adjustment.adjustmentDate)}</td>}
                     {isVisible('reason') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.reason ?? '—'}</td>}
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.companyName}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <Button variant="ghost" size="sm" onClick={() => openView(adjustment)}>
                         <Eye className="w-4 h-4" />
@@ -473,6 +547,7 @@ export function InventoryAdjustmentsPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      {printPortal}
     </div>
   )
 }

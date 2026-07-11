@@ -13,4 +13,11 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // react-rnd's bundled react-draggable references the Node-only `process` global
+  // in a debug-logging guard (`process.env.DRAGGABLE_DEBUG`) — Vite doesn't polyfill
+  // this in the browser, causing an uncaught ReferenceError the moment a Draggable
+  // element mounts. Shim it to an empty object so the guard resolves to falsy.
+  define: {
+    'process.env': {},
+  },
 })

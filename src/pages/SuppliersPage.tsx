@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -16,12 +16,18 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
+import { CompanyField } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create' | 'edit'
+
+interface CompanyOption {
+  id: number
+  name: string
+}
 
 interface Supplier {
   id: number
@@ -47,8 +53,9 @@ type SupplierForm = {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }]
+  const columns: ColumnDef[] = []
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push({ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' })
   columns.push(
     { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
@@ -71,9 +78,12 @@ function supplierSearchText(s: Supplier): string {
 
 export function SuppliersPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -92,6 +102,7 @@ export function SuppliersPage() {
   const [mode, setMode]                   = useState<FormMode>('view')
   const [activeSupplier, setActiveSupplier] = useState<Supplier | null>(null)
   const [form, setForm]                   = useState<SupplierForm>(emptyForm())
+  const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('suppliers')
@@ -115,6 +126,14 @@ export function SuppliersPage() {
     { key: '/', handler: () => searchInputRef.current?.focus() },
   ], !open && zone === 'content')
 
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
+  }, [])
+
   function openView(supplier: Supplier) {
     setActiveSupplier(supplier)
     setForm(supplierToForm(supplier))
@@ -132,16 +151,21 @@ export function SuppliersPage() {
   function openCreate() {
     setActiveSupplier(null)
     setForm(emptyForm())
+    setCompanyId(activeCompanyId ?? '')
     setMode('create')
     setOpen(true)
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     setLoading(true)
     try {
-      const companyId = mode === 'create' ? activeCompanyId : activeSupplier!.companyId
-      const body = { companyId, code: form.code || null, name: form.name, email: form.email || null, phone: form.phone || null, active: form.active }
+      const submitCompanyId = mode === 'create' ? companyId : activeSupplier!.companyId
+      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, email: form.email || null, phone: form.phone || null, active: form.active }
       if (mode === 'create') {
         await apiFetch<Supplier>('/suppliers', { method: 'POST', body: JSON.stringify(body) })
         toast('Supplier created successfully.', 'success')
@@ -224,9 +248,18 @@ export function SuppliersPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <CompanyField
+              id="supp-company"
+              readOnly={mode !== 'create' || !showCompanyColumn}
+              name={mode === 'create' ? activeCompany?.name : activeSupplier?.companyName}
+              companies={companyOptions}
+              value={companyId}
+              onChange={setCompanyId}
+              autoFocus={mode === 'create' && showCompanyColumn}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="supp-code">Code</Label>
-              <Input id="supp-code" value={form.code} readOnly={ro} autoFocus
+              <Input id="supp-code" value={form.code} readOnly={ro} autoFocus={!(mode === 'create' && showCompanyColumn)}
                 onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder={ro ? undefined : 'e.g. SUP-01'} />
             </div>
             <div className="space-y-1.5">
@@ -260,12 +293,6 @@ export function SuppliersPage() {
 
             {ro && activeSupplier && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeSupplier.companyName}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeSupplier.createdBy ?? '—'}</span>
@@ -311,9 +338,9 @@ export function SuppliersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
@@ -343,9 +370,9 @@ export function SuppliersPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{supplier.companyName}</td>}
                     {isVisible('code') && <td className="py-2 px-4 font-mono text-xs">{supplier.code ?? '—'}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{supplier.name}</td>}
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{supplier.companyName}</td>}
                     {isVisible('active') && (
                       <td className="py-2 px-4">
                         <span className={cn(

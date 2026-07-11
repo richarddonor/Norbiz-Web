@@ -20,6 +20,8 @@ import { SuppliersPage } from '@/pages/SuppliersPage'
 import { InventoryAdjustmentsPage } from '@/pages/InventoryAdjustmentsPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
+import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
+import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
 
 // Maps each nav path (defined once in src/lib/nav.ts) to its page component.
 const pageComponents: Record<string, ComponentType> = {
@@ -37,6 +39,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/inventory-adjustments': InventoryAdjustmentsPage,
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
+  '/document-templates': DocumentTemplatesPage,
 }
 
 function AppRoutes() {
@@ -59,6 +62,14 @@ function AppRoutes() {
             : <Page />
           return <Route key={to} path={to} element={element} />
         })}
+        <Route
+          path="/document-templates/:id/design"
+          element={
+            <ProtectedRoute requiredPermissions={['MANAGE_DOCUMENT_TEMPLATES']}>
+              <DocumentTemplateDesignerPage />
+            </ProtectedRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
     </Routes>

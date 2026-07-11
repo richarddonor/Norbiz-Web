@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -16,6 +16,7 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
+import { CompanyField } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
@@ -23,6 +24,11 @@ import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create' | 'edit'
 type CustomerType = 'CUSTOMER' | 'OUTLET'
+
+interface CompanyOption {
+  id: number
+  name: string
+}
 
 const CUSTOMER_TYPES: readonly CustomerType[] = ['CUSTOMER', 'OUTLET']
 const TYPE_LABELS: Record<CustomerType, string> = { CUSTOMER: 'Customer', OUTLET: 'Outlet' }
@@ -53,12 +59,13 @@ type CustomerForm = {
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
-  const columns: ColumnDef[] = [
+  const columns: ColumnDef[] = []
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  columns.push(
     { key: 'code', label: 'Code' },
     { key: 'name', label: 'Name' },
     { key: 'type', label: 'Type' },
-  ]
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  )
   columns.push(
     { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
@@ -81,9 +88,12 @@ function customerSearchText(c: Customer): string {
 
 export function CustomersPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
+  const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
+  const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
+  const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -102,6 +112,7 @@ export function CustomersPage() {
   const [mode, setMode]                   = useState<FormMode>('view')
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null)
   const [form, setForm]                   = useState<CustomerForm>(emptyForm())
+  const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('customers')
@@ -125,6 +136,14 @@ export function CustomersPage() {
     { key: '/', handler: () => searchInputRef.current?.focus() },
   ], !open && zone === 'content')
 
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchAllContent<CompanyOption>('/companies')
+        .then(setAllCompanies)
+        .catch(() => toast('Failed to load companies.', 'error'))
+    }
+  }, [])
+
   function openView(customer: Customer) {
     setActiveCustomer(customer)
     setForm(customerToForm(customer))
@@ -142,16 +161,21 @@ export function CustomersPage() {
   function openCreate() {
     setActiveCustomer(null)
     setForm(emptyForm())
+    setCompanyId(activeCompanyId ?? '')
     setMode('create')
     setOpen(true)
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !companyId) {
+      toast('Select a company.', 'error')
+      return
+    }
     setLoading(true)
     try {
-      const companyId = mode === 'create' ? activeCompanyId : activeCustomer!.companyId
-      const body = { companyId, code: form.code || null, name: form.name, type: form.type, email: form.email || null, phone: form.phone || null, active: form.active }
+      const submitCompanyId = mode === 'create' ? companyId : activeCustomer!.companyId
+      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, type: form.type, email: form.email || null, phone: form.phone || null, active: form.active }
       if (mode === 'create') {
         await apiFetch<Customer>('/customers', { method: 'POST', body: JSON.stringify(body) })
         toast('Customer created successfully.', 'success')
@@ -235,10 +259,19 @@ export function CustomersPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+            <CompanyField
+              id="cust-company"
+              readOnly={mode !== 'create' || !showCompanyColumn}
+              name={mode === 'create' ? activeCompany?.name : activeCustomer?.companyName}
+              companies={companyOptions}
+              value={companyId}
+              onChange={setCompanyId}
+              autoFocus={mode === 'create' && showCompanyColumn}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="cust-code">Code</Label>
-                <Input id="cust-code" value={form.code} readOnly={ro} autoFocus
+                <Input id="cust-code" value={form.code} readOnly={ro} autoFocus={!(mode === 'create' && showCompanyColumn)}
                   onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder={ro ? undefined : 'e.g. CUST-01'} />
               </div>
               <div className="space-y-1.5">
@@ -291,12 +324,6 @@ export function CustomersPage() {
 
             {ro && activeCustomer && (
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeCustomer.companyName}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span>Created by</span>
                   <span className="text-[hsl(var(--foreground))]">{activeCustomer.createdBy ?? '—'}</span>
@@ -342,10 +369,10 @@ export function CustomersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
+                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
                 {isVisible('type') && <th className="text-left py-2 px-4 font-medium">Type</th>}
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
@@ -375,10 +402,10 @@ export function CustomersPage() {
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{customer.companyName}</td>}
                     {isVisible('code') && <td className="py-2 px-4 font-mono text-xs">{customer.code ?? '—'}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{customer.name}</td>}
                     {isVisible('type') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{TYPE_LABELS[customer.type]}</td>}
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{customer.companyName}</td>}
                     {isVisible('active') && (
                       <td className="py-2 px-4">
                         <span className={cn(
