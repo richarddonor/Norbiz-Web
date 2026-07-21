@@ -1,8 +1,14 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Rnd } from 'react-rnd'
-import type { TemplateElement, TemplateLayout } from '@/lib/documentTemplate'
-import { pageDimensions, resolveField } from '@/lib/documentTemplate'
+import type { DocumentFieldSchema, TemplateElement, TemplateLayout } from '@/lib/documentTemplate'
+import { defaultAlign, pageDimensions, resolveField } from '@/lib/documentTemplate'
+import { formatCurrency } from '@/lib/format'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { cn } from '@/lib/utils'
+
+/** How close (px) a dragged element's edge needs to be to a sibling's before it snaps —
+ * lets the designer line labels up vertically the way the standard document layout expects. */
+const SNAP_THRESHOLD = 4
 
 interface TemplateRendererProps {
   layout: TemplateLayout
@@ -16,22 +22,48 @@ interface TemplateRendererProps {
   gridSize?: number
 }
 
-function elementStyle(el: TemplateElement): CSSProperties {
+function elementStyle(el: TemplateElement, fallbackAlign: 'left' | 'right' = 'left'): CSSProperties {
   return {
     fontSize: el.style?.fontSize ?? 12,
     fontWeight: el.style?.bold ? 700 : 400,
-    textAlign: el.style?.align ?? 'left',
+    textAlign: el.style?.align ?? fallbackAlign,
   }
 }
 
-function ElementContent({ el, data }: { el: TemplateElement; mode: 'edit' | 'print'; data?: Record<string, unknown> }) {
+/** Applies the field's schema type to a resolved raw value — currency gets peso formatting,
+ * `user` resolves the stamped username to the person's Display Name, everything else passes
+ * through untouched. Never formats an empty/missing value (avoids e.g. "" -> "0.00"). */
+function formatFieldValue(
+  raw: string,
+  fieldType: DocumentFieldSchema['type'] | undefined,
+  resolveDisplayName: (username: string | null | undefined) => string
+): string {
+  if (raw === '') return ''
+  if (fieldType === 'currency') return formatCurrency(raw)
+  if (fieldType === 'user') return resolveDisplayName(raw)
+  return raw
+}
+
+function ElementContent({
+  el, data, resolveDisplayName,
+}: {
+  el: TemplateElement
+  mode: 'edit' | 'print'
+  data?: Record<string, unknown>
+  resolveDisplayName: (username: string | null | undefined) => string
+}) {
   if (el.type === 'static') {
     return <div style={elementStyle(el)}>{el.text || <span className="opacity-40">(empty label)</span>}</div>
   }
 
   if (el.type === 'text') {
-    const value = data ? resolveField(data, el.binding) : `{{${el.binding}}}`
-    return <div style={elementStyle(el)} className={cn(!data && 'opacity-60 italic')}>{value}</div>
+    const raw = data ? resolveField(data, el.binding) : `{{${el.binding}}}`
+    const value = data ? formatFieldValue(raw, el.fieldType, resolveDisplayName) : raw
+    return (
+      <div style={elementStyle(el, defaultAlign(el.fieldType))} className={cn(!data && 'opacity-60 italic')}>
+        {value}
+      </div>
+    )
   }
 
   if (el.type === 'line') {
@@ -70,15 +102,38 @@ function ElementContent({ el, data }: { el: TemplateElement; mode: 'edit' | 'pri
     <div style={{ fontSize: el.style?.fontSize ?? 11 }}>
       {previewRows.map((row, i) => (
         <div key={i} className="flex gap-2">
-          {el.columns.map(col => (
-            <div key={col.binding} style={{ width: col.width }}>
-              {data ? resolveField(row, col.binding) : <span className="opacity-40 italic">{`{{${col.binding}}}`}</span>}
-            </div>
-          ))}
+          {el.columns.map(col => {
+            const raw = data ? resolveField(row, col.binding) : ''
+            const value = data ? formatFieldValue(raw, col.fieldType, resolveDisplayName) : ''
+            return (
+              <div key={col.binding} style={{ width: col.width, textAlign: defaultAlign(col.fieldType) }}>
+                {data ? value : <span className="opacity-40 italic">{`{{${col.binding}}}`}</span>}
+              </div>
+            )
+          })}
         </div>
       ))}
     </div>
   )
+}
+
+/** While dragging, snaps x/y to the nearest sibling element's x/y within SNAP_THRESHOLD —
+ * this is how the designer helps labels (and any other elements) line up vertically/horizontally
+ * with each other, per the standard document layout convention. Returns the (possibly snapped)
+ * position plus which axes snapped, for drawing guide lines. */
+function computeSnap(elements: TemplateElement[], selfId: string, x: number, y: number) {
+  let snapX: number | null = null
+  let snapY: number | null = null
+  for (const other of elements) {
+    if (other.id === selfId) continue
+    if (Math.abs(other.x - x) <= SNAP_THRESHOLD && (snapX === null || Math.abs(other.x - x) < Math.abs(snapX - x))) {
+      snapX = other.x
+    }
+    if (Math.abs(other.y - y) <= SNAP_THRESHOLD && (snapY === null || Math.abs(other.y - y) < Math.abs(snapY - y))) {
+      snapY = other.y
+    }
+  }
+  return { x: snapX ?? x, y: snapY ?? y, snapX, snapY }
 }
 
 /** Interprets a template layout and lays elements out absolutely — used both by the
@@ -88,6 +143,8 @@ function ElementContent({ el, data }: { el: TemplateElement; mode: 'edit' | 'pri
 export function TemplateRenderer({ layout, mode, data, selectedId, onSelect, onChange, gridSize }: TemplateRendererProps) {
   const { width, height } = pageDimensions(layout)
   const snap = mode === 'edit' && gridSize && gridSize > 1 ? gridSize : undefined
+  const resolveDisplayName = useUserDisplayNames()
+  const [guide, setGuide] = useState<{ x: number | null; y: number | null }>({ x: null, y: null })
 
   return (
     <div
@@ -108,7 +165,7 @@ export function TemplateRenderer({ layout, mode, data, selectedId, onSelect, onC
         if (mode === 'print') {
           return (
             <div key={el.id} style={{ position: 'absolute', left: el.x, top: el.y, width: el.width, height: el.height }}>
-              <ElementContent el={el} mode={mode} data={data} />
+              <ElementContent el={el} mode={mode} data={data} resolveDisplayName={resolveDisplayName} />
             </div>
           )
         }
@@ -120,7 +177,16 @@ export function TemplateRenderer({ layout, mode, data, selectedId, onSelect, onC
             bounds="parent"
             grid={snap ? [snap, snap] : undefined}
             onClick={() => onSelect?.(el.id)}
-            onDragStop={(_e, d) => onChange?.(el.id, { x: d.x, y: d.y })}
+            onDrag={(_e, d) => {
+              const snapped = computeSnap(layout.elements, el.id, d.x, d.y)
+              setGuide({ x: snapped.snapX, y: snapped.snapY })
+              if (snapped.x !== d.x || snapped.y !== d.y) onChange?.(el.id, { x: snapped.x, y: snapped.y })
+            }}
+            onDragStop={(_e, d) => {
+              const snapped = computeSnap(layout.elements, el.id, d.x, d.y)
+              onChange?.(el.id, { x: snapped.x, y: snapped.y })
+              setGuide({ x: null, y: null })
+            }}
             onResizeStop={(_e, _dir, ref, _delta, pos) =>
               onChange?.(el.id, { width: ref.offsetWidth, height: ref.offsetHeight, x: pos.x, y: pos.y })
             }
@@ -130,11 +196,17 @@ export function TemplateRenderer({ layout, mode, data, selectedId, onSelect, onC
             )}
           >
             <div className="w-full h-full overflow-hidden">
-              <ElementContent el={el} mode={mode} data={data} />
+              <ElementContent el={el} mode={mode} data={data} resolveDisplayName={resolveDisplayName} />
             </div>
           </Rnd>
         )
       })}
+      {mode === 'edit' && guide.x !== null && (
+        <div className="absolute top-0 bottom-0 w-px bg-[hsl(var(--primary))] pointer-events-none z-10" style={{ left: guide.x }} />
+      )}
+      {mode === 'edit' && guide.y !== null && (
+        <div className="absolute left-0 right-0 h-px bg-[hsl(var(--primary))] pointer-events-none z-10" style={{ top: guide.y }} />
+      )}
     </div>
   )
 }

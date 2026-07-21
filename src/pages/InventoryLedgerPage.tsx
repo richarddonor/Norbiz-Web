@@ -6,7 +6,9 @@ import { useContentFocus } from '@/components/AppLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
@@ -101,6 +103,7 @@ export function InventoryLedgerPage() {
   const [items, setItems] = useState<ItemOption[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-ledger')
+  const resolveDisplayName = useUserDisplayNames()
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: movements,
@@ -137,7 +140,7 @@ export function InventoryLedgerPage() {
       quantityDelta: m.quantityDelta,
       transitQuantityDelta: m.transitQuantityDelta,
       date: formatDate(m.movementDate),
-      createdBy: m.createdBy ?? '',
+      createdBy: resolveDisplayName(m.createdBy),
       notes: m.notes ?? '',
     }))
     exportToXlsx('inventory-ledger', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -158,26 +161,20 @@ export function InventoryLedgerPage() {
               className="pl-8 w-56"
             />
           </div>
-          <select
+          <SearchableSelect
             value={warehouseId}
-            onChange={e => setWarehouseId(e.target.value)}
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-          >
-            <option value="">All warehouses</option>
-            {warehouses.map(w => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-          <select
+            onChange={setWarehouseId}
+            options={warehouses.map(w => ({ value: String(w.id), label: w.name }))}
+            placeholder="All warehouses"
+            className="w-44"
+          />
+          <SearchableSelect
             value={itemId}
-            onChange={e => setItemId(e.target.value)}
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-          >
-            <option value="">All items</option>
-            {items.map(i => (
-              <option key={i.id} value={i.id}>{i.itemCode} — {i.name}</option>
-            ))}
-          </select>
+            onChange={setItemId}
+            options={items.map(i => ({ value: String(i.id), label: `${i.itemCode} — ${i.name}` }))}
+            placeholder="All items"
+            className="w-52"
+          />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -239,7 +236,7 @@ export function InventoryLedgerPage() {
                     {isVisible('quantityDelta') && <td className="py-2 px-4 tabular-nums">{movement.quantityDelta}</td>}
                     {isVisible('transitQuantityDelta') && <td className="py-2 px-4 tabular-nums">{movement.transitQuantityDelta}</td>}
                     {isVisible('date') && <td className="py-2 px-4">{formatDate(movement.movementDate)}</td>}
-                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{movement.createdBy ?? '—'}</td>}
+                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(movement.createdBy)}</td>}
                     {isVisible('notes') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{movement.notes ?? '—'}</td>}
                   </tr>
                 ))

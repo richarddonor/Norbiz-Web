@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -154,6 +155,7 @@ export function RolesPage() {
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('roles')
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ROLE')
   const canUpdate = hasPermission('UPDATE_ROLE')
@@ -182,26 +184,36 @@ export function RolesPage() {
 
   function openView(role: Role) {
     setActiveRole(role)
-    setForm(roleToForm(role))
+    const nextForm = roleToForm(role)
+    setForm(nextForm)
     setPermSearch('')
+    markClean(nextForm)
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(role: Role) {
     setActiveRole(role)
-    setForm(roleToForm(role))
+    const nextForm = roleToForm(role)
+    setForm(nextForm)
     setPermSearch('')
+    markClean(nextForm)
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveRole(null)
-    setForm(emptyForm())
+    const nextForm = emptyForm()
+    setForm(nextForm)
     setPermSearch('')
+    markClean(nextForm)
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose(form, () => setOpen(false))
   }
 
   function switchToEdit() {
@@ -218,6 +230,7 @@ export function RolesPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!window.confirm(mode === 'create' ? `Create role "${form.displayName || form.name}"?` : `Save changes to role "${form.displayName || form.name}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -303,7 +316,7 @@ export function RolesPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -334,14 +347,14 @@ export function RolesPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_ROLE') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

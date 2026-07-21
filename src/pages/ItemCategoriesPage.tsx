@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -85,6 +87,8 @@ export function ItemCategoriesPage() {
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('item-categories')
+  const resolveDisplayName = useUserDisplayNames()
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ITEM_CATEGORY')
   const canUpdate = hasPermission('UPDATE_ITEM_CATEGORY')
@@ -116,6 +120,7 @@ export function ItemCategoriesPage() {
   function openView(category: ItemCategory) {
     setActiveCategory(category)
     setName(category.name)
+    markClean({ name: category.name, companyId })
     setMode('view')
     setOpen(true)
   }
@@ -123,6 +128,7 @@ export function ItemCategoriesPage() {
   function openEdit(category: ItemCategory) {
     setActiveCategory(category)
     setName(category.name)
+    markClean({ name: category.name, companyId })
     setMode('edit')
     setOpen(true)
   }
@@ -130,9 +136,15 @@ export function ItemCategoriesPage() {
   function openCreate() {
     setActiveCategory(null)
     setName('')
-    setCompanyId(activeCompanyId ?? '')
+    const nextCompanyId = activeCompanyId ?? ''
+    setCompanyId(nextCompanyId)
+    markClean({ name: '', companyId: nextCompanyId })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ name, companyId }, () => setOpen(false))
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -141,6 +153,7 @@ export function ItemCategoriesPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (!window.confirm(mode === 'create' ? `Create item category "${name}"?` : `Save changes to item category "${name}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -184,7 +197,7 @@ export function ItemCategoriesPage() {
     const rows = matching.map(c => ({
       name: c.name,
       company: c.companyName,
-      createdBy: c.createdBy ?? '',
+      createdBy: resolveDisplayName(c.createdBy),
       updatedAt: formatDateTime(c.updatedAt),
     }))
     exportToXlsx('item-categories', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -223,7 +236,7 @@ export function ItemCategoriesPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -255,7 +268,7 @@ export function ItemCategoriesPage() {
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
                 <div className="flex justify-between">
                   <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeCategory.createdBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeCategory.createdBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Created at</span>
@@ -263,7 +276,7 @@ export function ItemCategoriesPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeCategory.updatedBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeCategory.updatedBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated at</span>
@@ -275,14 +288,14 @@ export function ItemCategoriesPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_ITEM_CATEGORY') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -330,7 +343,7 @@ export function ItemCategoriesPage() {
                   >
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{category.companyName}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{category.name}</td>}
-                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{category.createdBy ?? '—'}</td>}
+                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(category.createdBy)}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(category.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">

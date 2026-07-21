@@ -1,5 +1,6 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 interface CompanyOption {
   id: number
@@ -34,19 +35,14 @@ export function CompanyField({ id, readOnly, name, companies, value, onChange, a
       {readOnly ? (
         <Input id={id} value={name ?? '—'} readOnly autoFocus={autoFocus} />
       ) : (
-        <select
+        <SearchableSelect
           id={id}
-          value={value}
-          onChange={e => onChange?.(e.target.value ? Number(e.target.value) : '')}
-          required
+          value={value === '' || value === undefined ? '' : String(value)}
+          onChange={v => onChange?.(v ? Number(v) : '')}
+          options={(companies ?? []).map(c => ({ value: String(c.id), label: c.name }))}
+          placeholder="Select a company…"
           autoFocus={autoFocus}
-          className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-        >
-          <option value="">Select a company…</option>
-          {companies?.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        />
       )}
     </div>
   )

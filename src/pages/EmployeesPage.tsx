@@ -8,7 +8,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -132,6 +135,8 @@ export function EmployeesPage() {
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('employees')
+  const resolveDisplayName = useUserDisplayNames()
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_EMPLOYEE')
   const canUpdate = hasPermission('UPDATE_EMPLOYEE')
@@ -165,24 +170,35 @@ export function EmployeesPage() {
 
   function openView(employee: Employee) {
     setActiveEmployee(employee)
-    setForm(employeeToForm(employee))
+    const nextForm = employeeToForm(employee)
+    setForm(nextForm)
+    markClean({ form: nextForm, companyId })
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(employee: Employee) {
     setActiveEmployee(employee)
-    setForm(employeeToForm(employee))
+    const nextForm = employeeToForm(employee)
+    setForm(nextForm)
+    markClean({ form: nextForm, companyId })
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveEmployee(null)
-    setForm(emptyForm())
-    setCompanyId(activeCompanyId ?? '')
+    const nextForm = emptyForm()
+    const nextCompanyId = activeCompanyId ?? ''
+    setForm(nextForm)
+    setCompanyId(nextCompanyId)
+    markClean({ form: nextForm, companyId: nextCompanyId })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ form, companyId }, () => setOpen(false))
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -191,6 +207,7 @@ export function EmployeesPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (!window.confirm(mode === 'create' ? `Create employee "${form.firstName} ${form.lastName}"?` : `Save changes to employee "${form.firstName} ${form.lastName}"?`)) return
     setLoading(true)
     try {
       const submitCompanyId = mode === 'create' ? companyId : activeEmployee!.companyId
@@ -283,7 +300,7 @@ export function EmployeesPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -330,17 +347,13 @@ export function EmployeesPage() {
               {ro ? (
                 <Input id="emp-user" value={activeEmployee?.username ?? '—'} readOnly />
               ) : (
-                <select
+                <SearchableSelect
                   id="emp-user"
-                  value={form.userId}
-                  onChange={e => setForm(f => ({ ...f, userId: e.target.value ? Number(e.target.value) : '' }))}
-                  className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">None — not a Norbiz user</option>
-                  {allUsers.map(u => (
-                    <option key={u.id} value={u.id}>{u.displayName ?? u.username}</option>
-                  ))}
-                </select>
+                  value={form.userId === '' ? '' : String(form.userId)}
+                  onChange={v => setForm(f => ({ ...f, userId: v ? Number(v) : '' }))}
+                  options={allUsers.map(u => ({ value: String(u.id), label: u.displayName ?? u.username }))}
+                  placeholder="None — not a Norbiz user"
+                />
               )}
             </div>
             <TagCheckboxes label="Tags" options={EMPLOYEE_TAGS} selected={form.tags} readOnly={ro}
@@ -367,7 +380,7 @@ export function EmployeesPage() {
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
                 <div className="flex justify-between">
                   <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeEmployee.createdBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeEmployee.createdBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Created at</span>
@@ -375,7 +388,7 @@ export function EmployeesPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeEmployee.updatedBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeEmployee.updatedBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated at</span>
@@ -387,14 +400,14 @@ export function EmployeesPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_EMPLOYEE') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

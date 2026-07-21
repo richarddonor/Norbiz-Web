@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '@/lib/api'
 import { TemplateRenderer } from '@/components/TemplateRenderer'
-import { emptyLayout, type TemplateLayout } from '@/lib/documentTemplate'
+import { emptyLayout, reconcileFieldTypes, type DocumentSchema, type TemplateLayout } from '@/lib/documentTemplate'
 
 interface DocumentTemplateResponse {
   id: number
@@ -15,15 +15,20 @@ export function useDocumentPrint() {
   const [printState, setPrintState] = useState<{ layout: TemplateLayout; data: Record<string, unknown> } | null>(null)
 
   const print = useCallback(async (companyId: number, documentType: string, data: Record<string, unknown>) => {
-    const template = await apiFetch<DocumentTemplateResponse>(
-      `/document-templates/default?companyId=${companyId}&documentType=${encodeURIComponent(documentType)}`
-    )
+    const [template, schema] = await Promise.all([
+      apiFetch<DocumentTemplateResponse>(
+        `/document-templates/default?companyId=${companyId}&documentType=${encodeURIComponent(documentType)}`
+      ),
+      apiFetch<DocumentSchema>(`/document-templates/schema?documentType=${encodeURIComponent(documentType)}`),
+    ])
     let layout: TemplateLayout
     try {
       layout = template.layout ? JSON.parse(template.layout) : emptyLayout()
     } catch {
       layout = emptyLayout()
     }
+    // Backfills fieldType for templates saved before currency/user formatting existed.
+    layout = reconcileFieldTypes(layout, schema)
     setPrintState({ layout, data })
     requestAnimationFrame(() => requestAnimationFrame(() => window.print()))
   }, [])

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -189,6 +190,7 @@ export function UsersPage() {
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('users')
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_USER')
   const canUpdate = hasPermission('UPDATE_USER')
@@ -229,35 +231,47 @@ export function UsersPage() {
 
   function openView(user: User) {
     setActiveUser(user)
-    setForm({ username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' })
-    setRoleIds(new Set(user.roleIds))
-    setCompanyIds(new Set(user.companies.map(c => c.id)))
+    const nextForm = { username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' }
+    const nextRoleIds = new Set(user.roleIds)
+    const nextCompanyIds = new Set(user.companies.map(c => c.id))
+    setForm(nextForm)
+    setRoleIds(nextRoleIds)
+    setCompanyIds(nextCompanyIds)
+    markClean({ form: nextForm, roleIds: nextRoleIds, companyIds: nextCompanyIds })
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(user: User) {
     setActiveUser(user)
-    setForm({ username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' })
-    setRoleIds(new Set(user.roleIds))
-    setCompanyIds(
-      isSuperAdmin
-        ? new Set(user.companies.map(c => c.id))
-        : activeCompanyId ? new Set([activeCompanyId]) : new Set()
-    )
+    const nextForm = { username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' }
+    const nextRoleIds = new Set(user.roleIds)
+    const nextCompanyIds = isSuperAdmin
+      ? new Set(user.companies.map(c => c.id))
+      : activeCompanyId ? new Set([activeCompanyId]) : new Set<number>()
+    setForm(nextForm)
+    setRoleIds(nextRoleIds)
+    setCompanyIds(nextCompanyIds)
+    markClean({ form: nextForm, roleIds: nextRoleIds, companyIds: nextCompanyIds })
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveUser(null)
-    setForm(emptyForm())
-    setRoleIds(new Set())
-    setCompanyIds(
-      isSuperAdmin ? new Set() : activeCompanyId ? new Set([activeCompanyId]) : new Set()
-    )
+    const nextForm = emptyForm()
+    const nextRoleIds = new Set<number>()
+    const nextCompanyIds = isSuperAdmin ? new Set<number>() : activeCompanyId ? new Set([activeCompanyId]) : new Set<number>()
+    setForm(nextForm)
+    setRoleIds(nextRoleIds)
+    setCompanyIds(nextCompanyIds)
+    markClean({ form: nextForm, roleIds: nextRoleIds, companyIds: nextCompanyIds })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ form, roleIds, companyIds }, () => setOpen(false))
   }
 
   function switchToEdit() {
@@ -272,6 +286,7 @@ export function UsersPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!window.confirm(mode === 'create' ? `Create user "${form.username}"?` : `Save changes to user "${form.username}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -360,7 +375,7 @@ export function UsersPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -426,14 +441,14 @@ export function UsersPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_USER') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

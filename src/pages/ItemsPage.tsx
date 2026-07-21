@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -257,18 +259,13 @@ function ItemFormFields({
           {ro ? (
             <Input id="form-category" value={categories.find(c => c.id === form.categoryId)?.name ?? '—'} readOnly />
           ) : (
-            <select
+            <SearchableSelect
               id="form-category"
-              value={form.categoryId}
-              onChange={e => setForm(f => ({ ...f, categoryId: e.target.value ? Number(e.target.value) : '' }))}
-              required
-              className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Select a category…</option>
-              {categories.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              value={form.categoryId === '' ? '' : String(form.categoryId)}
+              onChange={v => setForm(f => ({ ...f, categoryId: v ? Number(v) : '' }))}
+              options={categories.map(c => ({ value: String(c.id), label: c.name }))}
+              placeholder="Select a category…"
+            />
           )}
         </div>
         <div className="space-y-1.5">
@@ -392,6 +389,7 @@ export function ItemsPage() {
   const [imageVersions, setImageVersions] = useState<Record<number, number>>({})
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('items')
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ITEM')
   const canUpdate = hasPermission('UPDATE_ITEM')
@@ -428,27 +426,38 @@ export function ItemsPage() {
 
   function openView(item: Item) {
     setActiveItem(item)
-    setForm(itemToForm(item))
+    const nextForm = itemToForm(item)
+    setForm(nextForm)
     setSelectedFile(null)
+    markClean({ form: nextForm, companyId, hasFile: false })
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(item: Item) {
     setActiveItem(item)
-    setForm(itemToForm(item))
+    const nextForm = itemToForm(item)
+    setForm(nextForm)
     setSelectedFile(null)
+    markClean({ form: nextForm, companyId, hasFile: false })
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveItem(null)
-    setForm({ itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() })
-    setCompanyId(activeCompanyId ?? '')
+    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() }
+    const nextCompanyId = activeCompanyId ?? ''
+    setForm(nextForm)
+    setCompanyId(nextCompanyId)
     setSelectedFile(null)
+    markClean({ form: nextForm, companyId: nextCompanyId, hasFile: false })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ form, companyId, hasFile: !!selectedFile }, () => setOpen(false))
   }
 
   function switchToEdit() {
@@ -472,6 +481,11 @@ export function ItemsPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (!form.categoryId) {
+      toast('Select a category.', 'error')
+      return
+    }
+    if (!window.confirm(mode === 'create' ? `Create item "${form.name}"?` : `Save changes to item "${form.name}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -562,7 +576,7 @@ export function ItemsPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -592,14 +606,14 @@ export function ItemsPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_ITEM') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

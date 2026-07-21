@@ -9,7 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -28,6 +31,8 @@ type FormMode = 'view' | 'create' | 'edit'
 // whenever a new document type is registered on the backend.
 const DOCUMENT_TYPES = [
   { value: 'INVENTORY_ADJUSTMENT', label: 'Inventory Adjustment' },
+  { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
+  { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice' },
 ]
 
 interface DocumentTemplate {
@@ -106,6 +111,8 @@ export function DocumentTemplatesPage() {
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('document-templates')
+  const resolveDisplayName = useUserDisplayNames()
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canManage = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
 
@@ -126,27 +133,38 @@ export function DocumentTemplatesPage() {
 
   function openView(template: DocumentTemplate) {
     setActiveTemplate(template)
-    setForm(templateToForm(template))
+    const nextForm = templateToForm(template)
+    setForm(nextForm)
+    markClean(nextForm)
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(template: DocumentTemplate) {
     setActiveTemplate(template)
-    setForm(templateToForm(template))
+    const nextForm = templateToForm(template)
+    setForm(nextForm)
+    markClean(nextForm)
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveTemplate(null)
-    setForm(emptyForm())
+    const nextForm = emptyForm()
+    setForm(nextForm)
+    markClean(nextForm)
     setMode('create')
     setOpen(true)
   }
 
+  function requestClose() {
+    guardedClose(form, () => setOpen(false))
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!window.confirm(mode === 'create' ? `Create template "${form.name}"?` : `Save changes to template "${form.name}"?`)) return
     setLoading(true)
     try {
       const companyId = mode === 'create' ? activeCompanyId : activeTemplate!.companyId
@@ -209,7 +227,7 @@ export function DocumentTemplatesPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -229,15 +247,14 @@ export function DocumentTemplatesPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="template-type">Document Type</Label>
-              <select
+              <SearchableSelect
                 id="template-type"
                 value={form.documentType}
                 disabled={ro || mode === 'edit'}
-                onChange={e => setForm(f => ({ ...f, documentType: e.target.value }))}
-                className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:opacity-60"
-              >
-                {DOCUMENT_TYPES.map(dt => <option key={dt.value} value={dt.value}>{dt.label}</option>)}
-              </select>
+                onChange={v => setForm(f => ({ ...f, documentType: v || DOCUMENT_TYPES[0].value }))}
+                options={DOCUMENT_TYPES}
+                placeholder={DOCUMENT_TYPES[0].label}
+              />
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -272,7 +289,7 @@ export function DocumentTemplatesPage() {
                 )}
                 <div className="flex justify-between">
                   <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeTemplate.updatedBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeTemplate.updatedBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated at</span>
@@ -284,7 +301,7 @@ export function DocumentTemplatesPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {canManage && activeTemplate && (
                     <Button type="button" variant="outline" onClick={() => navigate(`/document-templates/${activeTemplate.id}/design`)}>
                       <LayoutTemplate className="w-4 h-4" />
@@ -297,7 +314,7 @@ export function DocumentTemplatesPage() {
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create & Design' : 'Save'}
                   </Button>

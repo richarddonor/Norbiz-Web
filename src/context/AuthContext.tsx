@@ -26,6 +26,10 @@ interface AuthContextType {
    * see belongs to the same Company, so the column would be redundant. */
   showCompanyColumn: boolean
   isAuthenticated: boolean
+  /** True right after login when the user belongs to more than one Company and hasn't
+   * picked one yet — the /login route must stay on the company-selection step instead
+   * of auto-redirecting to /dashboard just because a token now exists. */
+  awaitingCompanySelection: boolean
   hasPermission: (...required: string[]) => boolean
   login: (username: string, password: string) => Promise<LoginResult>
   selectCompany: (companyId: number) => void
@@ -58,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('active_company_id')
     return stored ? Number(stored) : null
   })
+  const [awaitingCompanySelection, setAwaitingCompanySelection] = useState(false)
 
   // Fetch user profile whenever the token changes.
   // Validate that the stored activeCompanyId is still valid for this user.
@@ -97,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
     localStorage.setItem('auth_token', data.token)
     setToken(data.token)
+    setAwaitingCompanySelection(data.requiresCompanySelection)
 
     // Auto-select the company if only one (or none — platform admin)
     if (!data.requiresCompanySelection && data.companies.length === 1) {
@@ -114,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const selectCompany = useCallback((companyId: number) => {
     setActiveCompanyId(companyId)
     localStorage.setItem('active_company_id', String(companyId))
+    setAwaitingCompanySelection(false)
   }, [])
 
   const logout = useCallback(() => {
@@ -122,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     setMe(null)
     setActiveCompanyId(null)
+    setAwaitingCompanySelection(false)
   }, [])
 
   const hasPermission = useCallback((...required: string[]) => {
@@ -144,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeCompany,
       showCompanyColumn,
       isAuthenticated: !!token,
+      awaitingCompanySelection,
       hasPermission,
       login,
       selectCompany,

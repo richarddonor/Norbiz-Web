@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -86,6 +88,8 @@ export function BrandsPage() {
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('brands')
+  const { markClean, guardedClose } = useDirtyGuard()
+  const resolveDisplayName = useUserDisplayNames()
 
   const canCreate = hasPermission('CREATE_BRAND')
   const canUpdate = hasPermission('UPDATE_BRAND')
@@ -117,6 +121,7 @@ export function BrandsPage() {
   function openView(brand: Brand) {
     setActiveBrand(brand)
     setName(brand.name)
+    markClean({ name: brand.name, companyId })
     setMode('view')
     setOpen(true)
   }
@@ -124,6 +129,7 @@ export function BrandsPage() {
   function openEdit(brand: Brand) {
     setActiveBrand(brand)
     setName(brand.name)
+    markClean({ name: brand.name, companyId })
     setMode('edit')
     setOpen(true)
   }
@@ -131,9 +137,15 @@ export function BrandsPage() {
   function openCreate() {
     setActiveBrand(null)
     setName('')
-    setCompanyId(activeCompanyId ?? '')
+    const nextCompanyId = activeCompanyId ?? ''
+    setCompanyId(nextCompanyId)
+    markClean({ name: '', companyId: nextCompanyId })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ name, companyId }, () => setOpen(false))
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -142,6 +154,7 @@ export function BrandsPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (!window.confirm(mode === 'create' ? `Create brand "${name}"?` : `Save changes to brand "${name}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -185,7 +198,7 @@ export function BrandsPage() {
     const rows = matching.map(b => ({
       name: b.name,
       company: b.companyName,
-      createdBy: b.createdBy ?? '',
+      createdBy: resolveDisplayName(b.createdBy),
       updatedAt: formatDateTime(b.updatedAt),
     }))
     exportToXlsx('brands', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -224,7 +237,7 @@ export function BrandsPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -256,7 +269,7 @@ export function BrandsPage() {
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
                 <div className="flex justify-between">
                   <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeBrand.createdBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeBrand.createdBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Created at</span>
@@ -264,7 +277,7 @@ export function BrandsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeBrand.updatedBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeBrand.updatedBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated at</span>
@@ -276,14 +289,14 @@ export function BrandsPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_BRAND') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -331,7 +344,7 @@ export function BrandsPage() {
                   >
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{brand.companyName}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{brand.name}</td>}
-                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{brand.createdBy ?? '—'}</td>}
+                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(brand.createdBy)}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(brand.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">

@@ -6,10 +6,11 @@ import { useToast } from '@/context/ToastContext'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { TemplateRenderer } from '@/components/TemplateRenderer'
 import {
-  emptyLayout, type TemplateLayout, type TemplateElement,
-  type DocumentSchema,
+  emptyLayout, reconcileFieldTypes, type TemplateLayout, type TemplateElement,
+  type DocumentFieldSchema, type DocumentSchema,
 } from '@/lib/documentTemplate'
 
 interface DocumentTemplate {
@@ -42,26 +43,32 @@ export function DocumentTemplateDesignerPage() {
 
   useEffect(() => {
     if (!id) return
+    let parsedLayout: TemplateLayout = emptyLayout()
     apiFetch<DocumentTemplate>(`/document-templates/${id}`)
       .then(t => {
         setTemplate(t)
         try {
-          setLayout(t.layout ? JSON.parse(t.layout) : emptyLayout())
+          parsedLayout = t.layout ? JSON.parse(t.layout) : emptyLayout()
         } catch {
-          setLayout(emptyLayout())
+          parsedLayout = emptyLayout()
         }
         return apiFetch<DocumentSchema>(`/document-templates/schema?documentType=${encodeURIComponent(t.documentType)}`)
       })
-      .then(setSchema)
+      .then(s => {
+        setSchema(s)
+        // Backfills fieldType on elements saved before currency/user formatting existed,
+        // so older templates immediately pick up the new print conventions.
+        setLayout(reconcileFieldTypes(parsedLayout, s))
+      })
       .catch(() => toast('Failed to load template.', 'error'))
       .finally(() => setLoading(false))
   }, [id])
 
   const selected = layout.elements.find(el => el.id === selectedId) ?? null
 
-  const addTextElement = useCallback((binding: string) => {
+  const addTextElement = useCallback((binding: string, fieldType?: DocumentFieldSchema['type']) => {
     const el: TemplateElement = {
-      id: newId(), type: 'text', x: 20, y: 20, width: 200, height: 24, binding, style: { fontSize: 12 },
+      id: newId(), type: 'text', x: 20, y: 20, width: 200, height: 24, binding, fieldType, style: { fontSize: 12 },
     }
     setLayout(l => ({ ...l, elements: [...l.elements, el] }))
     setSelectedId(el.id)
@@ -75,10 +82,10 @@ export function DocumentTemplateDesignerPage() {
     setSelectedId(el.id)
   }, [])
 
-  const addTableElement = useCallback((groupPath: string, groupLabel: string, fields: { path: string; label: string }[]) => {
+  const addTableElement = useCallback((groupPath: string, groupLabel: string, fields: DocumentFieldSchema[]) => {
     const el: TemplateElement = {
       id: newId(), type: 'table', x: 20, y: 100, width: 400, height: 200, binding: groupPath,
-      columns: fields.map(f => ({ binding: f.path, label: f.label, width: Math.floor(400 / fields.length) })),
+      columns: fields.map(f => ({ binding: f.path, label: f.label, width: Math.floor(400 / fields.length), fieldType: f.type })),
       style: { fontSize: 11 },
     }
     setLayout(l => ({ ...l, elements: [...l.elements, el] }))
@@ -159,22 +166,20 @@ export function DocumentTemplateDesignerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
+          <SearchableSelect
             value={layout.pageSize}
-            onChange={e => setLayout(l => ({ ...l, pageSize: e.target.value as TemplateLayout['pageSize'] }))}
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm"
-          >
-            <option value="A4">A4</option>
-            <option value="Letter">Letter</option>
-          </select>
-          <select
+            onChange={v => setLayout(l => ({ ...l, pageSize: (v || 'A4') as TemplateLayout['pageSize'] }))}
+            options={[{ value: 'A4', label: 'A4' }, { value: 'Letter', label: 'Letter' }]}
+            placeholder="A4"
+            className="w-28"
+          />
+          <SearchableSelect
             value={layout.orientation}
-            onChange={e => setLayout(l => ({ ...l, orientation: e.target.value as TemplateLayout['orientation'] }))}
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm"
-          >
-            <option value="portrait">Portrait</option>
-            <option value="landscape">Landscape</option>
-          </select>
+            onChange={v => setLayout(l => ({ ...l, orientation: (v || 'portrait') as TemplateLayout['orientation'] }))}
+            options={[{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]}
+            placeholder="Portrait"
+            className="w-32"
+          />
           <label className="flex items-center gap-1.5 text-sm px-2">
             <input
               type="checkbox"
@@ -205,7 +210,7 @@ export function DocumentTemplateDesignerPage() {
               {schema.fields.map(f => (
                 <button
                   key={f.path}
-                  onClick={() => addTextElement(f.path)}
+                  onClick={() => addTextElement(f.path, f.type)}
                   className="w-full flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-md hover:bg-[hsl(var(--secondary))] transition-colors"
                 >
                   <Type className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />
@@ -317,15 +322,12 @@ export function DocumentTemplateDesignerPage() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Align</Label>
-                      <select
+                      <SearchableSelect
                         value={selected.style?.align ?? 'left'}
-                        onChange={e => updateElement(selected.id, { style: { ...selected.style, align: e.target.value as 'left' | 'center' | 'right' } })}
-                        className="flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm"
-                      >
-                        <option value="left">Left</option>
-                        <option value="center">Center</option>
-                        <option value="right">Right</option>
-                      </select>
+                        onChange={v => updateElement(selected.id, { style: { ...selected.style, align: (v || 'left') as 'left' | 'center' | 'right' } })}
+                        options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }]}
+                        placeholder="Left"
+                      />
                     </div>
                   </div>
 

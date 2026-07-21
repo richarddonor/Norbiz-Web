@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -106,6 +108,8 @@ export function SuppliersPage() {
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('suppliers')
+  const resolveDisplayName = useUserDisplayNames()
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_SUPPLIER')
   const canUpdate = hasPermission('UPDATE_SUPPLIER')
@@ -136,24 +140,35 @@ export function SuppliersPage() {
 
   function openView(supplier: Supplier) {
     setActiveSupplier(supplier)
-    setForm(supplierToForm(supplier))
+    const nextForm = supplierToForm(supplier)
+    setForm(nextForm)
+    markClean({ form: nextForm, companyId })
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(supplier: Supplier) {
     setActiveSupplier(supplier)
-    setForm(supplierToForm(supplier))
+    const nextForm = supplierToForm(supplier)
+    setForm(nextForm)
+    markClean({ form: nextForm, companyId })
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveSupplier(null)
-    setForm(emptyForm())
-    setCompanyId(activeCompanyId ?? '')
+    const nextForm = emptyForm()
+    const nextCompanyId = activeCompanyId ?? ''
+    setForm(nextForm)
+    setCompanyId(nextCompanyId)
+    markClean({ form: nextForm, companyId: nextCompanyId })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ form, companyId }, () => setOpen(false))
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -162,6 +177,7 @@ export function SuppliersPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (!window.confirm(mode === 'create' ? `Create supplier "${form.name}"?` : `Save changes to supplier "${form.name}"?`)) return
     setLoading(true)
     try {
       const submitCompanyId = mode === 'create' ? companyId : activeSupplier!.companyId
@@ -203,7 +219,7 @@ export function SuppliersPage() {
       name: s.name,
       company: s.companyName,
       active: s.active ? 'Yes' : 'No',
-      createdBy: s.createdBy ?? '',
+      createdBy: resolveDisplayName(s.createdBy),
       updatedAt: formatDateTime(s.updatedAt),
     }))
     exportToXlsx('suppliers', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -242,7 +258,7 @@ export function SuppliersPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -295,7 +311,7 @@ export function SuppliersPage() {
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
                 <div className="flex justify-between">
                   <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeSupplier.createdBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeSupplier.createdBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Created at</span>
@@ -303,7 +319,7 @@ export function SuppliersPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeSupplier.updatedBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeSupplier.updatedBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated at</span>
@@ -315,14 +331,14 @@ export function SuppliersPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_SUPPLIER') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -385,7 +401,7 @@ export function SuppliersPage() {
                         </span>
                       </td>
                     )}
-                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{supplier.createdBy ?? '—'}</td>}
+                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(supplier.createdBy)}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(supplier.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">

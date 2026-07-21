@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -68,9 +70,6 @@ function skuToForm(sku: ItemSku): SkuForm {
   }
 }
 
-const selectClass =
-  'flex h-9 w-full rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:cursor-not-allowed disabled:opacity-50'
-
 export function ItemSkusPage() {
   const { toast } = useToast()
   const { hasPermission } = useAuth()
@@ -97,6 +96,7 @@ export function ItemSkusPage() {
   const [loading, setLoading]     = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('item-skus')
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ITEM')
   const canUpdate = hasPermission('UPDATE_ITEM')
@@ -125,27 +125,42 @@ export function ItemSkusPage() {
 
   function openView(sku: ItemSku) {
     setActiveSku(sku)
-    setForm(skuToForm(sku))
+    const nextForm = skuToForm(sku)
+    setForm(nextForm)
+    markClean(nextForm)
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(sku: ItemSku) {
     setActiveSku(sku)
-    setForm(skuToForm(sku))
+    const nextForm = skuToForm(sku)
+    setForm(nextForm)
+    markClean(nextForm)
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveSku(null)
-    setForm(emptyForm())
+    const nextForm = emptyForm()
+    setForm(nextForm)
+    markClean(nextForm)
     setMode('create')
     setOpen(true)
   }
 
+  function requestClose() {
+    guardedClose(form, () => setOpen(false))
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (mode === 'create' && !form.itemId) {
+      toast('Select an item.', 'error')
+      return
+    }
+    if (!window.confirm(mode === 'create' ? `Create SKU "${form.skuCode}"?` : `Save changes to SKU "${form.skuCode}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -236,7 +251,7 @@ export function ItemSkusPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -247,21 +262,14 @@ export function ItemSkusPage() {
             <div className="space-y-1.5">
               <Label htmlFor="sku-item">Item</Label>
               {mode === 'create' ? (
-                <select
+                <SearchableSelect
                   id="sku-item"
                   autoFocus
-                  value={form.itemId}
-                  onChange={e => setForm(f => ({ ...f, itemId: e.target.value ? Number(e.target.value) : '' }))}
-                  required
-                  className={selectClass}
-                >
-                  <option value="">Select an item…</option>
-                  {items.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.itemCode} — {item.name}
-                    </option>
-                  ))}
-                </select>
+                  value={form.itemId === '' ? '' : String(form.itemId)}
+                  onChange={v => setForm(f => ({ ...f, itemId: v ? Number(v) : '' }))}
+                  options={items.map(item => ({ value: String(item.id), label: `${item.itemCode} — ${item.name}` }))}
+                  placeholder="Select an item…"
+                />
               ) : (
                 <Input
                   id="sku-item"
@@ -306,14 +314,14 @@ export function ItemSkusPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_ITEM') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

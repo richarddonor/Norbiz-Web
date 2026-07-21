@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@/components/ColumnsMenu'
 import { DateRangeFilter } from '@/components/DateRangeFilter'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 interface Props {
   columns: readonly ColumnDef[]
@@ -31,15 +32,13 @@ export function ColumnFilterRow({ columns, isVisible, values, onChange, filterab
                 }}
               />
             ) : col.type === 'boolean' ? (
-              <select
+              <SearchableSelect
                 value={values[col.key] ?? ''}
-                onChange={e => onChange(col.key, e.target.value)}
-                className="w-full h-7 px-1 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
-              >
-                <option value="">All</option>
-                <option value="true">True</option>
-                <option value="false">False</option>
-              </select>
+                onChange={v => onChange(col.key, v)}
+                options={[{ value: 'true', label: 'True' }, { value: 'false', label: 'False' }]}
+                placeholder="All"
+                className="h-7 px-1 text-xs"
+              />
             ) : (
               <input
                 value={values[col.key] ?? ''}

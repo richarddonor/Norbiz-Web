@@ -18,6 +18,8 @@ import { EmployeesPage } from '@/pages/EmployeesPage'
 import { CustomersPage } from '@/pages/CustomersPage'
 import { SuppliersPage } from '@/pages/SuppliersPage'
 import { InventoryAdjustmentsPage } from '@/pages/InventoryAdjustmentsPage'
+import { PurchaseOrdersPage } from '@/pages/PurchaseOrdersPage'
+import { PurchaseInvoicesPage } from '@/pages/PurchaseInvoicesPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
@@ -37,17 +39,19 @@ const pageComponents: Record<string, ComponentType> = {
   '/customers': CustomersPage,
   '/suppliers': SuppliersPage,
   '/inventory-adjustments': InventoryAdjustmentsPage,
+  '/purchase-orders': PurchaseOrdersPage,
+  '/purchase-invoices': PurchaseInvoicesPage,
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
   '/document-templates': DocumentTemplatesPage,
 }
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, awaitingCompanySelection } = useAuth()
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route path="/login" element={isAuthenticated && !awaitingCompanySelection ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
       <Route
         element={
           <ProtectedRoute>

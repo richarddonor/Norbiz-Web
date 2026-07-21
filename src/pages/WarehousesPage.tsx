@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { useDirtyGuard } from '@/hooks/useDirtyGuard'
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
@@ -102,6 +104,8 @@ export function WarehousesPage() {
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('warehouses')
+  const resolveDisplayName = useUserDisplayNames()
+  const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_WAREHOUSE')
   const canUpdate = hasPermission('UPDATE_WAREHOUSE')
@@ -132,24 +136,35 @@ export function WarehousesPage() {
 
   function openView(warehouse: Warehouse) {
     setActiveWarehouse(warehouse)
-    setForm(warehouseToForm(warehouse))
+    const nextForm = warehouseToForm(warehouse)
+    setForm(nextForm)
+    markClean({ form: nextForm, companyId })
     setMode('view')
     setOpen(true)
   }
 
   function openEdit(warehouse: Warehouse) {
     setActiveWarehouse(warehouse)
-    setForm(warehouseToForm(warehouse))
+    const nextForm = warehouseToForm(warehouse)
+    setForm(nextForm)
+    markClean({ form: nextForm, companyId })
     setMode('edit')
     setOpen(true)
   }
 
   function openCreate() {
     setActiveWarehouse(null)
-    setForm(emptyForm())
-    setCompanyId(activeCompanyId ?? '')
+    const nextForm = emptyForm()
+    const nextCompanyId = activeCompanyId ?? ''
+    setForm(nextForm)
+    setCompanyId(nextCompanyId)
+    markClean({ form: nextForm, companyId: nextCompanyId })
     setMode('create')
     setOpen(true)
+  }
+
+  function requestClose() {
+    guardedClose({ form, companyId }, () => setOpen(false))
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -158,6 +173,7 @@ export function WarehousesPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (!window.confirm(mode === 'create' ? `Create warehouse "${form.name}"?` : `Save changes to warehouse "${form.name}"?`)) return
     setLoading(true)
     try {
       const submitCompanyId = mode === 'create' ? companyId : activeWarehouse!.companyId
@@ -199,7 +215,7 @@ export function WarehousesPage() {
       name: w.name,
       company: w.companyName,
       active: w.active ? 'Yes' : 'No',
-      createdBy: w.createdBy ?? '',
+      createdBy: resolveDisplayName(w.createdBy),
       updatedAt: formatDateTime(w.updatedAt),
     }))
     exportToXlsx('warehouses', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -238,7 +254,7 @@ export function WarehousesPage() {
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
         <DialogContent onFocusOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
@@ -291,7 +307,7 @@ export function WarehousesPage() {
               <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
                 <div className="flex justify-between">
                   <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeWarehouse.createdBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeWarehouse.createdBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Created at</span>
@@ -299,7 +315,7 @@ export function WarehousesPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{activeWarehouse.updatedBy ?? '—'}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeWarehouse.updatedBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Last updated at</span>
@@ -311,14 +327,14 @@ export function WarehousesPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_WAREHOUSE') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -381,7 +397,7 @@ export function WarehousesPage() {
                         </span>
                       </td>
                     )}
-                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{warehouse.createdBy ?? '—'}</td>}
+                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(warehouse.createdBy)}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(warehouse.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">

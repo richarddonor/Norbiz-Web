@@ -39,6 +39,18 @@ interface WarehouseOption {
   active: boolean
 }
 
+interface SupplierOption {
+  id: number
+  companyId: number
+  name: string
+  active: boolean
+}
+
+interface PriceEntry {
+  priceType: 'UNIT_PRICE' | 'COST_PRICE' | 'FOCAL_PRICE' | 'MARKDOWN_PRICE'
+  amount: number
+}
+
 interface ItemOption {
   id: number
   companyId: number
@@ -46,39 +58,44 @@ interface ItemOption {
   name: string
   tags: string[]
   active: boolean
+  prices: PriceEntry[]
 }
 
-interface AdjustmentLine {
+interface OrderLine {
   id: number
   itemId: number
   itemCode: string
   itemName: string
   quantity: string
+  costPrice: string | null
   quantityLoaded: string
 }
 
-interface Adjustment {
+interface PurchaseOrder {
   id: number
   companyId: number
   companyName: string
   warehouseId: number
   warehouseName: string
+  supplierId: number
+  supplierName: string
   referenceNumber: string
   sheetNumber: string | null
-  adjustmentDate: string
-  reason: string | null
+  orderDate: string
+  remarks: string | null
   createdAt: string | null
   createdBy: string | null
   voided: boolean
   voidedAt: string | null
   voidedBy: string | null
   loaded: boolean
-  lines: AdjustmentLine[]
+  lines: OrderLine[]
 }
 
 interface LineDraft {
   itemId: number | ''
   quantity: string
+  costPrice: string
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
@@ -88,8 +105,8 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'referenceNumber', label: 'Reference #' },
     { key: 'sheetNumber', label: 'Sheet #' },
     { key: 'warehouse', label: 'Warehouse' },
-    { key: 'date', label: 'Adjustment Date', type: 'date' },
-    { key: 'reason', label: 'Reason' },
+    { key: 'supplier', label: 'Supplier' },
+    { key: 'date', label: 'Order Date', type: 'date' },
     { key: 'voided', label: 'Voided', type: 'boolean' },
   )
   return columns
@@ -100,15 +117,16 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function adjustmentSearchText(a: Adjustment): string {
-  return [a.referenceNumber, a.sheetNumber ?? '', a.warehouseName, a.reason ?? '', a.companyName, formatDate(a.adjustmentDate)].join(' ')
+function orderSearchText(o: PurchaseOrder): string {
+  return [o.referenceNumber, o.sheetNumber ?? '', o.warehouseName, o.supplierName, o.remarks ?? '', o.companyName, formatDate(o.orderDate)].join(' ')
 }
 
-export function InventoryAdjustmentsPage() {
+export function PurchaseOrdersPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
   const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
+  const canViewCostPrice = hasPermission('VIEW_COST_PRICE')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
@@ -117,43 +135,46 @@ export function InventoryAdjustmentsPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: adjustments, page, setPage, totalPages, totalElements, reload } = usePagedList<Adjustment>('/inventory-adjustments', {
-    onError: () => toast('Failed to load inventory adjustments.', 'error'),
+  const { items: orders, page, setPage, totalPages, totalElements, reload } = usePagedList<PurchaseOrder>('/purchase-orders', {
+    onError: () => toast('Failed to load purchase orders.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
-    searchText: adjustmentSearchText,
+    searchText: orderSearchText,
   })
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([])
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [items, setItems] = useState<ItemOption[]>([])
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [open, setOpen]                       = useState(false)
   const [mode, setMode]                       = useState<FormMode>('view')
-  const [activeAdjustment, setActiveAdjustment] = useState<Adjustment | null>(null)
+  const [activeOrder, setActiveOrder]         = useState<PurchaseOrder | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [warehouseId, setWarehouseId]         = useState<number | ''>('')
-  const [adjustmentDate, setAdjustmentDate]   = useState(todayIso())
-  const [reason, setReason]                   = useState('')
+  const [supplierId, setSupplierId]           = useState<number | ''>('')
+  const [orderDate, setOrderDate]             = useState(todayIso())
+  const [remarks, setRemarks]                 = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
-  const [lines, setLines]                     = useState<LineDraft[]>([{ itemId: '', quantity: '' }])
+  const [lines, setLines]                     = useState<LineDraft[]>([{ itemId: '', quantity: '', costPrice: '' }])
   const [loading, setLoading]                 = useState(false)
   const formWarehouses = companyId ? warehouses.filter(w => w.companyId === companyId) : warehouses
+  const formSuppliers = companyId ? suppliers.filter(s => s.companyId === companyId) : suppliers
   const formInventoryItems = (companyId ? items.filter(i => i.companyId === companyId) : items).filter(i => i.tags.includes('INVENTORY'))
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-adjustments')
+  const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-orders')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
   const { print, printPortal } = useDocumentPrint()
   const [printing, setPrinting] = useState(false)
 
-  const canCreate = hasPermission('CREATE_INVENTORY_ADJUSTMENT')
+  const canCreate = hasPermission('CREATE_PURCHASE_ORDER')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
-  const canVoid = hasPermission('VOID_INVENTORY_ADJUSTMENT')
+  const canVoid = hasPermission('VOID_PURCHASE_ORDER')
   const [voiding, setVoiding] = useState(false)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
-    items: adjustments,
+    items: orders,
     onView: openView,
     enabled: !open && zone === 'content',
   })
@@ -167,6 +188,9 @@ export function InventoryAdjustmentsPage() {
     fetchAllContent<WarehouseOption>('/warehouses')
       .then(data => setWarehouses(data.filter(w => w.active)))
       .catch(() => toast('Failed to load warehouses.', 'error'))
+    fetchAllContent<SupplierOption>('/suppliers')
+      .then(data => setSuppliers(data.filter(s => s.active)))
+      .catch(() => toast('Failed to load suppliers.', 'error'))
     fetchAllContent<ItemOption>('/items')
       .then(data => setItems(data.filter(i => i.active)))
       .catch(() => toast('Failed to load items.', 'error'))
@@ -177,44 +201,56 @@ export function InventoryAdjustmentsPage() {
     }
   }, [])
 
-  function openView(adjustment: Adjustment) {
-    setActiveAdjustment(adjustment)
+  function openView(order: PurchaseOrder) {
+    setActiveOrder(order)
     setMode('view')
     setOpen(true)
   }
 
   function openCreate() {
-    setActiveAdjustment(null)
+    setActiveOrder(null)
     const nextCompanyId = activeCompanyId ?? ''
-    const nextDate = todayIso()
-    const nextLines: LineDraft[] = [{ itemId: '', quantity: '' }]
+    const nextOrderDate = todayIso()
+    const nextLines: LineDraft[] = [{ itemId: '', quantity: '', costPrice: '' }]
     setCompanyId(nextCompanyId)
     setWarehouseId('')
-    setAdjustmentDate(nextDate)
-    setReason('')
+    setSupplierId('')
+    setOrderDate(nextOrderDate)
+    setRemarks('')
     setSheetNumber('')
     setLines(nextLines)
-    markClean({ companyId: nextCompanyId, warehouseId: '', adjustmentDate: nextDate, reason: '', sheetNumber: '', lines: nextLines })
+    markClean({ companyId: nextCompanyId, warehouseId: '', supplierId: '', orderDate: nextOrderDate, remarks: '', sheetNumber: '', lines: nextLines })
     setMode('create')
     setOpen(true)
   }
 
   function requestClose() {
-    guardedClose({ companyId, warehouseId, adjustmentDate, reason, sheetNumber, lines }, () => setOpen(false))
+    guardedClose({ companyId, warehouseId, supplierId, orderDate, remarks, sheetNumber, lines }, () => setOpen(false))
   }
 
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
     setWarehouseId('')
-    setLines([{ itemId: '', quantity: '' }])
+    setSupplierId('')
+    setLines([{ itemId: '', quantity: '', costPrice: '' }])
   }
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
     setLines(prev => prev.map((line, i) => i === index ? { ...line, ...patch } : line))
   }
 
+  function handleLineItemChange(index: number, itemId: number | '') {
+    let costPrice = ''
+    if (itemId !== '' && canViewCostPrice) {
+      const item = items.find(i => i.id === itemId)
+      const costEntry = item?.prices.find(p => p.priceType === 'COST_PRICE')
+      costPrice = costEntry ? String(costEntry.amount) : ''
+    }
+    updateLine(index, { itemId, costPrice })
+  }
+
   function addLine() {
-    setLines(prev => [...prev, { itemId: '', quantity: '' }])
+    setLines(prev => [...prev, { itemId: '', quantity: '', costPrice: '' }])
   }
 
   function removeLine(index: number) {
@@ -231,28 +267,37 @@ export function InventoryAdjustmentsPage() {
       toast('Select a warehouse.', 'error')
       return
     }
+    if (!supplierId) {
+      toast('Select a supplier.', 'error')
+      return
+    }
     const validLines = lines.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
     if (validLines.length === 0) {
       toast('Add at least one line with an item and quantity.', 'error')
       return
     }
-    if (!window.confirm('Post this inventory adjustment? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this purchase order? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
         companyId,
         warehouseId,
-        adjustmentDate,
-        reason: reason || null,
+        supplierId,
+        orderDate,
+        remarks: remarks || null,
         sheetNumber: sheetNumber || null,
-        lines: validLines.map(l => ({ itemId: l.itemId, quantity: Number(l.quantity) })),
+        lines: validLines.map(l => ({
+          itemId: l.itemId,
+          quantity: Number(l.quantity),
+          costPrice: canViewCostPrice && l.costPrice.trim() !== '' ? Number(l.costPrice) : null,
+        })),
       }
-      await apiFetch<Adjustment>('/inventory-adjustments', { method: 'POST', body: JSON.stringify(body) })
-      toast('Inventory adjustment posted successfully.', 'success')
+      await apiFetch<PurchaseOrder>('/purchase-orders', { method: 'POST', body: JSON.stringify(body) })
+      toast('Purchase order posted successfully.', 'success')
       setOpen(false)
       reload()
     } catch {
-      toast('Failed to post inventory adjustment.', 'error')
+      toast('Failed to post purchase order.', 'error')
     } finally {
       setLoading(false)
     }
@@ -260,30 +305,29 @@ export function InventoryAdjustmentsPage() {
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<Adjustment>(qs ? `/inventory-adjustments?${qs}` : '/inventory-adjustments', 100000)
+    const all = await fetchAllContent<PurchaseOrder>(qs ? `/purchase-orders?${qs}` : '/purchase-orders', 100000)
     const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(a => adjustmentSearchText(a).toLowerCase().includes(term)) : all
-    const rows = matching.map(a => ({
-      referenceNumber: a.referenceNumber,
-      sheetNumber: a.sheetNumber ?? '',
-      warehouse: a.warehouseName,
-      date: formatDate(a.adjustmentDate),
-      reason: a.reason ?? '',
-      company: a.companyName,
+    const matching = term ? all.filter(o => orderSearchText(o).toLowerCase().includes(term)) : all
+    const rows = matching.map(o => ({
+      referenceNumber: o.referenceNumber,
+      sheetNumber: o.sheetNumber ?? '',
+      warehouse: o.warehouseName,
+      supplier: o.supplierName,
+      date: formatDate(o.orderDate),
+      voided: o.voided ? 'Yes' : '',
+      company: o.companyName,
     }))
-    exportToXlsx('inventory-adjustments', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('purchase-orders', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   async function handlePrint() {
-    if (!activeAdjustment) return
+    if (!activeOrder) return
     setPrinting(true)
     try {
-      await print(activeAdjustment.companyId, 'INVENTORY_ADJUSTMENT', activeAdjustment as unknown as Record<string, unknown>)
+      await print(activeOrder.companyId, 'PURCHASE_ORDER', activeOrder as unknown as Record<string, unknown>)
     } catch {
-      // Template lookup is scoped to the adjustment's own company — a default template
-      // configured under a different company (e.g. while a different one was active) won't match.
       toast(
-        `No default print template configured for Inventory Adjustments under ${activeAdjustment.companyName}. Create one under Document Templates while ${activeAdjustment.companyName} is your active company.`,
+        `No default print template configured for Purchase Orders under ${activeOrder.companyName}. Create one under Document Templates while ${activeOrder.companyName} is your active company.`,
         'error'
       )
     } finally {
@@ -292,27 +336,27 @@ export function InventoryAdjustmentsPage() {
   }
 
   async function handleVoid() {
-    if (!activeAdjustment) return
-    if (!window.confirm(`Void adjustment "${activeAdjustment.referenceNumber}"? This reverses its stock effect and cannot be undone.`)) return
+    if (!activeOrder) return
+    if (!window.confirm(`Void purchase order "${activeOrder.referenceNumber}"? This reverses its transit quantity and cannot be undone.`)) return
     setVoiding(true)
     try {
-      const voided = await apiFetch<Adjustment>(`/inventory-adjustments/${activeAdjustment.id}/void`, { method: 'POST' })
-      setActiveAdjustment(voided)
-      toast('Adjustment voided.', 'success')
+      const voided = await apiFetch<PurchaseOrder>(`/purchase-orders/${activeOrder.id}/void`, { method: 'POST' })
+      setActiveOrder(voided)
+      toast('Purchase order voided.', 'success')
       reload()
     } catch {
-      toast('Failed to void adjustment.', 'error')
+      toast('Failed to void purchase order.', 'error')
     } finally {
       setVoiding(false)
     }
   }
 
-  const dialogTitle = mode === 'view' ? 'Inventory Adjustment Details' : 'New Inventory Adjustment'
+  const dialogTitle = mode === 'view' ? 'Purchase Order Details' : 'New Purchase Order'
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">Inventory Adjustment</h1>
+        <h1 className="text-2xl font-bold">Purchase Orders</h1>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
@@ -320,7 +364,7 @@ export function InventoryAdjustmentsPage() {
               ref={searchInputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search adjustments… (/)"
+              placeholder="Search purchase orders… (/)"
               className="pl-8 w-56"
             />
           </div>
@@ -339,7 +383,7 @@ export function InventoryAdjustmentsPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Adjustment
+              New Purchase Order
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
@@ -352,14 +396,14 @@ export function InventoryAdjustmentsPage() {
             <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
 
-          {mode === 'view' && activeAdjustment ? (
+          {mode === 'view' && activeOrder ? (
             <div className="space-y-4 mt-2">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="space-y-1">
                   <Label className="text-xs text-[hsl(var(--muted-foreground))]">Reference #</Label>
                   <div className="font-mono flex items-center gap-2">
-                    {activeAdjustment.referenceNumber}
-                    {activeAdjustment.voided && (
+                    {activeOrder.referenceNumber}
+                    {activeOrder.voided && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
                         Voided
                       </span>
@@ -368,19 +412,23 @@ export function InventoryAdjustmentsPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-[hsl(var(--muted-foreground))]">Sheet #</Label>
-                  <div>{activeAdjustment.sheetNumber ?? '—'}</div>
+                  <div>{activeOrder.sheetNumber ?? '—'}</div>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-[hsl(var(--muted-foreground))]">Warehouse</Label>
-                  <div>{activeAdjustment.warehouseName}</div>
+                  <div>{activeOrder.warehouseName}</div>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Adjustment Date</Label>
-                  <div>{formatDate(activeAdjustment.adjustmentDate)}</div>
+                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Supplier</Label>
+                  <div>{activeOrder.supplierName}</div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Order Date</Label>
+                  <div>{formatDate(activeOrder.orderDate)}</div>
                 </div>
                 <div className="space-y-1 col-span-2">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Reason</Label>
-                  <div>{activeAdjustment.reason ?? '—'}</div>
+                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Remarks</Label>
+                  <div>{activeOrder.remarks ?? '—'}</div>
                 </div>
               </div>
 
@@ -392,13 +440,15 @@ export function InventoryAdjustmentsPage() {
                       <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40">
                         <th className="text-left py-1.5 px-3 font-medium">Item</th>
                         <th className="text-right py-1.5 px-3 font-medium">Quantity</th>
+                        {canViewCostPrice && <th className="text-right py-1.5 px-3 font-medium">Cost Price</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {activeAdjustment.lines.map(line => (
+                      {activeOrder.lines.map(line => (
                         <tr key={line.id} className="border-b border-[hsl(var(--border))] last:border-0">
                           <td className="py-1.5 px-3">{line.itemCode} — {line.itemName}</td>
                           <td className="py-1.5 px-3 text-right tabular-nums">{line.quantity}</td>
+                          {canViewCostPrice && <td className="py-1.5 px-3 text-right tabular-nums">{line.costPrice ?? '—'}</td>}
                         </tr>
                       ))}
                     </tbody>
@@ -410,21 +460,21 @@ export function InventoryAdjustmentsPage() {
                 {showCompanyColumn && (
                   <div className="flex justify-between">
                     <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeAdjustment.companyName}</span>
+                    <span className="text-[hsl(var(--foreground))]">{activeOrder.companyName}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span>Posted by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeAdjustment.createdBy)}</span>
+                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeOrder.createdBy)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Posted at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeAdjustment.createdAt)}</span>
+                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeOrder.createdAt)}</span>
                 </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                {canVoid && !activeAdjustment.voided && (
+                {canVoid && !activeOrder.voided && (
                   <Button type="button" variant="outline" onClick={handleVoid} loading={voiding}>
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -443,9 +493,9 @@ export function InventoryAdjustmentsPage() {
             <form onSubmit={handleSubmit} className="space-y-4 mt-2" onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); addLine() } }}>
               {showCompanyColumn && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="adj-company">Company</Label>
+                  <Label htmlFor="po-company">Company</Label>
                   <SearchableSelect
-                    id="adj-company"
+                    id="po-company"
                     value={companyId === '' ? '' : String(companyId)}
                     onChange={v => handleCompanyChange(v ? Number(v) : '')}
                     options={companyOptions.map(c => ({ value: String(c.id), label: c.name }))}
@@ -456,9 +506,9 @@ export function InventoryAdjustmentsPage() {
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="adj-warehouse">Warehouse</Label>
+                  <Label htmlFor="po-warehouse">Warehouse</Label>
                   <SearchableSelect
-                    id="adj-warehouse"
+                    id="po-warehouse"
                     value={warehouseId === '' ? '' : String(warehouseId)}
                     onChange={v => setWarehouseId(v ? Number(v) : '')}
                     options={formWarehouses.map(w => ({ value: String(w.id), label: w.name }))}
@@ -467,18 +517,28 @@ export function InventoryAdjustmentsPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="adj-date">Adjustment Date</Label>
-                  <Input id="adj-date" type="date" value={adjustmentDate}
-                    onChange={e => setAdjustmentDate(e.target.value)} required />
+                  <Label htmlFor="po-supplier">Supplier</Label>
+                  <SearchableSelect
+                    id="po-supplier"
+                    value={supplierId === '' ? '' : String(supplierId)}
+                    onChange={v => setSupplierId(v ? Number(v) : '')}
+                    options={formSuppliers.map(s => ({ value: String(s.id), label: s.name }))}
+                    placeholder="Select a supplier…"
+                  />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="adj-sheet">Sheet #</Label>
-                <Input id="adj-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} placeholder="Optional control number" />
+                <Label htmlFor="po-date">Order Date</Label>
+                <Input id="po-date" type="date" value={orderDate}
+                  onChange={e => setOrderDate(e.target.value)} required />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="adj-reason">Reason</Label>
-                <Input id="adj-reason" value={reason} onChange={e => setReason(e.target.value)} placeholder="Optional" />
+                <Label htmlFor="po-sheet">Sheet #</Label>
+                <Input id="po-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} placeholder="Optional control number" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="po-remarks">Remarks</Label>
+                <Input id="po-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Optional" />
               </div>
 
               <div className="space-y-1.5">
@@ -496,7 +556,7 @@ export function InventoryAdjustmentsPage() {
                       <div className="flex-1">
                         <SearchableSelect
                           value={line.itemId === '' ? '' : String(line.itemId)}
-                          onChange={v => updateLine(i, { itemId: v ? Number(v) : '' })}
+                          onChange={v => handleLineItemChange(i, v ? Number(v) : '')}
                           options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.itemCode} — ${item.name}` }))}
                           placeholder="Select an item…"
                         />
@@ -507,8 +567,18 @@ export function InventoryAdjustmentsPage() {
                         placeholder="Quantity"
                         value={line.quantity}
                         onChange={e => updateLine(i, { quantity: e.target.value })}
-                        className="w-32"
+                        className="w-28"
                       />
+                      {canViewCostPrice && (
+                        <Input
+                          type="number"
+                          step="0.0001"
+                          placeholder="Cost Price"
+                          value={line.costPrice}
+                          onChange={e => updateLine(i, { costPrice: e.target.value })}
+                          className="w-28"
+                        />
+                      )}
                       <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(i)} disabled={lines.length === 1}>
                         <X className="w-4 h-4" />
                       </Button>
@@ -517,14 +587,14 @@ export function InventoryAdjustmentsPage() {
                 </div>
                 {formInventoryItems.length === 0 && (
                   <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    No items are tagged Inventory — tag an item on the Items page before posting an adjustment.
+                    No items are tagged Inventory — tag an item on the Items page before posting a purchase order.
                   </p>
                 )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Adjustment</Button>
+                <Button type="submit" loading={loading}>Post Purchase Order</Button>
               </div>
             </form>
           )}
@@ -540,8 +610,8 @@ export function InventoryAdjustmentsPage() {
                 {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
                 {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Adjustment Date</th>}
-                {isVisible('reason') && <th className="text-left py-2 px-4 font-medium">Reason</th>}
+                {isVisible('supplier') && <th className="text-left py-2 px-4 font-medium">Supplier</th>}
+                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Order Date</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
                 <th className="py-2 px-4" />
               </tr>
@@ -550,35 +620,35 @@ export function InventoryAdjustmentsPage() {
                 isVisible={isVisible}
                 values={filters}
                 onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-                filterable={key => key !== 'warehouse' && key !== 'company' && key !== 'reason' && key !== 'voided'}
+                filterable={key => key !== 'warehouse' && key !== 'supplier' && key !== 'company' && key !== 'voided'}
               />
             </thead>
             <tbody>
-              {adjustments.length === 0 ? (
+              {orders.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No adjustments match your search/filters.' : 'No inventory adjustments to display.'}
+                    {isFiltering ? 'No purchase orders match your search/filters.' : 'No purchase orders to display.'}
                   </td>
                 </tr>
               ) : (
-                adjustments.map((adjustment, i) => (
+                orders.map((order, i) => (
                   <tr
-                    key={adjustment.id}
-                    onClick={() => { setActiveIndex(i); openView(adjustment) }}
+                    key={order.id}
+                    onClick={() => { setActiveIndex(i); openView(order) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.companyName}</td>}
-                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{adjustment.referenceNumber}</td>}
-                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.sheetNumber ?? '—'}</td>}
-                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.warehouseName}</td>}
-                    {isVisible('date') && <td className="py-2 px-4">{formatDate(adjustment.adjustmentDate)}</td>}
-                    {isVisible('reason') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.reason ?? '—'}</td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{order.companyName}</td>}
+                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{order.referenceNumber}</td>}
+                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{order.sheetNumber ?? '—'}</td>}
+                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{order.warehouseName}</td>}
+                    {isVisible('supplier') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{order.supplierName}</td>}
+                    {isVisible('date') && <td className="py-2 px-4">{formatDate(order.orderDate)}</td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
-                        {adjustment.voided && (
+                        {order.voided && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
                             Voided
                           </span>
@@ -586,7 +656,7 @@ export function InventoryAdjustmentsPage() {
                       </td>
                     )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => openView(adjustment)}>
+                      <Button variant="ghost" size="sm" onClick={() => openView(order)}>
                         <Eye className="w-4 h-4" />
                       </Button>
                     </td>

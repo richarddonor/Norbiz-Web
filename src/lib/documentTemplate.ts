@@ -18,6 +18,10 @@ export interface TemplateTextElement {
   width: number
   height: number
   binding: string
+  /** Schema field type captured when dropped from the palette — drives default alignment
+   * and value formatting (currency/user) at print time. Absent on elements placed before
+   * this existed; `reconcileFieldTypes` backfills it from the document's schema. */
+  fieldType?: DocumentFieldSchema['type']
   style?: TemplateElementStyle
 }
 
@@ -36,6 +40,9 @@ export interface TemplateTableColumn {
   binding: string
   label: string
   width: number
+  /** Same purpose as `TemplateTextElement.fieldType` — per-column, since a table's columns
+   * can mix types (e.g. itemName vs. costPrice). */
+  fieldType?: DocumentFieldSchema['type']
 }
 
 export interface TemplateTableElement {
@@ -104,7 +111,7 @@ export function pageDimensions(layout: TemplateLayout): { width: number; height:
 export interface DocumentFieldSchema {
   path: string
   label: string
-  type: 'string' | 'number' | 'date'
+  type: 'string' | 'number' | 'date' | 'currency' | 'user'
 }
 
 export interface DocumentRepeatingGroupSchema {
@@ -130,4 +137,40 @@ export function resolveField(data: Record<string, unknown>, path: string): strin
   }, data)
   if (value === undefined || value === null) return ''
   return String(value)
+}
+
+/** Amounts and numbers are right-aligned by convention; an explicit `style.align` always wins. */
+export function defaultAlign(fieldType: DocumentFieldSchema['type'] | undefined): 'left' | 'right' {
+  return fieldType === 'number' || fieldType === 'currency' ? 'right' : 'left'
+}
+
+/** Backfills `fieldType` on text elements / table columns that predate this convention, by
+ * matching their `binding` path against the document's schema (header fields for text elements,
+ * the matching repeating group's fields for table columns). Elements that already carry a
+ * `fieldType` (or don't match any schema field) are left untouched — this never overrides an
+ * explicit designer choice. Returns a new layout; does not mutate the input. */
+export function reconcileFieldTypes(layout: TemplateLayout, schema: DocumentSchema): TemplateLayout {
+  const fieldTypeByPath = new Map(schema.fields.map(f => [f.path, f.type]))
+  const groupFieldTypeByPath = new Map(
+    schema.repeatingGroups.map(g => [g.path, new Map(g.fields.map(f => [f.path, f.type]))])
+  )
+
+  return {
+    ...layout,
+    elements: layout.elements.map(el => {
+      if (el.type === 'text' && !el.fieldType) {
+        const fieldType = fieldTypeByPath.get(el.binding)
+        return fieldType ? { ...el, fieldType } : el
+      }
+      if (el.type === 'table') {
+        const columnTypes = groupFieldTypeByPath.get(el.binding)
+        if (!columnTypes) return el
+        return {
+          ...el,
+          columns: el.columns.map(col => (col.fieldType ? col : { ...col, fieldType: columnTypes.get(col.binding) })),
+        }
+      }
+      return el
+    }),
+  }
 }

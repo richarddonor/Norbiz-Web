@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -186,36 +187,31 @@ export function InventoryBalancePage() {
               className="pl-8 w-56"
             />
           </div>
-          <select
+          <SearchableSelect
             value={warehouseId}
-            onChange={e => setWarehouseId(e.target.value)}
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-          >
-            <option value="">All warehouses</option>
-            {warehouses.map(w => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-          <select
+            onChange={setWarehouseId}
+            options={warehouses.map(w => ({ value: String(w.id), label: w.name }))}
+            placeholder="All warehouses"
+            className="w-44"
+          />
+          <SearchableSelect
             value={itemId}
-            onChange={e => setItemId(e.target.value)}
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-          >
-            <option value="">All items</option>
-            {items.map(i => (
-              <option key={i.id} value={i.id}>{i.itemCode} — {i.name}</option>
-            ))}
-          </select>
-          <select
+            onChange={setItemId}
+            options={items.map(i => ({ value: String(i.id), label: `${i.itemCode} — ${i.name}` }))}
+            placeholder="All items"
+            className="w-52"
+          />
+          <SearchableSelect
             value={mode}
-            onChange={e => setMode(e.target.value as BalanceMode)}
-            title="Current: live running balance. As of Date: balance reconstructed from the ledger. Period: beginning/ending/net for a date range."
-            className="flex h-9 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-          >
-            <option value="current">Current</option>
-            <option value="asOf">As of Date</option>
-            <option value="period">Period</option>
-          </select>
+            onChange={v => setMode((v || 'current') as BalanceMode)}
+            options={[
+              { value: 'current', label: 'Current' },
+              { value: 'asOf', label: 'As of Date' },
+              { value: 'period', label: 'Period' },
+            ]}
+            placeholder="Current"
+            className="w-40"
+          />
           {mode === 'asOf' && (
             <Input
               type="date"
