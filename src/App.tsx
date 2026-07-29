@@ -20,6 +20,7 @@ import { SuppliersPage } from '@/pages/SuppliersPage'
 import { InventoryAdjustmentsPage } from '@/pages/InventoryAdjustmentsPage'
 import { PurchaseOrdersPage } from '@/pages/PurchaseOrdersPage'
 import { PurchaseInvoicesPage } from '@/pages/PurchaseInvoicesPage'
+import { PurchaseReceivesPage } from '@/pages/PurchaseReceivesPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
@@ -41,6 +42,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/inventory-adjustments': InventoryAdjustmentsPage,
   '/purchase-orders': PurchaseOrdersPage,
   '/purchase-invoices': PurchaseInvoicesPage,
+  '/purchase-receives': PurchaseReceivesPage,
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
   '/document-templates': DocumentTemplatesPage,

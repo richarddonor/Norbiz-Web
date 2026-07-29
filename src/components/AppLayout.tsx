@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
-import { ChevronDown, ChevronRight, LogOut, CircleUser, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, LogOut, CircleUser, Search, KeyRound } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -8,6 +8,14 @@ import { navItems } from '@/lib/nav'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { CommandPalette } from '@/components/CommandPalette'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import { useHotkeys } from '@/hooks/useHotkeys'
 
 export type FocusZone = 'content' | 'sidebar'
@@ -38,6 +46,7 @@ export function AppLayout() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [zone, setZone] = useState<FocusZone>('content')
   const [rawSidebarIndex, setRawSidebarIndex] = useState(0)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
 
   // Reset to the content zone on every navigation (mouse or keyboard) —
   // adjusted during render rather than an effect, per this project's convention.
@@ -239,10 +248,25 @@ export function AppLayout() {
               <span className="hidden sm:inline">Search…</span>
               <kbd className="hidden sm:inline px-1 py-0.5 rounded border border-[hsl(var(--border))] text-[10px] font-mono">Ctrl K</kbd>
             </button>
-            <div className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
-              <CircleUser className="w-5 h-5" />
-              <span>{displayName ?? username}</span>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors">
+                  <CircleUser className="w-5 h-5" />
+                  <span>{displayName ?? username}</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setChangePasswordOpen(true)}>
+                  <KeyRound className="w-4 h-4" />
+                  Change Password
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={logout}>
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
@@ -253,6 +277,7 @@ export function AppLayout() {
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <KeyboardShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </div>
   )
 }

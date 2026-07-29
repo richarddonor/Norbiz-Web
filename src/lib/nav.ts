@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Barcode, Warehouse, Contact,
-  Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt,
+  Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -28,6 +28,7 @@ export const navItems: NavItem[] = [
   { to: '/inventory-adjustments', label: 'Inventory Adjustment', icon: ClipboardList, permission: 'VIEW_INVENTORY_ADJUSTMENT', group: 'Inventory' },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, permission: 'VIEW_PURCHASE_ORDER', group: 'Purchases' },
   { to: '/purchase-invoices', label: 'Purchase Invoices', icon: Receipt, permission: 'VIEW_PURCHASE_INVOICE', group: 'Purchases' },
+  { to: '/purchase-receives', label: 'Purchase Receives', icon: PackageCheck, permission: 'VIEW_PURCHASE_RECEIVE', group: 'Purchases' },
   { to: '/reports/inventory-balance', label: 'Inventory Balance', icon: Scale, permission: 'VIEW_INVENTORY_REPORT', group: 'Reports', subGroup: 'Inventory' },
   { to: '/reports/inventory-ledger', label: 'Inventory Ledger', icon: ScrollText, permission: 'VIEW_INVENTORY_REPORT', group: 'Reports', subGroup: 'Inventory' },
   { to: '/users', label: 'Users', icon: Users, permission: 'VIEW_USER', group: 'Access Control' },

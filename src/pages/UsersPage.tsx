@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, Eye, Search, FileDown, KeyRound } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ResetPasswordDialog } from '@/components/ResetPasswordDialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -191,10 +192,12 @@ export function UsersPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('users')
   const { markClean, guardedClose } = useDirtyGuard()
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
 
   const canCreate = hasPermission('CREATE_USER')
   const canUpdate = hasPermission('UPDATE_USER')
   const canDeleteUser = hasPermission('DELETE_USER')
+  const canResetPassword = hasPermission('RESET_USER_PASSWORD')
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: users,
@@ -441,6 +444,12 @@ export function UsersPage() {
             <div key={mode} className="flex justify-end gap-2 pt-2">
               {mode === 'view' ? (
                 <>
+                  {canResetPassword && activeUser && (
+                    <Button type="button" variant="outline" onClick={() => setResetPasswordUser(activeUser)}>
+                      <KeyRound className="w-4 h-4" />
+                      Reset Password
+                    </Button>
+                  )}
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
                   {hasPermission('UPDATE_USER') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
@@ -514,6 +523,11 @@ export function UsersPage() {
                             <Pencil className="w-4 h-4" />
                           </Button>
                         )}
+                        {canResetPassword && (
+                          <Button variant="ghost" size="sm" onClick={() => setResetPasswordUser(user)} title="Reset Password">
+                            <KeyRound className="w-4 h-4" />
+                          </Button>
+                        )}
                         {canDeleteUser && (
                           <Button variant="ghost" size="sm" onClick={() => handleDelete(user)}>
                             <Trash2 className="w-4 h-4 text-[hsl(var(--destructive))]" />
@@ -529,6 +543,13 @@ export function UsersPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+
+      <ResetPasswordDialog
+        open={!!resetPasswordUser}
+        onOpenChange={v => !v && setResetPasswordUser(null)}
+        userId={resetPasswordUser?.id ?? null}
+        username={resetPasswordUser?.username}
+      />
     </div>
   )
 }

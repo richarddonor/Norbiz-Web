@@ -70,7 +70,17 @@ export async function apiFetch<T>(url: string, options: RequestInit = {}): Promi
   })
 
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`)
+    // Backend wraps errors as { message: string } (AppErrorResponse) — surface it when present,
+    // existing callers that ignore err.message and just show a generic toast are unaffected.
+    const text = await response.text()
+    let parsedMessage: string | undefined
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed.message === 'string') parsedMessage = parsed.message
+    } catch {
+      // Not JSON — fall through to the generic status message below
+    }
+    throw new Error(parsedMessage ?? `${response.status} ${response.statusText}`)
   }
 
   return unwrap<T>(await response.text())

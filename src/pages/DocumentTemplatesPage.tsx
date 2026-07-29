@@ -33,6 +33,7 @@ const DOCUMENT_TYPES = [
   { value: 'INVENTORY_ADJUSTMENT', label: 'Inventory Adjustment' },
   { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
   { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice' },
+  { value: 'PURCHASE_RECEIVE', label: 'Purchase Receive' },
 ]
 
 interface DocumentTemplate {
