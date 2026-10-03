@@ -9,15 +9,18 @@ interface DocumentTemplateResponse {
   layout: string
 }
 
-/** Fetches the company's default template for a document type and prints a record
+/** Fetches a template (the company's default for the document type unless one is picked) and prints a record
  * through the shared TemplateRenderer, via a portal kept off-screen except in @media print. */
 export function useDocumentPrint() {
   const [printState, setPrintState] = useState<{ layout: TemplateLayout; data: Record<string, unknown> } | null>(null)
 
-  const print = useCallback(async (companyId: number, documentType: string, data: Record<string, unknown>) => {
+  /** Prints with `templateId` when given, otherwise with the company's default template for the type. */
+  const print = useCallback(async (companyId: number, documentType: string, data: Record<string, unknown>, templateId?: number) => {
     const [template, schema] = await Promise.all([
       apiFetch<DocumentTemplateResponse>(
-        `/document-templates/default?companyId=${companyId}&documentType=${encodeURIComponent(documentType)}`
+        templateId !== undefined
+          ? `/document-templates/${templateId}`
+          : `/document-templates/default?companyId=${companyId}&documentType=${encodeURIComponent(documentType)}`
       ),
       apiFetch<DocumentSchema>(`/document-templates/schema?documentType=${encodeURIComponent(documentType)}`),
     ])

@@ -95,13 +95,17 @@ function ElementContent({
     )
   }
 
-  // table (rendered without grid/table chrome — just the repeated record data)
+  // table (rendered without grid/table chrome — just the repeated record data, plus an
+  // optional separator under each row when the table's style sets borderColor)
   const rows = data ? (Array.isArray(data[el.binding]) ? (data[el.binding] as Record<string, unknown>[]) : []) : null
   const previewRows: Record<string, unknown>[] = rows ?? [{}, {}]
+  const rowSeparator = el.style?.borderColor
+    ? { borderBottom: `${el.style.borderWidth ?? 1}px solid ${el.style.borderColor}` }
+    : undefined
   return (
     <div style={{ fontSize: el.style?.fontSize ?? 11 }}>
       {previewRows.map((row, i) => (
-        <div key={i} className="flex gap-2">
+        <div key={i} className="flex gap-2" style={rowSeparator}>
           {el.columns.map(col => {
             const raw = data ? resolveField(row, col.binding) : ''
             const value = data ? formatFieldValue(raw, col.fieldType, resolveDisplayName) : ''

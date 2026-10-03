@@ -151,10 +151,13 @@ export function DocumentTemplatesPage() {
     setMode('view')
   }
 
-  function openEdit(template: DocumentTemplate) {
+  async function openEdit(template: DocumentTemplate) {
     if (!rec.isRecordTab) return rec.open('edit', template)
-    setActiveTemplate(template)
-    const nextForm = templateToForm(template)
+    // List rows and long-lived record tabs hold snapshots; editing a stale one would re-send an
+    // outdated Default flag on save and silently take the default back from another template.
+    const fresh = await apiFetch<DocumentTemplate>(`/document-templates/${template.id}`).catch(() => template)
+    setActiveTemplate(fresh)
+    const nextForm = templateToForm(fresh)
     setForm(nextForm)
     markClean(nextForm)
     setMode('edit')
@@ -179,7 +182,8 @@ export function DocumentTemplatesPage() {
     setLoading(true)
     try {
       const companyId = mode === 'create' ? activeCompanyId : activeTemplate!.companyId
-      const body = { companyId, ...form, layout: mode === 'create' ? JSON.stringify(emptyLayout()) : activeTemplate!.layout }
+      // On edit, layout is omitted so the backend keeps the stored one — the designer owns it.
+      const body = { companyId, ...form, ...(mode === 'create' ? { layout: JSON.stringify(emptyLayout()) } : {}) }
       if (mode === 'create') {
         const created = await apiFetch<DocumentTemplate>('/document-templates', { method: 'POST', body: JSON.stringify(body) })
         toast('Template created — opening the designer…', 'success')
@@ -307,7 +311,7 @@ export function DocumentTemplatesPage() {
                     </Button>
                   )}
                   {canManage && (
-                    <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
+                    <Button type="button" onClick={() => activeTemplate && openEdit(activeTemplate)}>Edit</Button>
                   )}
                 </>
               ) : (

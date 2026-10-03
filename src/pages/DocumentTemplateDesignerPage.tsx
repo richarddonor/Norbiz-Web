@@ -131,16 +131,11 @@ export function DocumentTemplateDesignerPage() {
     if (!template) return
     setSaving(true)
     try {
-      await apiFetch(`/document-templates/${template.id}`, {
+      // Layout-only endpoint: this tab's copy of name/default/active may be stale (e.g. another
+      // template has since been made the default), and a full PUT would silently revert them.
+      await apiFetch(`/document-templates/${template.id}/layout`, {
         method: 'PUT',
-        body: JSON.stringify({
-          companyId: template.companyId,
-          documentType: template.documentType,
-          name: template.name,
-          layout: JSON.stringify(layout),
-          defaultTemplate: template.defaultTemplate,
-          active: template.active,
-        }),
+        body: JSON.stringify({ layout: JSON.stringify(layout) }),
       })
       toast('Layout saved.', 'success')
     } catch {
@@ -385,6 +380,28 @@ export function DocumentTemplateDesignerPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => updateElement(selected.id, { style: { ...selected.style, fillColor: 'transparent' } })}
+                    >
+                      None
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {selected.type === 'table' && (
+                <div className="space-y-1.5">
+                  <Label>Row separator</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="color"
+                      value={selected.style?.borderColor ?? '#e5e7eb'}
+                      onChange={e => updateElement(selected.id, { style: { ...selected.style, borderColor: e.target.value } })}
+                      className="h-9 p-1 w-16"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => updateElement(selected.id, { style: { ...selected.style, borderColor: undefined } })}
                     >
                       None
                     </Button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Eye, Search, FileDown, Printer, Ban } from 'lucide-react'
+import { Plus, Eye, Search, FileDown, Ban } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -18,7 +18,7 @@ import { TransactionActionsMenu, TransactionHistory } from '@/components/Transac
 import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
-import { useDocumentPrint } from '@/hooks/useDocumentPrint'
+import { PrintButton } from '@/components/PrintButton'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
@@ -175,8 +175,6 @@ export function PurchaseReceivesPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-receives')
   const { markClean, guardedClose } = useDirtyGuard()
-  const { print, printPortal } = useDocumentPrint()
-  const [printing, setPrinting] = useState(false)
 
   const canCreate = hasPermission('CREATE_PURCHASE_RECEIVE')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
@@ -363,19 +361,12 @@ export function PurchaseReceivesPage() {
     exportToXlsx('purchase-receives', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
-  async function handlePrint() {
+  function printFailed() {
     if (!activeReceive) return
-    setPrinting(true)
-    try {
-      await print(activeReceive.companyId, 'PURCHASE_RECEIVE', activeReceive as unknown as Record<string, unknown>)
-    } catch {
-      toast(
-        `No default print template configured for Purchase Receives under ${activeReceive.companyName}. Create one under Document Templates while ${activeReceive.companyName} is your active company.`,
-        'error'
-      )
-    } finally {
-      setPrinting(false)
-    }
+    toast(
+      `No active print template configured for Purchase Receives under ${activeReceive.companyName}. Create one under Document Templates while ${activeReceive.companyName} is your active company.`,
+      'error'
+    )
   }
 
   async function handleVoid() {
@@ -484,10 +475,12 @@ export function PurchaseReceivesPage() {
                   </Button>
                 )}
                 {canPrint && (
-                  <Button type="button" variant="outline" onClick={handlePrint} loading={printing}>
-                    <Printer className="w-4 h-4" />
-                    Print
-                  </Button>
+                  <PrintButton
+                    companyId={activeReceive.companyId}
+                    documentType="PURCHASE_RECEIVE"
+                    data={activeReceive as unknown as Record<string, unknown>}
+                    onError={printFailed}
+                  />
                 )}
                 <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
               </div>
@@ -693,7 +686,6 @@ export function PurchaseReceivesPage() {
         </CardContent>
       </Card>
       </>)}
-      {printPortal}
     </div>
   )
 }

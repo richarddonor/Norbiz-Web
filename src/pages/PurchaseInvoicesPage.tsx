@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Eye, Search, FileDown, Printer, Ban, X } from 'lucide-react'
+import { Plus, Eye, Search, FileDown, Ban, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -18,7 +18,7 @@ import { TransactionActionsMenu, TransactionHistory } from '@/components/Transac
 import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
-import { useDocumentPrint } from '@/hooks/useDocumentPrint'
+import { PrintButton } from '@/components/PrintButton'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
@@ -194,8 +194,6 @@ export function PurchaseInvoicesPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-invoices')
   const { markClean, guardedClose } = useDirtyGuard()
-  const { print, printPortal } = useDocumentPrint()
-  const [printing, setPrinting] = useState(false)
 
   const canCreate = hasPermission('CREATE_PURCHASE_INVOICE')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
@@ -410,19 +408,12 @@ export function PurchaseInvoicesPage() {
     exportToXlsx('purchase-invoices', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
-  async function handlePrint() {
+  function printFailed() {
     if (!activeInvoice) return
-    setPrinting(true)
-    try {
-      await print(activeInvoice.companyId, 'PURCHASE_INVOICE', activeInvoice as unknown as Record<string, unknown>)
-    } catch {
-      toast(
-        `No default print template configured for Purchase Invoices under ${activeInvoice.companyName}. Create one under Document Templates while ${activeInvoice.companyName} is your active company.`,
-        'error'
-      )
-    } finally {
-      setPrinting(false)
-    }
+    toast(
+      `No active print template configured for Purchase Invoices under ${activeInvoice.companyName}. Create one under Document Templates while ${activeInvoice.companyName} is your active company.`,
+      'error'
+    )
   }
 
   async function handleVoid() {
@@ -561,10 +552,12 @@ export function PurchaseInvoicesPage() {
                   </Button>
                 )}
                 {canPrint && (
-                  <Button type="button" variant="outline" onClick={handlePrint} loading={printing}>
-                    <Printer className="w-4 h-4" />
-                    Print
-                  </Button>
+                  <PrintButton
+                    companyId={activeInvoice.companyId}
+                    documentType="PURCHASE_INVOICE"
+                    data={activeInvoice as unknown as Record<string, unknown>}
+                    onError={printFailed}
+                  />
                 )}
                 <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
               </div>
@@ -864,7 +857,6 @@ export function PurchaseInvoicesPage() {
         </CardContent>
       </Card>
       </>)}
-      {printPortal}
     </div>
   )
 }
