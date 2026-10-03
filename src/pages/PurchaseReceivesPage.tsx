@@ -25,7 +25,8 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, type LookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { StockCell } from '@/components/StockCell'
 import { formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
 
@@ -169,6 +170,8 @@ export function PurchaseReceivesPage() {
     ? (sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices).find(src => src.id === sourceId)
     : undefined
   const warehouseName = warehouseId ? selectedSource?.warehouseName ?? '' : ''
+  // A receive moves stock from transit into on hand, so both balances are shown as a guide while creating.
+  const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-receives')
   const { markClean, guardedClose } = useDirtyGuard()
@@ -568,6 +571,17 @@ export function PurchaseReceivesPage() {
                   columns={[
                     { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
                     { key: 'outstanding', label: 'Outstanding', align: 'right', width: '8rem', render: line => line.outstanding },
+                    {
+                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem',
+                      render: line => <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''} />,
+                    },
+                    {
+                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem',
+                      render: line => (
+                        <StockCell stock={stock} field="transitQuantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''}
+                          short={available => line.quantity.trim() !== '' && Number(line.quantity) > available} />
+                      ),
+                    },
                     {
                       key: 'quantity', label: 'Receive Now', align: 'right', width: '9rem',
                       render: (line, i) => (

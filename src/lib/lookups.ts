@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchAllContent } from '@/hooks/usePagedList'
+import { apiFetch } from '@/lib/api'
 
 // Dropdown data comes from the backend's slim `/lookups/*` endpoints (see
 // ../Norbiz/docs/LIST_FILTERING.md "Dropdown lookups"), never from the full list
@@ -90,3 +91,58 @@ export function useLookup<T>(
 }
 
 const EMPTY: never[] = []
+
+/** Live balance of one item in one warehouse (`/lookups/stock`). */
+export interface StockRow {
+  itemId: number
+  warehouseId: number
+  /** on hand */
+  quantity: number
+  /** in transit */
+  transitQuantity: number
+}
+
+/**
+ * Current stock for the given items in one warehouse, keyed by itemId. Backs the
+ * create-only On Hand / In Transit guide columns on inventory transaction lines.
+ * Rows are kept while more items are added (only the new ones show as loading),
+ * and dropped when the warehouse or company changes. Refetches whenever the set of
+ * items changes, so a newly picked item gets its balance.
+ */
+export function useStock(
+  companyId: number | '' | null | undefined,
+  warehouseId: number | '' | null | undefined,
+  itemIds: (number | '')[],
+  options?: { enabled?: boolean; onError?: () => void },
+): Map<number, StockRow> {
+  const enabled = options?.enabled ?? true
+  const ids = [...new Set(itemIds.filter((id): id is number => id !== ''))].sort((a, b) => a - b)
+  const scope = enabled && companyId && warehouseId ? `${companyId}:${warehouseId}` : null
+  const url = scope && ids.length > 0
+    ? `/lookups/stock?companyId=${companyId}&warehouseId=${warehouseId}&itemIds=${ids.join(',')}`
+    : null
+
+  const [state, setState] = useState<{ scope: string | null; rows: Map<number, StockRow> }>({ scope: null, rows: new Map() })
+
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    apiFetch<StockRow[]>(url)
+      .then(rows => {
+        if (cancelled) return
+        setState(prev => {
+          const next = new Map(prev.scope === scope ? prev.rows : [])
+          for (const r of rows) next.set(r.itemId, r)
+          return { scope, rows: next }
+        })
+      })
+      .catch(() => { if (!cancelled) options?.onError?.() })
+    return () => { cancelled = true }
+    // options.onError is intentionally not a dependency — callers pass inline lambdas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url])
+
+  return scope && state.scope === scope ? state.rows : EMPTY_STOCK
+}
+
+const EMPTY_STOCK = new Map<number, StockRow>()

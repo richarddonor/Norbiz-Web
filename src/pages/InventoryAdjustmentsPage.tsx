@@ -17,7 +17,8 @@ import { useContentFocus } from '@/components/AppLayout'
 import { TransactionActionsMenu, TransactionHistory } from '@/components/TransactionActivity'
 import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
-import { useLookup, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { StockCell } from '@/components/StockCell'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { useDocumentPrint } from '@/hooks/useDocumentPrint'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
@@ -136,6 +137,8 @@ export function InventoryAdjustmentsPage() {
   const lookupCompanyId = companyId || activeCompanyId
   const formWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
   const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
+  // An adjustment posts to on-hand quantity only, so that's the balance shown as a guide while creating.
+  const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-adjustments')
   const { markClean, guardedClose } = useDirtyGuard()
@@ -441,6 +444,13 @@ export function InventoryAdjustmentsPage() {
                           onChange={v => updateLine(i, { itemId: v ? Number(v) : '' })}
                           options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
                         />
+                      ),
+                    },
+                    {
+                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem',
+                      render: line => (
+                        <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''}
+                          short={available => line.quantity.trim() !== '' && available + Number(line.quantity) < 0} />
                       ),
                     },
                     {

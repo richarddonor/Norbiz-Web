@@ -25,7 +25,8 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { StockCell } from '@/components/StockCell'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
 
@@ -143,6 +144,8 @@ export function PurchaseOrdersPage() {
   const formWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
   const formSuppliers = useLookup<LookupOption>('suppliers', lookupCompanyId, { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load suppliers.', 'error') })
   const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
+  // A PO posts to transit quantity only, so that's the balance shown as a guide while creating.
+  const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-orders')
   const { markClean, guardedClose } = useDirtyGuard()
@@ -477,6 +480,10 @@ export function PurchaseOrdersPage() {
                           options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
                         />
                       ),
+                    },
+                    {
+                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem',
+                      render: line => <StockCell stock={stock} field="transitQuantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''} />,
                     },
                     {
                       key: 'quantity', label: 'Quantity', align: 'right', width: '8rem',

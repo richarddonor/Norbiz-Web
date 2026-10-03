@@ -23,3 +23,11 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return '—'
   return `${formatDate(iso)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+/** Stock quantities: thousands-separated, up to 4 decimals (the backend's scale), no trailing zeros. */
+export function formatQuantity(qty: number | string | null | undefined): string {
+  if (qty === null || qty === undefined || qty === '') return '—'
+  const num = typeof qty === 'string' ? Number(qty) : qty
+  if (Number.isNaN(num)) return '—'
+  return num.toLocaleString('en-PH', { maximumFractionDigits: 4 })
+}

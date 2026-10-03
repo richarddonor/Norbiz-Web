@@ -25,7 +25,8 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { StockCell } from '@/components/StockCell'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
 
@@ -187,6 +188,9 @@ export function PurchaseInvoicesPage() {
   const openPurchaseOrders = useLookup<TransactionLookupOption>('purchase-orders', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load purchase orders.', 'error') })
   const eligiblePurchaseOrders = supplierId ? openPurchaseOrders.filter(po => po.supplierId === supplierId) : []
   const selectedPurchaseOrder = purchaseOrderId ? eligiblePurchaseOrders.find(po => po.id === purchaseOrderId) ?? null : null
+  // A Direct invoice posts to transit quantity, so that's the balance shown as a guide while creating.
+  // A PO-based one posts nothing (the PO already did), so it shows no stock column at all.
+  const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating && invoiceMode === 'DIRECT', onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-invoices')
   const { markClean, guardedClose } = useDirtyGuard()
@@ -672,6 +676,10 @@ export function PurchaseInvoicesPage() {
                           />
                         )
                       },
+                    },
+                    invoiceMode === 'DIRECT' && {
+                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem',
+                      render: line => <StockCell stock={stock} field="transitQuantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''} />,
                     },
                     {
                       key: 'quantity', label: 'Quantity', align: 'right', width: '7rem',
