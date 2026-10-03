@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -224,8 +224,8 @@ export function CustomersPage() {
       await apiFetch(`/customers/${customer.id}`, { method: 'DELETE' })
       toast('Customer deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete customer.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete customer.'), 'error')
     }
   }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -274,8 +274,8 @@ export function RolesPage() {
       await apiFetch(`/roles/${role.id}`, { method: 'DELETE' })
       toast('Role deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete role.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete role.'), 'error')
     }
   }
 

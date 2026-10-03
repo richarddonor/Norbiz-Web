@@ -23,7 +23,9 @@ export function ToastContextProvider({ children }: { children: ReactNode }) {
   const toast = useCallback((title: string, variant: ToastVariant = 'default') => {
     const id = ++idCounter
     setToasts(prev => [...prev, { id, title, variant }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000)
+    // ~60ms per character so longer explanations (e.g. why a delete was blocked) stay readable.
+    const duration = Math.min(10000, Math.max(4000, title.length * 60))
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
   }, [])
 
   return (

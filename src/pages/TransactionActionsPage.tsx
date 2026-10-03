@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -306,8 +306,8 @@ export function TransactionActionsPage() {
       toast('Transaction action deleted.', 'success')
       reload()
     } catch (err) {
-      // Blocked once taken or used as a prerequisite — the backend says so; suggest deactivating.
-      toast(err instanceof Error && err.message ? `${err.message} Deactivate it instead.` : 'Failed to delete transaction action.', 'error')
+      // Blocked once taken or used as a prerequisite — the backend's message says what to do instead.
+      toast(deleteErrorMessage(err, 'Failed to delete transaction action.'), 'error')
     }
   }
 

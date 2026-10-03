@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, ImageOff, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch, apiUpload } from '@/lib/api'
+import { apiFetch, apiUpload, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -44,6 +44,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'itemCode', label: 'Item Code' },
     { key: 'name', label: 'Name' },
     { key: 'category', label: 'Category' },
+    { key: 'group', label: 'Item Group' },
     { key: 'skus', label: 'SKUs' },
     { key: 'unitPrice', label: 'Unit Price' },
     { key: 'tags', label: 'Tags' },
@@ -79,6 +80,8 @@ interface Item {
   companyName: string
   itemCategoryId: number
   itemCategoryName: string
+  itemGroupId: number | null
+  itemGroupName: string | null
   itemCode: string
   name: string
   imagePath: string | null
@@ -92,6 +95,7 @@ type ItemForm = {
   itemCode: string
   name: string
   categoryId: number | ''
+  groupId: number | ''
   skus: string[]
   prices: Record<PriceType, string>
   tags: Set<string>
@@ -107,6 +111,7 @@ function formToPayload(form: ItemForm, companyId: number) {
     itemCode: form.itemCode,
     name: form.name,
     itemCategoryId: form.categoryId,
+    itemGroupId: form.groupId === '' ? null : form.groupId,
     skus: form.skus,
     prices: PRICE_TYPES
       .filter(t => form.prices[t] !== '')
@@ -124,6 +129,7 @@ function itemToForm(item: Item): ItemForm {
     itemCode: item.itemCode,
     name: item.name,
     categoryId: item.itemCategoryId,
+    groupId: item.itemGroupId ?? '',
     skus: item.skus,
     prices,
     tags: new Set(item.tags),
@@ -140,7 +146,7 @@ function itemUnitPrice(item: Item): string {
 }
 
 function itemSearchText(item: Item): string {
-  return [item.itemCode, item.name, item.itemCategoryName, item.companyName, ...item.skus, itemUnitPrice(item), ...item.tags].join(' ')
+  return [item.itemCode, item.name, item.itemCategoryName, item.itemGroupName ?? '', item.companyName, ...item.skus, itemUnitPrice(item), ...item.tags].join(' ')
 }
 
 // ── Image display / picker ────────────────────────────────────────────────────
@@ -214,6 +220,7 @@ function ItemFormFields({
   form,
   setForm,
   categories,
+  groups,
   allSkus,
   currentImagePath,
   onFileSelected,
@@ -226,6 +233,7 @@ function ItemFormFields({
   form: ItemForm
   setForm: React.Dispatch<React.SetStateAction<ItemForm>>
   categories: LookupOption[]
+  groups: LookupOption[]
   allSkus: ItemSku[]
   currentImagePath: string | null
   onFileSelected: (f: File | null) => void
@@ -259,6 +267,19 @@ function ItemFormFields({
                   value={form.categoryId === '' ? '' : String(form.categoryId)}
                   onChange={v => setForm(f => ({ ...f, categoryId: v ? Number(v) : '' }))}
                   options={categories.map(c => ({ value: String(c.id), label: c.name }))}
+                />
+              )}
+            </DocCell>
+            <DocCell label="Item Group" htmlFor="form-group">
+              {ro ? (
+                <Input id="form-group" value={groups.find(g => g.id === form.groupId)?.name ?? '—'} readOnly />
+              ) : (
+                <SearchableSelect
+                  id="form-group"
+                  value={form.groupId === '' ? '' : String(form.groupId)}
+                  onChange={v => setForm(f => ({ ...f, groupId: v ? Number(v) : '' }))}
+                  options={groups.map(g => ({ value: String(g.id), label: g.name }))}
+                  placeholder="None"
                 />
               )}
             </DocCell>
@@ -384,11 +405,17 @@ export function ItemsPage() {
     fetchRecord: id => fetchAllContent<Item>('/items', 100000).then(all => { const found = all.find(r => String(r.id) === id); if (!found) throw new Error('not found'); return found }),
   })
   const [activeItem, setActiveItem]   = useState<Item | null>(null)
-  const [form, setForm]               = useState<ItemForm>({ itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() })
+  const [form, setForm]               = useState<ItemForm>({ itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set() })
   const [companyId, setCompanyId]     = useState<number | ''>('')
   // Categories belong to the item's company: the picked company on create, the record's own otherwise.
   const categoryCompanyId = (mode === 'create' ? companyId : activeItem?.companyId) || activeCompanyId
   const categories = useLookup<LookupOption>('item-categories', categoryCompanyId, { enabled: inRecordTab, onError: () => toast('Failed to load categories.', 'error') })
+  const activeGroups = useLookup<LookupOption>('item-groups', categoryCompanyId, { enabled: inRecordTab, onError: () => toast('Failed to load item groups.', 'error') })
+  // The lookup only returns active groups; keep an item's current (possibly deactivated) group selectable.
+  const groups = useMemo(() => {
+    if (!activeItem?.itemGroupId || activeGroups.some(g => g.id === activeItem.itemGroupId)) return activeGroups
+    return [...activeGroups, { id: activeItem.itemGroupId, companyId: activeItem.companyId, code: null, name: activeItem.itemGroupName ?? '', active: false }]
+  }, [activeGroups, activeItem])
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imageVersions, setImageVersions] = useState<Record<number, number>>({})
@@ -450,7 +477,7 @@ export function ItemsPage() {
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
     setActiveItem(null)
-    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() }
+    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set() }
     const nextCompanyId = activeCompanyId ?? ''
     setForm(nextForm)
     setCompanyId(nextCompanyId)
@@ -525,8 +552,8 @@ export function ItemsPage() {
       await apiFetch(`/items/${item.id}`, { method: 'DELETE' })
       toast('Item deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete item.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete item.'), 'error')
     }
   }
 
@@ -539,6 +566,7 @@ export function ItemsPage() {
       itemCode: item.itemCode,
       name: item.name,
       category: item.itemCategoryName,
+      group: item.itemGroupName ?? '',
       company: item.companyName,
       skus: item.skus.join(', '),
       unitPrice: formatCurrency(itemUnitPrice(item)),
@@ -603,6 +631,7 @@ export function ItemsPage() {
               form={form}
               setForm={setForm}
               categories={categories}
+              groups={groups}
               allSkus={allSkus}
               currentImagePath={activeItem?.imagePath ?? null}
               onFileSelected={setSelectedFile}
@@ -643,6 +672,7 @@ export function ItemsPage() {
                 {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
                 {isVisible('category') && <th className="text-left py-2 px-4 font-medium">Category</th>}
+                {isVisible('group') && <th className="text-left py-2 px-4 font-medium">Item Group</th>}
                 {isVisible('skus') && <th className="text-left py-2 px-4 font-medium">SKUs</th>}
                 {isVisible('unitPrice') && <th className="text-left py-2 px-4 font-medium">Unit Price</th>}
                 {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
@@ -689,6 +719,7 @@ export function ItemsPage() {
                     {isVisible('itemCode') && <td className="py-2 px-4 font-mono text-xs">{item.itemCode}</td>}
                     {isVisible('name') && <td className="py-2 px-4">{item.name}</td>}
                     {isVisible('category') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.itemCategoryName}</td>}
+                    {isVisible('group') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.itemGroupName ?? '—'}</td>}
                     {isVisible('skus') && (
                       <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
                         {item.skus.length > 0 ? item.skus.join(', ') : '—'}

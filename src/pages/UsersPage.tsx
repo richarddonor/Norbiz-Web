@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown, KeyRound } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { DocLetterhead } from '@/components/CompanyField'
@@ -318,8 +318,8 @@ export function UsersPage() {
       await apiFetch(`/users/${user.id}`, { method: 'DELETE' })
       toast('User deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete user.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete user.'), 'error')
     }
   }
 

@@ -11,7 +11,7 @@ export interface LookupOption {
   id: number
   /** null for system-wide (Role) and multi-company (User) records */
   companyId: number | null
-  /** item code / employee code / username / role name; null for item categories */
+  /** item code / employee code / username / role name / item group BN initials; null for item categories */
   code: string | null
   /** display name; employees are "First Last", users their display name */
   name: string

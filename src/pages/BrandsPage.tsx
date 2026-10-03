@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -194,8 +194,8 @@ export function BrandsPage() {
       await apiFetch(`/brands/${brand.id}`, { method: 'DELETE' })
       toast('Brand deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete brand.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete brand.'), 'error')
     }
   }
 

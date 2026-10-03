@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -247,8 +247,8 @@ export function EmployeesPage() {
       await apiFetch(`/employees/${employee.id}`, { method: 'DELETE' })
       toast('Employee deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete employee.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete employee.'), 'error')
     }
   }
 

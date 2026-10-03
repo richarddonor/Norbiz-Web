@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
-  LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Barcode, Warehouse, Contact,
+  LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Boxes, Barcode, Warehouse, Contact,
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
 } from 'lucide-react'
 
@@ -22,6 +22,7 @@ export const navItems: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/items', label: 'Items', icon: Package, permission: 'VIEW_ITEM', group: 'Catalog', recordLabel: 'Item' },
   { to: '/item-categories', label: 'Item Categories', icon: Layers, permission: 'VIEW_ITEM_CATEGORY', group: 'Catalog', recordLabel: 'Item Category' },
+  { to: '/item-groups', label: 'Item Groups', icon: Boxes, permission: 'VIEW_ITEM_GROUP', group: 'Catalog', recordLabel: 'Item Group' },
   { to: '/item-skus', label: 'Item SKUs', icon: Barcode, permission: 'VIEW_ITEM', group: 'Catalog', recordLabel: 'Item SKU' },
   { to: '/brands', label: 'Brands', icon: Tag, permission: 'VIEW_BRAND', group: 'Catalog', recordLabel: 'Brand' },
   { to: '/warehouses', label: 'Warehouses', icon: Warehouse, permission: 'VIEW_WAREHOUSE', group: 'Catalog', recordLabel: 'Warehouse' },

@@ -136,7 +136,9 @@ const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; ac
         role="tabpanel"
         hidden={!active}
         onFocus={e => { lastFocused.current = e.target as HTMLElement }}
-        className="absolute inset-0 overflow-y-auto p-6"
+        // Record tabs drop the bottom padding so the form's action bar sits flush against
+        // the bottom edge — nothing scrolls past it.
+        className={cn('absolute inset-0 overflow-y-auto p-6', isRecord && 'pb-0')}
       >
         <PageRoutes location={tab.location} />
       </div>

@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Pencil, Trash2, Eye, Search, LayoutTemplate } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -205,8 +205,8 @@ export function DocumentTemplatesPage() {
       await apiFetch(`/document-templates/${template.id}`, { method: 'DELETE' })
       toast('Template deleted.', 'success')
       reload()
-    } catch {
-      toast('Failed to delete template.', 'error')
+    } catch (err) {
+      toast(deleteErrorMessage(err, 'Failed to delete template.'), 'error')
     }
   }
 

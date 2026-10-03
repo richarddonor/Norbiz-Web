@@ -5,7 +5,7 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSignatures } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocText, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -25,19 +25,22 @@ import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+type FormMode = 'view' | 'create' | 'edit'
+
 interface CompanyOption {
   id: number
   name: string
 }
 
-type FormMode = 'view' | 'create' | 'edit'
-
-interface Warehouse {
+interface ItemGroup {
   id: number
   companyId: number
   companyName: string
-  code: string | null
   name: string
+  description: string | null
+  bnInitials: string | null
+  commissionRate: number
+  focalCommissionRate: number
   active: boolean
   createdAt: string | null
   updatedAt: string | null
@@ -45,17 +48,24 @@ interface Warehouse {
   updatedBy: string | null
 }
 
-type WarehouseForm = {
-  code: string
+type GroupForm = {
   name: string
+  description: string
+  bnInitials: string
+  commissionRate: string
+  focalCommissionRate: string
   active: boolean
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
-  columns.push({ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' })
   columns.push(
+    { key: 'name', label: 'Name' },
+    { key: 'description', label: 'Description' },
+    { key: 'bnInitials', label: 'BN Initials' },
+    { key: 'commissionRate', label: 'Commission %' },
+    { key: 'focalCommissionRate', label: 'Focal Commission %' },
     { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
     { key: 'updatedAt', label: 'Last updated', type: 'date' },
@@ -63,19 +73,34 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   return columns
 }
 
-function emptyForm(): WarehouseForm {
-  return { code: '', name: '', active: true }
+/** Commission rates are server-side only filterable as text, so they're excluded from the filter row. */
+const UNFILTERABLE = new Set(['commissionRate', 'focalCommissionRate'])
+
+function emptyForm(): GroupForm {
+  return { name: '', description: '', bnInitials: '', commissionRate: '0', focalCommissionRate: '0', active: true }
 }
 
-function warehouseToForm(w: Warehouse): WarehouseForm {
-  return { code: w.code ?? '', name: w.name, active: w.active }
+function groupToForm(g: ItemGroup): GroupForm {
+  return {
+    name: g.name,
+    description: g.description ?? '',
+    bnInitials: g.bnInitials ?? '',
+    commissionRate: String(g.commissionRate),
+    focalCommissionRate: String(g.focalCommissionRate),
+    active: g.active,
+  }
 }
 
-function warehouseSearchText(w: Warehouse): string {
-  return [w.code ?? '', w.name, w.companyName, w.active ? 'active' : 'inactive', w.createdBy ?? '', w.updatedBy ?? ''].join(' ')
+function formatRate(rate: number | string | null | undefined): string {
+  if (rate === null || rate === undefined || rate === '') return '—'
+  return `${Number(rate).toFixed(2)}%`
 }
 
-export function WarehousesPage() {
+function groupSearchText(g: ItemGroup): string {
+  return [g.name, g.description ?? '', g.bnInitials ?? '', g.companyName, g.active ? 'active' : 'inactive', g.createdBy ?? '', g.updatedBy ?? ''].join(' ')
+}
+
+export function ItemGroupsPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
@@ -91,41 +116,41 @@ export function WarehousesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: warehouses, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<Warehouse>('/warehouses', {
+  const { items: groups, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<ItemGroup>('/item-groups', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load warehouses.', 'error'),
+    onError: () => toast('Failed to load item groups.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
-    searchText: warehouseSearchText,
+    searchText: groupSearchText,
   })
 
-  const [mode, setMode]                   = useState<FormMode>('view')
-  const rec = useRecordTab<Warehouse>({
+  const [mode, setMode]               = useState<FormMode>('view')
+  const rec = useRecordTab<ItemGroup>({
     mode,
     onOpen: { view: openView, edit: openEdit, create: openCreate },
     onRequestClose: requestClose,
-    fetchRecord: id => apiFetch<Warehouse>(`/warehouses/${id}`),
+    fetchRecord: id => apiFetch<ItemGroup>(`/item-groups/${id}`),
   })
-  const [activeWarehouse, setActiveWarehouse] = useState<Warehouse | null>(null)
-  const [form, setForm]                   = useState<WarehouseForm>(emptyForm())
-  const [companyId, setCompanyId]         = useState<number | ''>('')
-  const [loading, setLoading]             = useState(false)
+  const [activeGroup, setActiveGroup] = useState<ItemGroup | null>(null)
+  const [form, setForm]               = useState<GroupForm>(emptyForm)
+  const [companyId, setCompanyId]     = useState<number | ''>('')
+  const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('warehouses')
+  const { isVisible, toggle: toggleColumn } = useColumnVisibility('item-groups')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
-  const canCreate = hasPermission('CREATE_WAREHOUSE')
-  const canUpdate = hasPermission('UPDATE_WAREHOUSE')
-  const canDeleteWarehouse = hasPermission('DELETE_WAREHOUSE')
+  const canCreate = hasPermission('CREATE_ITEM_GROUP')
+  const canUpdate = hasPermission('UPDATE_ITEM_GROUP')
+  const canDeleteGroup = hasPermission('DELETE_ITEM_GROUP')
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
-    items: warehouses,
+    items: groups,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
-    onDelete: canDeleteWarehouse ? handleDelete : undefined,
+    onDelete: canDeleteGroup ? handleDelete : undefined,
     canEdit: canUpdate,
-    canDelete: canDeleteWarehouse,
+    canDelete: canDeleteGroup,
     enabled: !inRecordTab && zone === 'content',
   })
 
@@ -143,19 +168,19 @@ export function WarehousesPage() {
     }
   }, [])
 
-  function openView(warehouse: Warehouse) {
-    if (!rec.isRecordTab) return rec.open('view', warehouse)
-    setActiveWarehouse(warehouse)
-    const nextForm = warehouseToForm(warehouse)
+  function openView(group: ItemGroup) {
+    if (!rec.isRecordTab) return rec.open('view', group)
+    setActiveGroup(group)
+    const nextForm = groupToForm(group)
     setForm(nextForm)
     markClean({ form: nextForm, companyId })
     setMode('view')
   }
 
-  function openEdit(warehouse: Warehouse) {
-    if (!rec.isRecordTab) return rec.open('edit', warehouse)
-    setActiveWarehouse(warehouse)
-    const nextForm = warehouseToForm(warehouse)
+  function openEdit(group: ItemGroup) {
+    if (!rec.isRecordTab) return rec.open('edit', group)
+    setActiveGroup(group)
+    const nextForm = groupToForm(group)
     setForm(nextForm)
     markClean({ form: nextForm, companyId })
     setMode('edit')
@@ -163,7 +188,7 @@ export function WarehousesPage() {
 
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
-    setActiveWarehouse(null)
+    setActiveGroup(null)
     const nextForm = emptyForm()
     const nextCompanyId = activeCompanyId ?? ''
     setForm(nextForm)
@@ -182,63 +207,74 @@ export function WarehousesPage() {
       toast('Select a company.', 'error')
       return
     }
-    if (!window.confirm(mode === 'create' ? `Create warehouse "${form.name}"?` : `Save changes to warehouse "${form.name}"?`)) return
+    if (!window.confirm(mode === 'create' ? `Create item group "${form.name}"?` : `Save changes to item group "${form.name}"?`)) return
     setLoading(true)
     try {
-      const submitCompanyId = mode === 'create' ? companyId : activeWarehouse!.companyId
-      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, active: form.active }
+      const body = {
+        companyId: mode === 'create' ? companyId : activeGroup!.companyId,
+        name: form.name,
+        description: form.description || null,
+        bnInitials: form.bnInitials || null,
+        commissionRate: Number(form.commissionRate),
+        focalCommissionRate: Number(form.focalCommissionRate),
+        active: form.active,
+      }
       if (mode === 'create') {
-        await apiFetch<Warehouse>('/warehouses', { method: 'POST', body: JSON.stringify(body) })
-        toast('Warehouse created successfully.', 'success')
+        await apiFetch<ItemGroup>('/item-groups', { method: 'POST', body: JSON.stringify(body) })
+        toast('Item group created successfully.', 'success')
       } else {
-        await apiFetch<Warehouse>(`/warehouses/${activeWarehouse!.id}`, { method: 'PUT', body: JSON.stringify(body) })
-        toast('Warehouse updated successfully.', 'success')
+        await apiFetch<ItemGroup>(`/item-groups/${activeGroup!.id}`, { method: 'PUT', body: JSON.stringify(body) })
+        toast('Item group updated successfully.', 'success')
       }
       rec.close()
       reload()
-    } catch {
-      toast(mode === 'create' ? 'Failed to create warehouse.' : 'Failed to update warehouse.', 'error')
+    } catch (err) {
+      const fallback = mode === 'create' ? 'Failed to create item group.' : 'Failed to update item group.'
+      toast(err instanceof Error && err.message ? err.message : fallback, 'error')
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleDelete(warehouse: Warehouse) {
-    if (!window.confirm(`Delete warehouse "${warehouse.name}"?`)) return
+  async function handleDelete(group: ItemGroup) {
+    if (!window.confirm(`Delete item group "${group.name}"?`)) return
     try {
-      await apiFetch(`/warehouses/${warehouse.id}`, { method: 'DELETE' })
-      toast('Warehouse deleted.', 'success')
+      await apiFetch(`/item-groups/${group.id}`, { method: 'DELETE' })
+      toast('Item group deleted.', 'success')
       reload()
     } catch (err) {
-      toast(deleteErrorMessage(err, 'Failed to delete warehouse.'), 'error')
+      toast(deleteErrorMessage(err, 'Failed to delete item group.'), 'error')
     }
   }
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<Warehouse>(qs ? `/warehouses?${qs}` : '/warehouses', 100000)
+    const all = await fetchAllContent<ItemGroup>(qs ? `/item-groups?${qs}` : '/item-groups', 100000)
     const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(w => warehouseSearchText(w).toLowerCase().includes(term)) : all
-    const rows = matching.map(w => ({
-      code: w.code ?? '',
-      name: w.name,
-      company: w.companyName,
-      active: w.active ? 'Yes' : 'No',
-      createdBy: resolveDisplayName(w.createdBy),
-      updatedAt: formatDateTime(w.updatedAt),
+    const matching = term ? all.filter(g => groupSearchText(g).toLowerCase().includes(term)) : all
+    const rows = matching.map(g => ({
+      name: g.name,
+      description: g.description ?? '',
+      bnInitials: g.bnInitials ?? '',
+      commissionRate: formatRate(g.commissionRate),
+      focalCommissionRate: formatRate(g.focalCommissionRate),
+      active: g.active ? 'Yes' : 'No',
+      company: g.companyName,
+      createdBy: resolveDisplayName(g.createdBy),
+      updatedAt: formatDateTime(g.updatedAt),
     }))
-    exportToXlsx('warehouses', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('item-groups', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
-  const recordName = activeWarehouse?.name ?? ''
-  const tabTitle = mode === 'create' ? 'New Warehouse' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Warehouse'
+  const recordName = activeGroup?.name ?? ''
+  const tabTitle = mode === 'create' ? 'New Item Group' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Item Group'
   const ro = mode === 'view'
 
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">Warehouses</h1>
+        <h1 className="text-2xl font-bold">Item Groups</h1>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
@@ -246,7 +282,7 @@ export function WarehousesPage() {
               ref={searchInputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search warehouses… (/)"
+              placeholder="Search groups… (/)"
               className="pl-8 w-56"
             />
           </div>
@@ -274,29 +310,29 @@ export function WarehousesPage() {
             <DocSheet>
               <DocLetterhead company={
                   <CompanyField
-                    id="warehouse-company"
+                    id="group-company"
                     readOnly={mode !== 'create' || !showCompanyColumn}
-                    name={mode === 'create' ? activeCompany?.name : activeWarehouse?.companyName}
+                    name={mode === 'create' ? activeCompany?.name : activeGroup?.companyName}
                     companies={companyOptions}
                     value={companyId}
                     onChange={setCompanyId}
                     autoFocus={mode === 'create' && showCompanyColumn}
                   />
               }>
-                <DocHeader title="Warehouse Record">
+                <DocHeader title="Item Group Record">
                   <DocRow>
-                    <DocCell label="Code" htmlFor="warehouse-code">
+                    <DocCell label="BN Initials" htmlFor="group-bn-initials">
                       <Input
-                        id="warehouse-code"
-                        value={form.code}
+                        id="group-bn-initials"
+                        value={form.bnInitials}
                         readOnly={ro}
-                        autoFocus={!(mode === 'create' && showCompanyColumn)}
-                        onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+                        maxLength={20}
+                        onChange={e => setForm(f => ({ ...f, bnInitials: e.target.value }))}
                       />
                     </DocCell>
                     <DocCell label="Status">
                       <DocCheck
-                        id="warehouse-active"
+                        id="group-active"
                         label="Active"
                         checked={form.active}
                         disabled={ro}
@@ -307,22 +343,55 @@ export function WarehousesPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow>
-                <DocCell label="Warehouse Name" htmlFor="warehouse-name">
+                <DocCell label="Name" htmlFor="group-name">
                   <Input
-                    id="warehouse-name"
+                    id="group-name"
                     value={form.name}
                     readOnly={ro}
+                    maxLength={255}
+                    autoFocus={!(mode === 'create' && showCompanyColumn)}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                     required={!ro}
                   />
                 </DocCell>
               </DocRow>
-              {ro && activeWarehouse && (
+              <DocRow>
+                <DocCell label="Description" htmlFor="group-description">
+                  <Input
+                    id="group-description"
+                    value={form.description}
+                    readOnly={ro}
+                    maxLength={255}
+                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  />
+                </DocCell>
+              </DocRow>
+              <DocRow>
+                <DocCell label="Commission Rate (%)" htmlFor="group-commission-rate" align="right">
+                  {ro ? (
+                    <DocText className="tabular-nums">{formatRate(form.commissionRate)}</DocText>
+                  ) : (
+                    <Input id="group-commission-rate" type="number" step="0.01" min="0" max="100" className="text-right"
+                      value={form.commissionRate} required
+                      onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))} />
+                  )}
+                </DocCell>
+                <DocCell label="Focal Commission Rate (%)" htmlFor="group-focal-commission-rate" align="right">
+                  {ro ? (
+                    <DocText className="tabular-nums">{formatRate(form.focalCommissionRate)}</DocText>
+                  ) : (
+                    <Input id="group-focal-commission-rate" type="number" step="0.01" min="0" max="100" className="text-right"
+                      value={form.focalCommissionRate} required
+                      onChange={e => setForm(f => ({ ...f, focalCommissionRate: e.target.value }))} />
+                  )}
+                </DocCell>
+              </DocRow>
+              {ro && activeGroup && (
                 <DocSignatures entries={[
-                  { label: 'Created by', value: resolveDisplayName(activeWarehouse.createdBy) },
-                  { label: 'Created at', value: formatDateTime(activeWarehouse.createdAt) },
-                  { label: 'Last updated by', value: resolveDisplayName(activeWarehouse.updatedBy) },
-                  { label: 'Last updated at', value: formatDateTime(activeWarehouse.updatedAt) },
+                  { label: 'Created by', value: resolveDisplayName(activeGroup.createdBy) },
+                  { label: 'Created at', value: formatDateTime(activeGroup.createdAt) },
+                  { label: 'Last updated by', value: resolveDisplayName(activeGroup.updatedBy) },
+                  { label: 'Last updated at', value: formatDateTime(activeGroup.updatedAt) },
                 ]} />
               )}
             </DocSheet>
@@ -331,7 +400,7 @@ export function WarehousesPage() {
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
-                  {hasPermission('UPDATE_WAREHOUSE') && (
+                  {canUpdate && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
@@ -356,8 +425,11 @@ export function WarehousesPage() {
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
+                {isVisible('description') && <th className="text-left py-2 px-4 font-medium">Description</th>}
+                {isVisible('bnInitials') && <th className="text-left py-2 px-4 font-medium">BN Initials</th>}
+                {isVisible('commissionRate') && <th className="text-right py-2 px-4 font-medium">Commission %</th>}
+                {isVisible('focalCommissionRate') && <th className="text-right py-2 px-4 font-medium">Focal Commission %</th>}
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
@@ -368,54 +440,58 @@ export function WarehousesPage() {
                 isVisible={isVisible}
                 values={filters}
                 onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
+                filterable={key => !UNFILTERABLE.has(key)}
               />
             </thead>
             <tbody>
-              {warehouses.length === 0 ? (
+              {groups.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No warehouses match your search/filters.' : 'No warehouses to display.'}
+                    {isFiltering ? 'No groups match your search/filters.' : 'No item groups to display.'}
                   </td>
                 </tr>
               ) : (
-                warehouses.map((warehouse, i) => (
+                groups.map((group, i) => (
                   <tr
-                    key={warehouse.id}
-                    onClick={() => { setActiveIndex(i); openView(warehouse) }}
+                    key={group.id}
+                    onClick={() => { setActiveIndex(i); openView(group) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{warehouse.companyName}</td>}
-                    {isVisible('code') && <td className="py-2 px-4 font-mono text-xs">{warehouse.code ?? '—'}</td>}
-                    {isVisible('name') && <td className="py-2 px-4 font-medium">{warehouse.name}</td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{group.companyName}</td>}
+                    {isVisible('name') && <td className="py-2 px-4 font-medium">{group.name}</td>}
+                    {isVisible('description') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{group.description || '—'}</td>}
+                    {isVisible('bnInitials') && <td className="py-2 px-4 font-mono text-xs">{group.bnInitials || '—'}</td>}
+                    {isVisible('commissionRate') && <td className="py-2 px-4 text-right tabular-nums">{formatRate(group.commissionRate)}</td>}
+                    {isVisible('focalCommissionRate') && <td className="py-2 px-4 text-right tabular-nums">{formatRate(group.focalCommissionRate)}</td>}
                     {isVisible('active') && (
                       <td className="py-2 px-4">
                         <span className={cn(
                           'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium',
-                          warehouse.active
+                          group.active
                             ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
                             : 'bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))]'
                         )}>
-                          {warehouse.active ? 'Active' : 'Inactive'}
+                          {group.active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                     )}
-                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(warehouse.createdBy)}</td>}
-                    {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(warehouse.updatedAt)}</td>}
+                    {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(group.createdBy)}</td>}
+                    {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(group.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openView(warehouse)}>
+                        <Button variant="ghost" size="sm" onClick={() => openView(group)}>
                           <Eye className="w-4 h-4" />
                         </Button>
                         {canUpdate && (
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(warehouse)}>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(group)}>
                             <Pencil className="w-4 h-4" />
                           </Button>
                         )}
-                        {canDeleteWarehouse && (
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(warehouse)}>
+                        {canDeleteGroup && (
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete(group)}>
                             <Trash2 className="w-4 h-4 text-[hsl(var(--destructive))]" />
                           </Button>
                         )}

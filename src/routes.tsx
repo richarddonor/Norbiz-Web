@@ -8,6 +8,7 @@ import { UsersPage } from '@/pages/UsersPage'
 import { RolesPage } from '@/pages/RolesPage'
 import { ItemsPage } from '@/pages/ItemsPage'
 import { ItemCategoriesPage } from '@/pages/ItemCategoriesPage'
+import { ItemGroupsPage } from '@/pages/ItemGroupsPage'
 import { ItemSkusPage } from '@/pages/ItemSkusPage'
 import { BrandsPage } from '@/pages/BrandsPage'
 import { WarehousesPage } from '@/pages/WarehousesPage'
@@ -31,6 +32,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/roles': RolesPage,
   '/items': ItemsPage,
   '/item-categories': ItemCategoriesPage,
+  '/item-groups': ItemGroupsPage,
   '/item-skus': ItemSkusPage,
   '/brands': BrandsPage,
   '/warehouses': WarehousesPage,

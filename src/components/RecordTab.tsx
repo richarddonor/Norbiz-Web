@@ -151,10 +151,17 @@ export function RecordSheet({ title, status = 'ready', onRequestClose, className
       </div>
     )
   }
-  return <div className={cn('mx-auto w-full max-w-4xl', className)}>{children}</div>
+  // Fills the tab's height (and stretches the form inside it) so a short form's
+  // RECORD_ACTIONS bar still lands at the bottom of the tab instead of mid-page.
+  return (
+    <div className={cn('mx-auto flex min-h-full w-full max-w-4xl flex-col [&>*]:flex [&>*]:flex-1 [&>*]:flex-col', className)}>
+      {children}
+    </div>
+  )
 }
 
-/** Class for a record form's action-button bar — pinned to the bottom of the tab while
- * the form scrolls, so Save/Post is always one click (or Enter) away. */
+/** Class for a record form's action-button bar — anchored to the bottom of the tab
+ * (pinned while the form scrolls, pushed down when it's short), so Save/Post is always
+ * one click (or Enter) away and nothing scrolls past it. */
 export const RECORD_ACTIONS =
-  'sticky bottom-0 z-20 flex justify-end gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--background))]/85 py-3 backdrop-blur'
+  'sticky bottom-0 z-20 mt-auto flex justify-end gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--background))]/85 py-3 backdrop-blur'
