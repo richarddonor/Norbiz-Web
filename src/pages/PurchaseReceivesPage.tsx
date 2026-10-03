@@ -5,25 +5,29 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocStamp, PendingNumber } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
-import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
+import { TransactionActionsMenu, TransactionHistory } from '@/components/TransactionActivity'
+import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { useDocumentPrint } from '@/hooks/useDocumentPrint'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
+import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { formatDate, formatDateTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { useLookup, type LookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { formatDate } from '@/lib/format'
+import { byLineNumber, cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create'
 type SourceMode = 'PURCHASE_ORDER' | 'PURCHASE_INVOICE'
@@ -33,53 +37,9 @@ interface CompanyOption {
   name: string
 }
 
-interface WarehouseOption {
-  id: number
-  companyId: number
-  name: string
-  active: boolean
-}
-
-interface SupplierOption {
-  id: number
-  companyId: number
-  name: string
-  active: boolean
-}
-
-interface SourceLine {
-  itemId: number
-  itemCode: string
-  itemName: string
-  quantity: string
-  quantityLoaded: string
-}
-
-interface PurchaseOrderOption {
-  id: number
-  companyId: number
-  warehouseId: number
-  supplierId: number
-  referenceNumber: string
-  voided: boolean
-  loaded: boolean
-  lines: SourceLine[]
-}
-
-interface PurchaseInvoiceOption {
-  id: number
-  companyId: number
-  warehouseId: number
-  supplierId: number
-  purchaseOrderId: number | null
-  referenceNumber: string
-  voided: boolean
-  loaded: boolean
-  lines: SourceLine[]
-}
-
 interface ReceiveLine {
   id: number
+  lineNumber: number
   itemId: number
   itemCode: string
   itemName: string
@@ -165,21 +125,24 @@ export function PurchaseReceivesPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: receives, page, setPage, totalPages, totalElements, reload } = usePagedList<PurchaseReceive>('/purchase-receives', {
+  const inRecordTab = useIsRecordTab()
+  const { items: receives, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<PurchaseReceive>('/purchase-receives', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load purchase receives.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: receiveSearchText,
   })
-  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([])
-  const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderOption[]>([])
-  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoiceOption[]>([])
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
-  const [open, setOpen]                       = useState(false)
   const [mode, setMode]                       = useState<FormMode>('view')
+  const rec = useRecordTab<PurchaseReceive>({
+    mode,
+    onOpen: { view: openView, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<PurchaseReceive>(`/purchase-receives/${id}`),
+  })
   const [activeReceive, setActiveReceive]     = useState<PurchaseReceive | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [sourceMode, setSourceMode]           = useState<SourceMode>('PURCHASE_ORDER')
@@ -191,15 +154,23 @@ export function PurchaseReceivesPage() {
   const [sheetNumber, setSheetNumber]         = useState('')
   const [lines, setLines]                     = useState<LineDraft[]>([])
   const [loading, setLoading]                 = useState(false)
-  const formSuppliers = companyId ? suppliers.filter(s => s.companyId === companyId) : suppliers
-  const supplierPurchaseOrders = purchaseOrders.filter(po => po.companyId === companyId && !po.voided && !po.loaded)
-  const supplierPurchaseInvoices = purchaseInvoices.filter(inv => inv.companyId === companyId && inv.purchaseOrderId === null && !inv.voided && !inv.loaded)
-  const eligiblePurchaseOrders = supplierId ? supplierPurchaseOrders.filter(po => po.supplierId === supplierId) : []
-  const eligiblePurchaseInvoices = supplierId ? supplierPurchaseInvoices.filter(inv => inv.supplierId === supplierId) : []
-  const warehouseName = warehouseId ? warehouses.find(w => w.id === warehouseId)?.name ?? '' : ''
+  // Dropdowns are scoped to the form's company (the active company on the list tab).
+  const lookupCompanyId = companyId || activeCompanyId
+  const creating = inRecordTab && mode === 'create'
+  const warehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: !inRecordTab, onError: () => toast('Failed to load warehouses.', 'error') })
+  const formSuppliers = useLookup<LookupOption>('suppliers', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load suppliers.', 'error') })
+  // The lookups' openOnly default already drops voided/fully-loaded sources, and for invoices
+  // keeps only Direct-mode ones (a PO-based invoice is received against its PO instead).
+  const openPurchaseOrders = useLookup<TransactionLookupOption>('purchase-orders', lookupCompanyId, { enabled: creating && sourceMode === 'PURCHASE_ORDER', onError: () => toast('Failed to load purchase orders.', 'error') })
+  const openPurchaseInvoices = useLookup<TransactionLookupOption>('purchase-invoices', lookupCompanyId, { enabled: creating && sourceMode !== 'PURCHASE_ORDER', onError: () => toast('Failed to load purchase invoices.', 'error') })
+  const eligiblePurchaseOrders = supplierId ? openPurchaseOrders.filter(po => po.supplierId === supplierId) : []
+  const eligiblePurchaseInvoices = supplierId ? openPurchaseInvoices.filter(inv => inv.supplierId === supplierId) : []
+  const selectedSource = sourceId
+    ? (sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices).find(src => src.id === sourceId)
+    : undefined
+  const warehouseName = warehouseId ? selectedSource?.warehouseName ?? '' : ''
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-receives')
-  const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
   const { print, printPortal } = useDocumentPrint()
   const [printing, setPrinting] = useState(false)
@@ -208,31 +179,21 @@ export function PurchaseReceivesPage() {
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
   const canVoid = hasPermission('VOID_PURCHASE_RECEIVE')
   const [voiding, setVoiding] = useState(false)
+  const activity = useTransactionActivity('PURCHASE_RECEIVE', inRecordTab && mode === 'view' ? activeReceive?.id : null, activeReceive?.referenceNumber, activeReceive?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: receives,
     onView: openView,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
-    fetchAllContent<WarehouseOption>('/warehouses')
-      .then(data => setWarehouses(data.filter(w => w.active)))
-      .catch(() => toast('Failed to load warehouses.', 'error'))
-    fetchAllContent<SupplierOption>('/suppliers')
-      .then(data => setSuppliers(data.filter(s => s.active)))
-      .catch(() => toast('Failed to load suppliers.', 'error'))
-    fetchAllContent<PurchaseOrderOption>('/purchase-orders')
-      .then(setPurchaseOrders)
-      .catch(() => toast('Failed to load purchase orders.', 'error'))
-    fetchAllContent<PurchaseInvoiceOption>('/purchase-invoices')
-      .then(setPurchaseInvoices)
-      .catch(() => toast('Failed to load purchase invoices.', 'error'))
     if (isSuperAdmin) {
       fetchAllContent<CompanyOption>('/companies')
         .then(setAllCompanies)
@@ -241,12 +202,13 @@ export function PurchaseReceivesPage() {
   }, [])
 
   function openView(receive: PurchaseReceive) {
+    if (!rec.isRecordTab) return rec.open('view', receive)
     setActiveReceive(receive)
     setMode('view')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveReceive(null)
     const nextCompanyId = activeCompanyId ?? ''
     const nextDate = todayIso()
@@ -264,13 +226,12 @@ export function PurchaseReceivesPage() {
       receiptDate: nextDate, remarks: '', sheetNumber: '', lines: [],
     })
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
     guardedClose(
       { companyId, sourceMode, supplierId, sourceId, warehouseId, receiptDate, remarks, sheetNumber, lines },
-      () => setOpen(false)
+      () => rec.close()
     )
   }
 
@@ -300,8 +261,8 @@ export function PurchaseReceivesPage() {
     setLines([])
   }
 
-  function outstandingLinesOf(source: PurchaseOrderOption | PurchaseInvoiceOption): LineDraft[] {
-    return source.lines
+  function outstandingLinesOf(source: TransactionLookupOption): LineDraft[] {
+    return byLineNumber(source.lines)
       .map(l => {
         const outstanding = (Number(l.quantity) - Number(l.quantityLoaded)).toFixed(4)
         return { itemId: l.itemId, itemCode: l.itemCode, itemName: l.itemName, outstanding, quantity: outstanding }
@@ -372,7 +333,7 @@ export function PurchaseReceivesPage() {
       }
       await apiFetch<PurchaseReceive>('/purchase-receives', { method: 'POST', body: JSON.stringify(body) })
       toast('Purchase receive posted successfully.', 'success')
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast('Failed to post purchase receive.', 'error')
@@ -430,10 +391,12 @@ export function PurchaseReceivesPage() {
     }
   }
 
-  const dialogTitle = mode === 'view' ? 'Purchase Receive Details' : 'New Purchase Receive'
+  const recordName = activeReceive?.referenceNumber ?? ''
+  const tabTitle = mode === 'create' ? 'New Purchase Receive' : recordName || 'Purchase Receive'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Purchase Receives</h1>
         <div className="flex items-center gap-2">
@@ -454,6 +417,7 @@ export function PurchaseReceivesPage() {
             placeholder="All warehouses"
             className="w-44"
           />
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -462,99 +426,54 @@ export function PurchaseReceivesPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Purchase Receive
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
+      </>)}
 
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-3xl">
           {mode === 'view' && activeReceive ? (
-            <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Reference #</Label>
-                  <div className="font-mono flex items-center gap-2">
-                    {activeReceive.referenceNumber}
-                    {activeReceive.voided && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
-                        Voided
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Sheet #</Label>
-                  <div>{activeReceive.sheetNumber ?? '—'}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Warehouse</Label>
-                  <div>{activeReceive.warehouseName}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Supplier</Label>
-                  <div>{activeReceive.supplierName}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Receipt Date</Label>
-                  <div>{formatDate(activeReceive.receiptDate)}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Source</Label>
-                  <div>{sourceLabel(activeReceive)}</div>
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Remarks</Label>
-                  <div>{activeReceive.remarks ?? '—'}</div>
-                </div>
-              </div>
+            <div className="space-y-4">
+              <DocSheet>
+                {activeReceive.voided && <DocStamp text="Voided" />}
+                <DocLetterhead company={<CompanyField id="prcv-company" readOnly name={activeReceive.companyName} />}>
+                  <DocHeader title="Receiving Report" number={activeReceive.referenceNumber}>
+                    <DocRow>
+                      <DocCell label="Receipt Date"><DocText>{formatDate(activeReceive.receiptDate)}</DocText></DocCell>
+                      <DocCell label="Sheet #"><DocText>{activeReceive.sheetNumber}</DocText></DocCell>
+                    </DocRow>
+                  </DocHeader>
+                </DocLetterhead>
+                <DocRow>
+                  <DocCell label="Supplier"><DocText>{activeReceive.supplierName}</DocText></DocCell>
+                  <DocCell label="Received At (Warehouse)"><DocText>{activeReceive.warehouseName}</DocText></DocCell>
+                </DocRow>
+                <DocRow>
+                  <DocCell label="Received Against"><DocText>{sourceLabel(activeReceive)}</DocText></DocCell>
+                </DocRow>
+                <DocLines
+                  rows={byLineNumber(activeReceive.lines)}
+                  rowKey={line => line.id}
+                  lineNumber={line => line.lineNumber}
+                  minRows={5}
+                  columns={[
+                    { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
+                    { key: 'quantity', label: 'Quantity Received', align: 'right', width: '10rem', render: line => line.quantity },
+                  ]}
+                />
+                <DocRow>
+                  <DocCell label="Remarks"><DocText>{activeReceive.remarks}</DocText></DocCell>
+                </DocRow>
+                <TransactionHistory activity={activity} record={activeReceive} />
+              </DocSheet>
 
-              <div className="space-y-1.5">
-                <Label>Lines</Label>
-                <div className="rounded-md border border-[hsl(var(--border))] overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40">
-                        <th className="text-left py-1.5 px-3 font-medium">Item</th>
-                        <th className="text-right py-1.5 px-3 font-medium">Quantity Received</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeReceive.lines.map(line => (
-                        <tr key={line.id} className="border-b border-[hsl(var(--border))] last:border-0">
-                          <td className="py-1.5 px-3">{line.itemCode} — {line.itemName}</td>
-                          <td className="py-1.5 px-3 text-right tabular-nums">{line.quantity}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeReceive.companyName}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span>Posted by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeReceive.createdBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Posted at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeReceive.createdAt)}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className={RECORD_ACTIONS}>
+                <TransactionActionsMenu activity={activity} voided={activeReceive.voided} />
                 {canVoid && !activeReceive.voided && (
                   <Button type="button" variant="outline" onClick={handleVoid} loading={voiding}>
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
@@ -571,129 +490,124 @@ export function PurchaseReceivesPage() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-              {showCompanyColumn && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="prcv-company">Company</Label>
-                  <SearchableSelect
-                    id="prcv-company"
-                    value={companyId === '' ? '' : String(companyId)}
-                    onChange={v => handleCompanyChange(v ? Number(v) : '')}
-                    options={companyOptions.map(c => ({ value: String(c.id), label: c.name }))}
-                    placeholder="Select a company…"
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label htmlFor="prcv-mode">Receive Against</Label>
-                <SearchableSelect
-                  id="prcv-mode"
-                  value={sourceMode}
-                  onChange={v => handleSourceModeChange((v || 'PURCHASE_ORDER') as SourceMode)}
-                  options={[
-                    { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
-                    { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice (Direct)' },
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <DocSheet>
+                <DocLetterhead company={
+                    <CompanyField
+                      id="prcv-company"
+                      readOnly={!showCompanyColumn}
+                      name={companyOptions.find(c => c.id === companyId)?.name}
+                      companies={companyOptions}
+                      value={companyId}
+                      onChange={handleCompanyChange}
+                      autoFocus={showCompanyColumn}
+                    />
+                }>
+                  <DocHeader title="Receiving Report" number={<PendingNumber />}>
+                    <DocRow>
+                      <DocCell label="Receipt Date" htmlFor="prcv-date">
+                        <Input id="prcv-date" type="date" value={receiptDate}
+                          onChange={e => setReceiptDate(e.target.value)} required />
+                      </DocCell>
+                      <DocCell label="Sheet #" htmlFor="prcv-sheet">
+                        <Input id="prcv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      </DocCell>
+                    </DocRow>
+                  </DocHeader>
+                </DocLetterhead>
+                <DocRow>
+                  <DocCell label="Supplier" htmlFor="prcv-supplier">
+                    <SearchableSelect
+                      id="prcv-supplier"
+                      value={supplierId === '' ? '' : String(supplierId)}
+                      onChange={v => handleSupplierChange(v ? Number(v) : '')}
+                      options={formSuppliers.map(s => ({ value: String(s.id), label: s.name }))}
+                      disabled={!companyId}
+                      autoFocus={!showCompanyColumn}
+                    />
+                  </DocCell>
+                  <DocCell label="Received At (Warehouse)">
+                    <DocText className={cn(!warehouseName && 'italic text-[hsl(var(--muted-foreground))]')}>
+                      {warehouseName || 'Derived from the selected source'}
+                    </DocText>
+                  </DocCell>
+                </DocRow>
+                <DocRow>
+                  <DocCell label="Receive Against" htmlFor="prcv-mode">
+                    <SearchableSelect
+                      id="prcv-mode"
+                      value={sourceMode}
+                      onChange={v => handleSourceModeChange((v || 'PURCHASE_ORDER') as SourceMode)}
+                      options={[
+                        { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
+                        { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice (Direct)' },
+                      ]}
+                      disabled={!companyId}
+                    />
+                  </DocCell>
+                  <DocCell label={sourceMode === 'PURCHASE_ORDER' ? 'Purchase Order No.' : 'Purchase Invoice No.'} htmlFor="prcv-source">
+                    <SearchableSelect
+                      id="prcv-source"
+                      value={sourceId === '' ? '' : String(sourceId)}
+                      onChange={v => handleSourceChange(v ? Number(v) : '')}
+                      options={(sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices)
+                        .map(s => ({ value: String(s.id), label: s.referenceNumber }))}
+                      placeholder={supplierId ? undefined : 'Select a supplier first…'}
+                      disabled={!supplierId}
+                    />
+                    {supplierId && (sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices).length === 0 && (
+                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
+                        No open (not voided, not yet fully processed) {sourceMode === 'PURCHASE_ORDER' ? 'purchase orders' : 'Direct purchase invoices'} found for this supplier.
+                      </p>
+                    )}
+                  </DocCell>
+                </DocRow>
+                <DocLines
+                  rows={lines}
+                  rowKey={line => line.itemId}
+                  columns={[
+                    { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
+                    { key: 'outstanding', label: 'Outstanding', align: 'right', width: '8rem', render: line => line.outstanding },
+                    {
+                      key: 'quantity', label: 'Receive Now', align: 'right', width: '9rem',
+                      render: (line, i) => (
+                        <Input
+                          type="number"
+                          step="0.0001"
+                          min="0"
+                          max={line.outstanding}
+                          aria-label={`${line.itemCode} quantity to receive`}
+                          value={line.quantity}
+                          onChange={e => updateLine(i, { quantity: e.target.value })}
+                          className="text-right"
+                        />
+                      ),
+                    },
                   ]}
-                  disabled={!companyId}
-                  autoFocus={!showCompanyColumn}
+                  footer={lines.length === 0 && (
+                    <p className="py-1 text-xs text-[hsl(var(--muted-foreground))]">
+                      Select a source above to load its outstanding (not yet received) items.
+                    </p>
+                  )}
                 />
-              </div>
+                <DocRow>
+                  <DocCell label="Remarks" htmlFor="prcv-remarks">
+                    <Input id="prcv-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  </DocCell>
+                </DocRow>
+                <TransactionHistory pending />
+              </DocSheet>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="prcv-supplier">Supplier</Label>
-                <SearchableSelect
-                  id="prcv-supplier"
-                  value={supplierId === '' ? '' : String(supplierId)}
-                  onChange={v => handleSupplierChange(v ? Number(v) : '')}
-                  options={formSuppliers.map(s => ({ value: String(s.id), label: s.name }))}
-                  placeholder="Select a supplier…"
-                  disabled={!companyId}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="prcv-source">{sourceMode === 'PURCHASE_ORDER' ? 'Purchase Order' : 'Purchase Invoice'}</Label>
-                <SearchableSelect
-                  id="prcv-source"
-                  value={sourceId === '' ? '' : String(sourceId)}
-                  onChange={v => handleSourceChange(v ? Number(v) : '')}
-                  options={(sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices)
-                    .map(s => ({ value: String(s.id), label: s.referenceNumber }))}
-                  placeholder={supplierId ? 'Select a reference…' : 'Select a supplier first…'}
-                  disabled={!supplierId}
-                />
-                {supplierId && (sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices).length === 0 && (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    No open (not voided, not yet fully processed) {sourceMode === 'PURCHASE_ORDER' ? 'purchase orders' : 'Direct purchase invoices'} found for this supplier.
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="prcv-warehouse">Warehouse</Label>
-                <Input id="prcv-warehouse" value={warehouseName} readOnly placeholder="Derived from the selected source" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="prcv-date">Receipt Date</Label>
-                  <Input id="prcv-date" type="date" value={receiptDate}
-                    onChange={e => setReceiptDate(e.target.value)} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="prcv-sheet">Sheet #</Label>
-                  <Input id="prcv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} placeholder="Optional control number" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="prcv-remarks">Remarks</Label>
-                <Input id="prcv-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Optional" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Lines</Label>
-                {lines.length === 0 ? (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    Select a source above to load its outstanding (not yet received) items.
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))] px-1">
-                      <span className="flex-1">Item</span>
-                      <span className="w-24 text-right">Outstanding</span>
-                      <span className="w-28 text-right">Receive Now</span>
-                    </div>
-                    <div className="space-y-2">
-                      {lines.map((line, i) => (
-                        <div key={line.itemId} className="flex items-center gap-2">
-                          <Input readOnly value={`${line.itemCode} — ${line.itemName}`} className="flex-1" />
-                          <Input readOnly value={line.outstanding} className="w-24 text-right" />
-                          <Input
-                            type="number"
-                            step="0.0001"
-                            min="0"
-                            max={line.outstanding}
-                            value={line.quantity}
-                            onChange={e => updateLine(i, { quantity: e.target.value })}
-                            className="w-28"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                 <Button type="submit" loading={loading}>Post Purchase Receive</Button>
               </div>
             </form>
           )}
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -764,6 +678,7 @@ export function PurchaseReceivesPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
       {printPortal}
     </div>
   )

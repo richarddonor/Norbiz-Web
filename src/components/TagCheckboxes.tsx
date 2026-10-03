@@ -1,4 +1,4 @@
-import { Label } from '@/components/ui/label'
+import { DocCell, DocCheck, DocText } from '@/components/ui/doc-form'
 
 interface TagOption {
   value: string
@@ -14,36 +14,30 @@ interface Props {
 }
 
 /** Checkbox group for entity tags (e.g. Item tags, Employee tags) — a fixed,
- * backend-defined enum rendered as toggleable chips-in-a-box, same shape as
- * the Roles/Companies selectors on the Users page. */
+ * backend-defined enum rendered as a row of paper-form tick boxes inside one
+ * `DocCell`. */
 export function TagCheckboxes({ label, options, selected, onToggle, readOnly }: Props) {
   if (readOnly) {
     const chosen = options.filter(o => selected.has(o.value))
     return (
-      <div className="space-y-1.5">
-        <Label>{label}</Label>
-        <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
-          {chosen.length > 0 ? chosen.map(o => o.label).join(', ') : '—'}
-        </div>
-      </div>
+      <DocCell label={label}>
+        <DocText>{chosen.map(o => o.label).join(', ')}</DocText>
+      </DocCell>
     )
   }
   return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <div className="flex flex-wrap gap-3 rounded-md border border-[hsl(var(--border))] p-3">
+    <DocCell label={label}>
+      <div className="flex flex-wrap">
         {options.map(o => (
-          <label key={o.value} className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selected.has(o.value)}
-              onChange={() => onToggle(o.value)}
-              className="accent-[hsl(var(--primary))]"
-            />
-            {o.label}
-          </label>
+          <DocCheck
+            key={o.value}
+            id={`tag-${label}-${o.value}`}
+            label={o.label}
+            checked={selected.has(o.value)}
+            onChange={() => onToggle(o.value)}
+          />
         ))}
       </div>
-    </div>
+    </DocCell>
   )
 }

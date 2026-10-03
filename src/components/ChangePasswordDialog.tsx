@@ -3,7 +3,7 @@ import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader } from '@/components/ui/doc-form'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 interface Props {
@@ -49,47 +49,55 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={v => (v ? onOpenChange(true) : close())}>
       <DialogContent>
-        <DialogHeader>
+        <DialogHeader className="sr-only">
           <DialogTitle>Change Password</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="current-password">Current Password</Label>
-            <Input
-              id="current-password"
-              type="password"
-              value={form.currentPassword}
-              onChange={e => setForm(f => ({ ...f, currentPassword: e.target.value }))}
-              autoComplete="current-password"
-              autoFocus
-              required
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="new-password">New Password</Label>
-            <Input
-              id="new-password"
-              type="password"
-              value={form.newPassword}
-              onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))}
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="confirm-password">Confirm New Password</Label>
-            <Input
-              id="confirm-password"
-              type="password"
-              value={form.confirmPassword}
-              onChange={e => setForm(f => ({ ...f, confirmPassword: e.target.value }))}
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <DocSheet>
+            <DocRow>
+              <DocHeader title="Change Password" />
+            </DocRow>
+            <DocRow>
+              <DocCell label="Current Password" htmlFor="current-password">
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={form.currentPassword}
+                  onChange={e => setForm(f => ({ ...f, currentPassword: e.target.value }))}
+                  autoComplete="current-password"
+                  autoFocus
+                  required
+                />
+              </DocCell>
+            </DocRow>
+            <DocRow>
+              <DocCell label="New Password" htmlFor="new-password">
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={form.newPassword}
+                  onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+              </DocCell>
+            </DocRow>
+            <DocRow>
+              <DocCell label="Confirm New Password" htmlFor="confirm-password">
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={form.confirmPassword}
+                  onChange={e => setForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+              </DocCell>
+            </DocRow>
+          </DocSheet>
+          <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={close}>Cancel</Button>
             <Button type="submit" loading={loading}>Change Password</Button>
           </div>

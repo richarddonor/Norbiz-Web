@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useWorkspace, useTabInstance } from '@/context/WorkspaceContext'
 import { ArrowLeft, Trash2, Type, Table as TableIcon, Minus, RectangleHorizontal } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
@@ -30,6 +31,8 @@ function newId(): string {
 export function DocumentTemplateDesignerPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const tab = useTabInstance()
+  const { closeTab, setTabTitle } = useWorkspace()
   const { toast } = useToast()
 
   const [template, setTemplate] = useState<DocumentTemplate | null>(null)
@@ -47,6 +50,7 @@ export function DocumentTemplateDesignerPage() {
     apiFetch<DocumentTemplate>(`/document-templates/${id}`)
       .then(t => {
         setTemplate(t)
+        setTabTitle(tab.key, `Design: ${t.name}`)
         try {
           parsedLayout = t.layout ? JSON.parse(t.layout) : emptyLayout()
         } catch {
@@ -157,7 +161,7 @@ export function DocumentTemplateDesignerPage() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between gap-4 pb-4 border-b border-[hsl(var(--border))] mb-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/document-templates')}>
+          <Button variant="ghost" size="sm" onClick={() => { closeTab(tab.key); navigate('/document-templates') }}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>

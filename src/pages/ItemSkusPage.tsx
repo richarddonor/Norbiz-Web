@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useState, useRef, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -17,9 +17,11 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
+import { useLookup, type ItemLookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -46,12 +48,6 @@ interface ItemSku {
   unitPrice: number
 }
 
-interface ItemOption {
-  id: number
-  itemCode: string
-  name: string
-}
-
 type SkuForm = {
   itemId: number | ''
   skuCode: string
@@ -72,7 +68,7 @@ function skuToForm(sku: ItemSku): SkuForm {
 
 export function ItemSkusPage() {
   const { toast } = useToast()
-  const { hasPermission } = useAuth()
+  const { hasPermission, activeCompanyId } = useAuth()
   const { zone } = useContentFocus()
 
   const [search, setSearch] = useState('')
@@ -81,16 +77,22 @@ export function ItemSkusPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: skus, page, setPage, totalPages, totalElements, reload } = usePagedList<ItemSku>('/item-skus', {
+  const inRecordTab = useIsRecordTab()
+  const { items: skus, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<ItemSku>('/item-skus', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load SKUs.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: skuSearchText,
   })
-  const [items, setItems] = useState<ItemOption[]>([])
 
-  const [open, setOpen]           = useState(false)
   const [mode, setMode]           = useState<FormMode>('view')
+  const rec = useRecordTab<ItemSku>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<ItemSku>(`/item-skus/${id}`),
+  })
   const [activeSku, setActiveSku] = useState<ItemSku | null>(null)
   const [form, setForm]           = useState<SkuForm>(emptyForm())
   const [loading, setLoading]     = useState(false)
@@ -109,49 +111,44 @@ export function ItemSkusPage() {
     onDelete: canDeleteSku ? handleDelete : undefined,
     canEdit: canUpdate,
     canDelete: canDeleteSku,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
-
-  useEffect(() => {
-    fetchAllContent<ItemOption>('/items')
-      .then(setItems)
-      .catch(() => toast('Failed to load items.', 'error'))
-  }, [])
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   function openView(sku: ItemSku) {
+    if (!rec.isRecordTab) return rec.open('view', sku)
     setActiveSku(sku)
     const nextForm = skuToForm(sku)
     setForm(nextForm)
     markClean(nextForm)
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(sku: ItemSku) {
+    if (!rec.isRecordTab) return rec.open('edit', sku)
     setActiveSku(sku)
     const nextForm = skuToForm(sku)
     setForm(nextForm)
     markClean(nextForm)
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveSku(null)
     const nextForm = emptyForm()
     setForm(nextForm)
     markClean(nextForm)
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose(form, () => setOpen(false))
+    guardedClose(form, () => rec.close())
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -183,7 +180,7 @@ export function ItemSkusPage() {
         })
         toast('SKU updated successfully.', 'success')
       }
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create SKU.' : 'Failed to update SKU.', 'error')
@@ -217,12 +214,16 @@ export function ItemSkusPage() {
     exportToXlsx('item-skus', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
-  const dialogTitle = mode === 'view' ? 'SKU Details' : mode === 'create' ? 'New SKU' : 'Edit SKU'
+  const recordName = activeSku?.skuCode ?? ''
+  const tabTitle = mode === 'create' ? 'New Item SKU' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Item SKU'
   const ro = mode === 'view'
+  // Item dropdown for the session's active company (an SKU belongs to its item's company).
+  const items = useLookup<ItemLookupOption>('items', activeCompanyId, { enabled: inRecordTab && mode !== 'view', onError: () => toast('Failed to load items.', 'error') })
   const selectedItem = items.find(i => i.id === form.itemId)
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Item SKUs</h1>
         <div className="flex items-center gap-2">
@@ -236,6 +237,7 @@ export function ItemSkusPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -244,74 +246,72 @@ export function ItemSkusPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New SKU
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+      </>)}
 
-            {/* Item — selector on create, read-only display on edit/view */}
-            <div className="space-y-1.5">
-              <Label htmlFor="sku-item">Item</Label>
-              {mode === 'create' ? (
-                <SearchableSelect
-                  id="sku-item"
-                  autoFocus
-                  value={form.itemId === '' ? '' : String(form.itemId)}
-                  onChange={v => setForm(f => ({ ...f, itemId: v ? Number(v) : '' }))}
-                  options={items.map(item => ({ value: String(item.id), label: `${item.itemCode} — ${item.name}` }))}
-                  placeholder="Select an item…"
-                />
-              ) : (
-                <Input
-                  id="sku-item"
-                  autoFocus
-                  value={selectedItem ? `${selectedItem.itemCode} — ${selectedItem.name}` : `${activeSku?.itemCode} — ${activeSku?.itemName}`}
-                  readOnly
-                />
-              )}
-            </div>
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DocSheet>
+              <DocRow cols="3fr 2fr">
+                {/* Item — selector on create, read-only display on edit/view */}
+                <DocCell label="Item" htmlFor="sku-item">
+                  {mode === 'create' ? (
+                    <SearchableSelect
+                      id="sku-item"
+                      autoFocus
+                      value={form.itemId === '' ? '' : String(form.itemId)}
+                      onChange={v => setForm(f => ({ ...f, itemId: v ? Number(v) : '' }))}
+                      options={items.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
+                    />
+                  ) : (
+                    <Input
+                      id="sku-item"
+                      autoFocus
+                      value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : `${activeSku?.itemCode} — ${activeSku?.itemName}`}
+                      readOnly
+                      className="font-semibold"
+                    />
+                  )}
+                </DocCell>
+                <DocHeader title="SKU Record" />
+              </DocRow>
+              <DocRow cols="3fr 2fr">
+                <DocCell label="SKU Code" htmlFor="sku-code">
+                  <Input
+                    id="sku-code"
+                    value={form.skuCode}
+                    readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, skuCode: e.target.value }))}
+                    required={!ro}
+                  />
+                </DocCell>
+                <DocCell label="Unit Price" htmlFor="sku-price" align="right">
+                  {ro ? (
+                    <DocText className="tabular-nums">{formatCurrency(form.unitPrice || null)}</DocText>
+                  ) : (
+                    <Input
+                      id="sku-price"
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      value={form.unitPrice}
+                      onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
+                      className="text-right"
+                      required
+                    />
+                  )}
+                </DocCell>
+              </DocRow>
+            </DocSheet>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="sku-code">SKU Code</Label>
-              <Input
-                id="sku-code"
-                value={form.skuCode}
-                readOnly={ro}
-                onChange={e => setForm(f => ({ ...f, skuCode: e.target.value }))}
-                placeholder={ro ? undefined : 'e.g. SKU-001'}
-                required={!ro}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="sku-price">Unit Price</Label>
-              {ro ? (
-                <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm h-9 flex items-center">
-                  {formatCurrency(form.unitPrice || null)}
-                </div>
-              ) : (
-                <Input
-                  id="sku-price"
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={form.unitPrice}
-                  onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
-                  required
-                />
-              )}
-            </div>
-
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
@@ -329,8 +329,10 @@ export function ItemSkusPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -396,6 +398,7 @@ export function ItemSkusPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
     </div>
   )
 }

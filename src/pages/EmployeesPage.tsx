@@ -5,9 +5,9 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSection, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -18,10 +18,12 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { TagCheckboxes } from '@/components/TagCheckboxes'
-import { CompanyField } from '@/components/CompanyField'
+import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
+import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -32,12 +34,6 @@ const EMPLOYEE_TAGS = [{ value: 'AGENT', label: 'Agent' }]
 interface CompanyOption {
   id: number
   name: string
-}
-
-interface UserOption {
-  id: number
-  username: string
-  displayName: string | null
 }
 
 interface Employee {
@@ -120,18 +116,27 @@ export function EmployeesPage() {
   const debouncedSearch = useDebouncedValue(search)
   const isFiltering = !!debouncedSearch.trim()
 
-  const { items: employees, page, setPage, totalPages, totalElements, reload } = usePagedList<Employee>('/employees', {
+  const inRecordTab = useIsRecordTab()
+  const { items: employees, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<Employee>('/employees', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load employees.', 'error'),
     search: debouncedSearch,
     searchText: employeeSearchText,
   })
-  const [allUsers, setAllUsers] = useState<UserOption[]>([])
 
-  const [open, setOpen]                   = useState(false)
   const [mode, setMode]                   = useState<FormMode>('view')
+  const rec = useRecordTab<Employee>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<Employee>(`/employees/${id}`),
+  })
   const [activeEmployee, setActiveEmployee] = useState<Employee | null>(null)
   const [form, setForm]                   = useState<EmployeeForm>(emptyForm())
   const [companyId, setCompanyId]         = useState<number | ''>('')
+  // Linkable users are members of the employee's company: the picked one on create, the record's own on edit.
+  const userCompanyId = (mode === 'create' ? companyId : activeEmployee?.companyId) || activeCompanyId
+  const allUsers = useLookup<LookupOption>('users', userCompanyId, { enabled: inRecordTab && mode !== 'view', onError: () => toast('Failed to load users.', 'error') })
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('employees')
@@ -149,18 +154,16 @@ export function EmployeesPage() {
     onDelete: canDeleteEmployee ? handleDelete : undefined,
     canEdit: canUpdate,
     canDelete: canDeleteEmployee,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
-    fetchAllContent<UserOption>('/users')
-      .then(setAllUsers)
-      .catch(() => toast('Failed to load users.', 'error'))
     if (isSuperAdmin) {
       fetchAllContent<CompanyOption>('/companies')
         .then(setAllCompanies)
@@ -169,24 +172,25 @@ export function EmployeesPage() {
   }, [])
 
   function openView(employee: Employee) {
+    if (!rec.isRecordTab) return rec.open('view', employee)
     setActiveEmployee(employee)
     const nextForm = employeeToForm(employee)
     setForm(nextForm)
     markClean({ form: nextForm, companyId })
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(employee: Employee) {
+    if (!rec.isRecordTab) return rec.open('edit', employee)
     setActiveEmployee(employee)
     const nextForm = employeeToForm(employee)
     setForm(nextForm)
     markClean({ form: nextForm, companyId })
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveEmployee(null)
     const nextForm = emptyForm()
     const nextCompanyId = activeCompanyId ?? ''
@@ -194,11 +198,10 @@ export function EmployeesPage() {
     setCompanyId(nextCompanyId)
     markClean({ form: nextForm, companyId: nextCompanyId })
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose({ form, companyId }, () => setOpen(false))
+    guardedClose({ form, companyId }, () => rec.close())
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -229,7 +232,7 @@ export function EmployeesPage() {
         await apiFetch<Employee>(`/employees/${activeEmployee!.id}`, { method: 'PUT', body: JSON.stringify(body) })
         toast('Employee updated successfully.', 'success')
       }
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create employee.' : 'Failed to update employee.', 'error')
@@ -267,11 +270,13 @@ export function EmployeesPage() {
     exportToXlsx('employees', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
-  const dialogTitle = mode === 'view' ? 'Employee Details' : mode === 'create' ? 'New Employee' : 'Edit Employee'
+  const recordName = activeEmployee ? `${activeEmployee.lastName}, ${activeEmployee.firstName}` : ''
+  const tabTitle = mode === 'create' ? 'New Employee' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Employee'
   const ro = mode === 'view'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Employees</h1>
         <div className="flex items-center gap-2">
@@ -285,6 +290,7 @@ export function EmployeesPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -293,111 +299,100 @@ export function EmployeesPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Employee
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <CompanyField
-              id="emp-company"
-              readOnly={mode !== 'create' || !showCompanyColumn}
-              name={mode === 'create' ? activeCompany?.name : activeEmployee?.companyName}
-              companies={companyOptions}
-              value={companyId}
-              onChange={setCompanyId}
-              autoFocus={mode === 'create' && showCompanyColumn}
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="emp-code">Employee Code</Label>
-                <Input id="emp-code" value={form.employeeCode} readOnly={ro} autoFocus={!(mode === 'create' && showCompanyColumn)}
-                  onChange={e => setForm(f => ({ ...f, employeeCode: e.target.value }))} required={!ro} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="emp-phone">Phone</Label>
-                <Input id="emp-phone" value={form.phone} readOnly={ro}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="emp-first">First Name</Label>
-                <Input id="emp-first" value={form.firstName} readOnly={ro}
-                  onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} required={!ro} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="emp-last">Last Name</Label>
-                <Input id="emp-last" value={form.lastName} readOnly={ro}
-                  onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} required={!ro} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="emp-email">Email</Label>
-              <Input id="emp-email" type={ro ? 'text' : 'email'} value={form.email} readOnly={ro}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="emp-user">Linked User</Label>
-              {ro ? (
-                <Input id="emp-user" value={activeEmployee?.username ?? '—'} readOnly />
-              ) : (
-                <SearchableSelect
-                  id="emp-user"
-                  value={form.userId === '' ? '' : String(form.userId)}
-                  onChange={v => setForm(f => ({ ...f, userId: v ? Number(v) : '' }))}
-                  options={allUsers.map(u => ({ value: String(u.id), label: u.displayName ?? u.username }))}
-                  placeholder="None — not a Norbiz user"
+      </>)}
+
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DocSheet>
+              <DocLetterhead company={
+                  <CompanyField
+                    id="emp-company"
+                    readOnly={mode !== 'create' || !showCompanyColumn}
+                    name={mode === 'create' ? activeCompany?.name : activeEmployee?.companyName}
+                    companies={companyOptions}
+                    value={companyId}
+                    onChange={setCompanyId}
+                    autoFocus={mode === 'create' && showCompanyColumn}
+                  />
+              }>
+                <DocHeader title="Employee Record">
+                  <DocRow>
+                    <DocCell label="Employee No." htmlFor="emp-code">
+                      <Input id="emp-code" value={form.employeeCode} readOnly={ro} autoFocus={!(mode === 'create' && showCompanyColumn)}
+                        onChange={e => setForm(f => ({ ...f, employeeCode: e.target.value }))} required={!ro} />
+                    </DocCell>
+                    <DocCell label="Status">
+                      <DocCheck id="emp-active" label="Active" checked={form.active} disabled={ro}
+                        onChange={active => setForm(f => ({ ...f, active }))} />
+                    </DocCell>
+                  </DocRow>
+                </DocHeader>
+              </DocLetterhead>
+              <DocSection title="Personal Information" />
+              <DocRow>
+                <DocCell label="Last Name" htmlFor="emp-last">
+                  <Input id="emp-last" value={form.lastName} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} required={!ro} />
+                </DocCell>
+                <DocCell label="First Name" htmlFor="emp-first">
+                  <Input id="emp-first" value={form.firstName} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} required={!ro} />
+                </DocCell>
+              </DocRow>
+              <DocSection title="Contact Information" />
+              <DocRow>
+                <DocCell label="Email" htmlFor="emp-email">
+                  <Input id="emp-email" type={ro ? 'text' : 'email'} value={form.email} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+                </DocCell>
+                <DocCell label="Phone" htmlFor="emp-phone">
+                  <Input id="emp-phone" value={form.phone} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                </DocCell>
+              </DocRow>
+              <DocSection title="System Access & Classification" />
+              <DocRow>
+                <DocCell label="Linked User" htmlFor="emp-user">
+                  {ro ? (
+                    <Input id="emp-user" value={activeEmployee?.username ? resolveDisplayName(activeEmployee.username) : '—'} readOnly />
+                  ) : (
+                    <SearchableSelect
+                      id="emp-user"
+                      value={form.userId === '' ? '' : String(form.userId)}
+                      onChange={v => setForm(f => ({ ...f, userId: v ? Number(v) : '' }))}
+                      options={allUsers.map(u => ({ value: String(u.id), label: u.name || u.code || '' }))}
+                      placeholder="None — not a Norbiz user"
+                    />
+                  )}
+                </DocCell>
+                <TagCheckboxes label="Tags" options={EMPLOYEE_TAGS} selected={form.tags} readOnly={ro}
+                  onToggle={value => setForm(f => {
+                    const next = new Set(f.tags)
+                    if (next.has(value)) next.delete(value)
+                    else next.add(value)
+                    return { ...f, tags: next }
+                  })}
                 />
+              </DocRow>
+              {ro && activeEmployee && (
+                <DocSignatures entries={[
+                  { label: 'Created by', value: resolveDisplayName(activeEmployee.createdBy) },
+                  { label: 'Created at', value: formatDateTime(activeEmployee.createdAt) },
+                  { label: 'Last updated by', value: resolveDisplayName(activeEmployee.updatedBy) },
+                  { label: 'Last updated at', value: formatDateTime(activeEmployee.updatedAt) },
+                ]} />
               )}
-            </div>
-            <TagCheckboxes label="Tags" options={EMPLOYEE_TAGS} selected={form.tags} readOnly={ro}
-              onToggle={value => setForm(f => {
-                const next = new Set(f.tags)
-                if (next.has(value)) next.delete(value)
-                else next.add(value)
-                return { ...f, tags: next }
-              })}
-            />
-            <div className="flex items-center gap-2">
-              <input
-                id="emp-active"
-                type="checkbox"
-                checked={form.active}
-                disabled={ro}
-                onChange={e => setForm(f => ({ ...f, active: e.target.checked }))}
-                className="accent-[hsl(var(--primary))]"
-              />
-              <Label htmlFor="emp-active" className="cursor-pointer">Active</Label>
-            </div>
+            </DocSheet>
 
-            {ro && activeEmployee && (
-              <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                <div className="flex justify-between">
-                  <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeEmployee.createdBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Created at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeEmployee.createdAt)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeEmployee.updatedBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last updated at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeEmployee.updatedAt)}</span>
-                </div>
-              </div>
-            )}
-
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
@@ -415,8 +410,10 @@ export function EmployeesPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -497,6 +494,7 @@ export function EmployeesPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
     </div>
   )
 }

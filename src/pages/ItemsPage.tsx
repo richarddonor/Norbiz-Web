@@ -5,9 +5,9 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -17,11 +17,13 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { TagCheckboxes } from '@/components/TagCheckboxes'
-import { CompanyField } from '@/components/CompanyField'
+import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
+import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -64,11 +66,6 @@ const PRICE_LABELS: Record<PriceType, string> = {
 interface PriceEntry {
   priceType: PriceType
   amount: string
-}
-
-interface ItemCategory {
-  id: number
-  name: string
 }
 
 interface ItemSku {
@@ -175,11 +172,10 @@ function ItemImage({
     }
   }
 
-  const containerBase = 'flex items-center justify-center w-full aspect-square rounded-md overflow-hidden'
+  const containerBase = 'flex items-center justify-center w-full aspect-square overflow-hidden'
 
   return (
-    <div className="space-y-2">
-      <Label>Image</Label>
+    <div className="pb-2">
       {readOnly ? (
         <div className={`${containerBase} border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]`}>
           {preview
@@ -213,6 +209,7 @@ function ItemImage({
 
 // ── Form fields ───────────────────────────────────────────────────────────────
 function ItemFormFields({
+  companyField,
   codeAutoFocus,
   form,
   setForm,
@@ -224,10 +221,11 @@ function ItemFormFields({
   cacheBust,
   canViewCostPrice,
 }: {
+  companyField: React.ReactNode
   codeAutoFocus: boolean
   form: ItemForm
   setForm: React.Dispatch<React.SetStateAction<ItemForm>>
-  categories: ItemCategory[]
+  categories: LookupOption[]
   allSkus: ItemSku[]
   currentImagePath: string | null
   onFileSelected: (f: File | null) => void
@@ -241,62 +239,91 @@ function ItemFormFields({
     s.skuCode.toLowerCase().includes(skuSearch.toLowerCase())
   )
   return (
-    <div className="flex gap-6">
-      {/* Left: text fields */}
-      <div className="flex-1 space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="form-code">Item Code</Label>
-          <Input id="form-code" value={form.itemCode} readOnly={ro || mode === 'edit'} autoFocus={codeAutoFocus}
-            onChange={e => setForm(f => ({ ...f, itemCode: e.target.value }))} required={!ro} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="form-name">Name</Label>
-          <Input id="form-name" value={form.name} readOnly={ro}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="form-category">Category</Label>
-          {ro ? (
-            <Input id="form-category" value={categories.find(c => c.id === form.categoryId)?.name ?? '—'} readOnly />
-          ) : (
-            <SearchableSelect
-              id="form-category"
-              value={form.categoryId === '' ? '' : String(form.categoryId)}
-              onChange={v => setForm(f => ({ ...f, categoryId: v ? Number(v) : '' }))}
-              options={categories.map(c => ({ value: String(c.id), label: c.name }))}
-              placeholder="Select a category…"
+    <DocSheet>
+      <DocRow cols="minmax(0, 1fr) 12rem">
+        <div className="flex min-w-0 flex-col">
+          <DocLetterhead company={companyField}>
+            <DocHeader title="Item Record" />
+          </DocLetterhead>
+          <DocRow>
+            <DocCell label="Item Code" htmlFor="form-code">
+              <Input id="form-code" value={form.itemCode} readOnly={ro || mode === 'edit'} autoFocus={codeAutoFocus}
+                onChange={e => setForm(f => ({ ...f, itemCode: e.target.value }))} required={!ro} />
+            </DocCell>
+            <DocCell label="Category" htmlFor="form-category">
+              {ro ? (
+                <Input id="form-category" value={categories.find(c => c.id === form.categoryId)?.name ?? '—'} readOnly />
+              ) : (
+                <SearchableSelect
+                  id="form-category"
+                  value={form.categoryId === '' ? '' : String(form.categoryId)}
+                  onChange={v => setForm(f => ({ ...f, categoryId: v ? Number(v) : '' }))}
+                  options={categories.map(c => ({ value: String(c.id), label: c.name }))}
+                />
+              )}
+            </DocCell>
+          </DocRow>
+          <DocRow>
+            <DocCell label="Item Name / Description" htmlFor="form-name">
+              <Input id="form-name" value={form.name} readOnly={ro}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
+            </DocCell>
+          </DocRow>
+          <DocRow>
+            <TagCheckboxes label="Tags" options={ITEM_TAGS} selected={form.tags} readOnly={ro}
+              onToggle={value => setForm(f => {
+                const next = new Set(f.tags)
+                if (next.has(value)) next.delete(value)
+                else next.add(value)
+                return { ...f, tags: next }
+              })}
             />
-          )}
+          </DocRow>
         </div>
-        <div className="space-y-1.5">
-          <Label>SKU Codes</Label>
+        <DocCell label="Photo">
+          <ItemImage currentPath={currentImagePath} onFileSelected={onFileSelected} readOnly={ro} cacheBust={cacheBust} />
+        </DocCell>
+      </DocRow>
+
+      <DocSection title="Prices" />
+      <DocRow>
+        {PRICE_TYPES.filter(type => type !== 'COST_PRICE' || canViewCostPrice).map(type => (
+          <DocCell key={type} label={PRICE_LABELS[type]} htmlFor={`form-price-${type}`} align="right">
+            {ro ? (
+              <DocText className="tabular-nums">{formatCurrency(form.prices[type] || null)}</DocText>
+            ) : (
+              <Input id={`form-price-${type}`} type="number" step="0.0001" min="0" className="text-right"
+                value={form.prices[type]}
+                onChange={e => setForm(f => ({ ...f, prices: { ...f.prices, [type]: e.target.value } }))} />
+            )}
+          </DocCell>
+        ))}
+      </DocRow>
+
+      <DocSection title="SKU Codes" />
+      <DocRow>
+        <DocCell label={ro ? undefined : 'Search SKUs'} htmlFor="form-sku-search">
           {ro ? (
-            <div className="min-h-9 flex flex-wrap gap-1 py-1">
-              {form.skus.length > 0
-                ? form.skus.map(s => (
-                    <span key={s} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--secondary))] text-[hsl(var(--foreground))]">{s}</span>
-                  ))
-                : <span className="text-sm text-[hsl(var(--muted-foreground))]">—</span>
-              }
-            </div>
+            <DocText>{form.skus.join(', ')}</DocText>
           ) : (
             <>
               <Input
-                placeholder="Search SKUs…"
+                id="form-sku-search"
+                placeholder="Type to filter…"
                 value={skuSearch}
                 onChange={e => setSkuSearch(e.target.value)}
               />
-              <div className="max-h-36 overflow-y-auto rounded-md border border-[hsl(var(--input))] p-2 space-y-0.5">
+              <div className="max-h-36 overflow-y-auto border-t border-[hsl(var(--rule))] py-1 columns-2 sm:columns-3">
                 {filteredSkus.length === 0 ? (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] py-2 text-center">
+                  <p className="text-xs text-[hsl(var(--muted-foreground))] py-2">
                     {allSkus.length === 0 ? 'No SKUs in database.' : 'No SKUs match.'}
                   </p>
                 ) : (
                   filteredSkus.map(sku => (
-                    <label key={sku.id} className="flex items-center gap-2 text-sm cursor-pointer px-1 py-1 rounded hover:bg-[hsl(var(--secondary))]">
+                    <label key={sku.id} className="flex items-center gap-2 text-sm cursor-pointer px-1 py-0.5 break-inside-avoid hover:bg-[hsl(var(--secondary))]">
                       <input
                         type="checkbox"
-                        className="rounded"
+                        className="accent-[hsl(var(--primary))]"
                         checked={form.skus.includes(sku.skuCode)}
                         onChange={e => setForm(f => ({
                           ...f,
@@ -311,46 +338,15 @@ function ItemFormFields({
                 )}
               </div>
               {form.skus.length > 0 && (
-                <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
                   {form.skus.length} selected: {form.skus.join(', ')}
                 </p>
               )}
             </>
           )}
-        </div>
-        <div className="space-y-1.5">
-          <Label>Prices</Label>
-          <div className="grid grid-cols-2 gap-3">
-            {PRICE_TYPES.filter(type => type !== 'COST_PRICE' || canViewCostPrice).map(type => (
-              <div key={type} className="space-y-1">
-                <Label className="text-xs text-[hsl(var(--muted-foreground))]">{PRICE_LABELS[type]}</Label>
-                {ro ? (
-                  <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm h-9 flex items-center">
-                    {formatCurrency(form.prices[type] || null)}
-                  </div>
-                ) : (
-                  <Input type="number" step="0.0001" min="0"
-                    value={form.prices[type]}
-                    onChange={e => setForm(f => ({ ...f, prices: { ...f.prices, [type]: e.target.value } }))} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-        <TagCheckboxes label="Tags" options={ITEM_TAGS} selected={form.tags} readOnly={ro}
-          onToggle={value => setForm(f => {
-            const next = new Set(f.tags)
-            if (next.has(value)) next.delete(value)
-            else next.add(value)
-            return { ...f, tags: next }
-          })}
-        />
-      </div>
-      {/* Right: image panel */}
-      <div className="w-72 shrink-0">
-        <ItemImage currentPath={currentImagePath} onFileSelected={onFileSelected} readOnly={ro} cacheBust={cacheBust} />
-      </div>
-    </div>
+        </DocCell>
+      </DocRow>
+    </DocSheet>
   )
 }
 
@@ -370,20 +366,29 @@ export function ItemsPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items, page, setPage, totalPages, totalElements, reload } = usePagedList<Item>('/items', {
+  const inRecordTab = useIsRecordTab()
+  const { items, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<Item>('/items', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load items.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: itemSearchText,
   })
-  const [categories, setCategories] = useState<ItemCategory[]>([])
   const [allSkus, setAllSkus] = useState<ItemSku[]>([])
 
-  const [open, setOpen]               = useState(false)
   const [mode, setMode]               = useState<FormMode>('view')
+  const rec = useRecordTab<Item>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => fetchAllContent<Item>('/items', 100000).then(all => { const found = all.find(r => String(r.id) === id); if (!found) throw new Error('not found'); return found }),
+  })
   const [activeItem, setActiveItem]   = useState<Item | null>(null)
   const [form, setForm]               = useState<ItemForm>({ itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() })
   const [companyId, setCompanyId]     = useState<number | ''>('')
+  // Categories belong to the item's company: the picked company on create, the record's own otherwise.
+  const categoryCompanyId = (mode === 'create' ? companyId : activeItem?.companyId) || activeCompanyId
+  const categories = useLookup<LookupOption>('item-categories', categoryCompanyId, { enabled: inRecordTab, onError: () => toast('Failed to load categories.', 'error') })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imageVersions, setImageVersions] = useState<Record<number, number>>({})
@@ -402,18 +407,16 @@ export function ItemsPage() {
     onDelete: canDeleteItem ? handleDelete : undefined,
     canEdit: canUpdate,
     canDelete: canDeleteItem,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
-    fetchAllContent<ItemCategory>('/item-categories')
-      .then(setCategories)
-      .catch(() => toast('Failed to load categories.', 'error'))
     fetchAllContent<ItemSku>('/item-skus')
       .then(setAllSkus)
       .catch(() => toast('Failed to load SKUs.', 'error'))
@@ -425,26 +428,27 @@ export function ItemsPage() {
   }, [])
 
   function openView(item: Item) {
+    if (!rec.isRecordTab) return rec.open('view', item)
     setActiveItem(item)
     const nextForm = itemToForm(item)
     setForm(nextForm)
     setSelectedFile(null)
     markClean({ form: nextForm, companyId, hasFile: false })
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(item: Item) {
+    if (!rec.isRecordTab) return rec.open('edit', item)
     setActiveItem(item)
     const nextForm = itemToForm(item)
     setForm(nextForm)
     setSelectedFile(null)
     markClean({ form: nextForm, companyId, hasFile: false })
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveItem(null)
     const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', skus: [], prices: emptyPrices(), tags: new Set() }
     const nextCompanyId = activeCompanyId ?? ''
@@ -453,11 +457,10 @@ export function ItemsPage() {
     setSelectedFile(null)
     markClean({ form: nextForm, companyId: nextCompanyId, hasFile: false })
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose({ form, companyId, hasFile: !!selectedFile }, () => setOpen(false))
+    guardedClose({ form, companyId, hasFile: !!selectedFile }, () => rec.close())
   }
 
   function switchToEdit() {
@@ -507,7 +510,7 @@ export function ItemsPage() {
         }
         toast('Item updated successfully.', 'success')
       }
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create item.' : 'Failed to update item.', 'error')
@@ -544,10 +547,12 @@ export function ItemsPage() {
     exportToXlsx('items', COLUMNS.filter(c => c.key !== 'image' && isVisible(c.key)), rows)
   }
 
-  const dialogTitle = mode === 'view' ? 'Item Details' : mode === 'create' ? 'New Item' : 'Edit Item'
+  const recordName = activeItem?.name ?? ''
+  const tabTitle = mode === 'create' ? 'New Item' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Item'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Items</h1>
         <div className="flex items-center gap-2">
@@ -561,6 +566,7 @@ export function ItemsPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -569,29 +575,30 @@ export function ItemsPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Item
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <CompanyField
-              id="item-company"
-              readOnly={mode !== 'create' || !showCompanyColumn}
-              name={mode === 'create' ? activeCompany?.name : activeItem?.companyName}
-              companies={companyOptions}
-              value={companyId}
-              onChange={setCompanyId}
-              autoFocus={mode === 'create' && showCompanyColumn}
-            />
+      </>)}
+
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-3xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <ItemFormFields
+              companyField={
+                <CompanyField
+                  id="item-company"
+                  readOnly={mode !== 'create' || !showCompanyColumn}
+                  name={mode === 'create' ? activeCompany?.name : activeItem?.companyName}
+                  companies={companyOptions}
+                  value={companyId}
+                  onChange={setCompanyId}
+                  autoFocus={mode === 'create' && showCompanyColumn}
+                />
+              }
               codeAutoFocus={!(mode === 'create' && showCompanyColumn)}
               form={form}
               setForm={setForm}
@@ -603,7 +610,7 @@ export function ItemsPage() {
               cacheBust={activeItem ? imageVersions[activeItem.id] : undefined}
               canViewCostPrice={hasPermission('VIEW_COST_PRICE')}
             />
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
@@ -621,8 +628,10 @@ export function ItemsPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -720,6 +729,7 @@ export function ItemsPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
     </div>
   )
 }

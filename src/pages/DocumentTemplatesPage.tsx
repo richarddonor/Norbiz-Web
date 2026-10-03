@@ -6,9 +6,9 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -19,8 +19,10 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
+import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { formatDateTime } from '@/lib/format'
 import { emptyLayout } from '@/lib/documentTemplate'
 import { cn } from '@/lib/utils'
@@ -84,7 +86,7 @@ function documentTypeLabel(value: string): string {
 
 export function DocumentTemplatesPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn } = useAuth()
   const { zone } = useContentFocus()
   const navigate = useNavigate()
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
@@ -98,15 +100,22 @@ export function DocumentTemplatesPage() {
   const searchText = (t: DocumentTemplate) =>
     [t.name, documentTypeLabel(t.documentType), t.companyName, t.active ? 'active' : 'inactive'].join(' ')
 
-  const { items: templates, page, setPage, totalPages, totalElements, reload } = usePagedList<DocumentTemplate>('/document-templates', {
+  const inRecordTab = useIsRecordTab()
+  const { items: templates, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<DocumentTemplate>('/document-templates', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load document templates.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText,
   })
 
-  const [open, setOpen]                   = useState(false)
   const [mode, setMode]                   = useState<FormMode>('view')
+  const rec = useRecordTab<DocumentTemplate>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<DocumentTemplate>(`/document-templates/${id}`),
+  })
   const [activeTemplate, setActiveTemplate] = useState<DocumentTemplate | null>(null)
   const [form, setForm]                   = useState<TemplateForm>(emptyForm())
   const [loading, setLoading]             = useState(false)
@@ -124,43 +133,44 @@ export function DocumentTemplatesPage() {
     onDelete: canManage ? handleDelete : undefined,
     canEdit: canManage,
     canDelete: canManage,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canManage && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   function openView(template: DocumentTemplate) {
+    if (!rec.isRecordTab) return rec.open('view', template)
     setActiveTemplate(template)
     const nextForm = templateToForm(template)
     setForm(nextForm)
     markClean(nextForm)
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(template: DocumentTemplate) {
+    if (!rec.isRecordTab) return rec.open('edit', template)
     setActiveTemplate(template)
     const nextForm = templateToForm(template)
     setForm(nextForm)
     markClean(nextForm)
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveTemplate(null)
     const nextForm = emptyForm()
     setForm(nextForm)
     markClean(nextForm)
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose(form, () => setOpen(false))
+    guardedClose(form, () => rec.close())
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -173,13 +183,14 @@ export function DocumentTemplatesPage() {
       if (mode === 'create') {
         const created = await apiFetch<DocumentTemplate>('/document-templates', { method: 'POST', body: JSON.stringify(body) })
         toast('Template created — opening the designer…', 'success')
-        setOpen(false)
+        rec.close()
+        reload()
         navigate(`/document-templates/${created.id}/design`)
         return
       }
       await apiFetch<DocumentTemplate>(`/document-templates/${activeTemplate!.id}`, { method: 'PUT', body: JSON.stringify(body) })
       toast('Template updated successfully.', 'success')
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create template.' : 'Failed to update template.', 'error')
@@ -199,11 +210,13 @@ export function DocumentTemplatesPage() {
     }
   }
 
-  const dialogTitle = mode === 'view' ? 'Template Details' : mode === 'create' ? 'New Document Template' : 'Edit Document Template'
+  const recordName = activeTemplate?.name ?? ''
+  const tabTitle = mode === 'create' ? 'New Document Template' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Document Template'
   const ro = mode === 'view'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Document Templates</h1>
         <div className="flex items-center gap-2">
@@ -217,89 +230,73 @@ export function DocumentTemplatesPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           {canManage && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Template
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="template-name">Name</Label>
-              <Input
-                id="template-name"
-                value={form.name}
-                readOnly={ro}
-                autoFocus
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder={ro ? undefined : 'e.g. Default Inventory Adjustment Slip'}
-                required={!ro}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="template-type">Document Type</Label>
-              <SearchableSelect
-                id="template-type"
-                value={form.documentType}
-                disabled={ro || mode === 'edit'}
-                onChange={v => setForm(f => ({ ...f, documentType: v || DOCUMENT_TYPES[0].value }))}
-                options={DOCUMENT_TYPES}
-                placeholder={DOCUMENT_TYPES[0].label}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="template-default"
-                type="checkbox"
-                checked={form.defaultTemplate}
-                disabled={ro}
-                onChange={e => setForm(f => ({ ...f, defaultTemplate: e.target.checked }))}
-                className="accent-[hsl(var(--primary))]"
-              />
-              <Label htmlFor="template-default" className="cursor-pointer">Default for this document type</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="template-active"
-                type="checkbox"
-                checked={form.active}
-                disabled={ro}
-                onChange={e => setForm(f => ({ ...f, active: e.target.checked }))}
-                className="accent-[hsl(var(--primary))]"
-              />
-              <Label htmlFor="template-active" className="cursor-pointer">Active</Label>
-            </div>
+      </>)}
 
-            {ro && activeTemplate && (
-              <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeTemplate.companyName}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeTemplate.updatedBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last updated at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeTemplate.updatedAt)}</span>
-                </div>
-              </div>
-            )}
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DocSheet>
+              <DocLetterhead company={
+                  <CompanyField
+                    id="template-company"
+                    readOnly
+                    name={mode === 'create' ? activeCompany?.name : activeTemplate?.companyName}
+                  />
+              }>
+                <DocHeader title="Document Template">
+                  <DocRow>
+                    <DocCell label="Status">
+                      <DocCheck id="template-active" label="Active" checked={form.active} disabled={ro}
+                        onChange={active => setForm(f => ({ ...f, active }))} />
+                      <DocCheck id="template-default" label="Default" checked={form.defaultTemplate} disabled={ro}
+                        onChange={defaultTemplate => setForm(f => ({ ...f, defaultTemplate }))} />
+                    </DocCell>
+                  </DocRow>
+                </DocHeader>
+              </DocLetterhead>
+              <DocRow cols="3fr 2fr">
+                <DocCell label="Template Name" htmlFor="template-name">
+                  <Input
+                    id="template-name"
+                    value={form.name}
+                    readOnly={ro}
+                    autoFocus
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    required={!ro}
+                  />
+                </DocCell>
+                <DocCell label="Document Type" htmlFor="template-type">
+                  <SearchableSelect
+                    id="template-type"
+                    value={form.documentType}
+                    disabled={ro || mode === 'edit'}
+                    onChange={v => setForm(f => ({ ...f, documentType: v || DOCUMENT_TYPES[0].value }))}
+                    options={DOCUMENT_TYPES}
+                    placeholder={DOCUMENT_TYPES[0].label}
+                  />
+                </DocCell>
+              </DocRow>
+              {ro && activeTemplate && (
+                <DocSignatures entries={[
+                  { label: 'Last updated by', value: resolveDisplayName(activeTemplate.updatedBy) },
+                  { label: 'Last updated at', value: formatDateTime(activeTemplate.updatedAt) },
+                ]} />
+              )}
+            </DocSheet>
 
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
@@ -323,8 +320,10 @@ export function DocumentTemplatesPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -419,6 +418,7 @@ export function DocumentTemplatesPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
     </div>
   )
 }

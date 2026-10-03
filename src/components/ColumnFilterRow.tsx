@@ -50,7 +50,9 @@ export function ColumnFilterRow({ columns, isVisible, values, onChange, filterab
           )}
         </th>
       ))}
-      <th className="px-4 py-1.5" />
+      {/* Pinned like the row-actions column above/below it (a no-op when the table doesn't
+          scroll); the ::before repaints the row's tint over the opaque card background. */}
+      <th className="sticky right-0 px-4 py-1.5 bg-[hsl(var(--card))] before:absolute before:inset-0 before:bg-[hsl(var(--secondary))]/40" />
     </tr>
   )
 }

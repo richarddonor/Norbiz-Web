@@ -6,8 +6,8 @@ function snapshotKey(value: unknown): string {
   return JSON.stringify(value, (_key, val) => (val instanceof Set ? Array.from(val).sort() : val))
 }
 
-/** Guards a modal form's close paths (Cancel button, Escape, click-outside, the dialog's
- * own X) behind a confirm — but only when the user has actually changed something since the
+/** Guards a record form's close paths (Cancel button, Escape, the tab's ×, Alt+W) behind
+ * a confirm — but only when the user has actually changed something since the
  * dialog opened, per "always ask if they've started entering data" rather than every time.
  * Call `markClean(snapshot)` wherever the form's fields are (re)initialized — `openCreate`,
  * `openEdit`, and `openView` — with the same shape of value passed to `guardedClose`. View

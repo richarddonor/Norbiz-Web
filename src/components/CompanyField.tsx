@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocCell, DocRow } from '@/components/ui/doc-form'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { useAuth } from '@/context/AuthContext'
 
 interface CompanyOption {
   id: number
@@ -23,27 +25,38 @@ interface Props {
   autoFocus?: boolean
 }
 
-/** Master-data and transaction forms must always surface which Company a record
- * belongs to — as a plain read-only display when there's nothing to choose (view/edit,
- * or a single-company session), or as a required picker when creating a record and the
- * session spans more than one company. Always rendered as the topmost, leftmost field
- * in the form. */
+/** Which Company a record belongs to — a plain read-only display when there's nothing to
+ * choose (view/edit), or a required picker when creating a record. Only rendered when the
+ * session spans more than one company (`showCompanyColumn`); most users belong to a single
+ * company, where the field would always say the same thing, so it renders nothing and the
+ * form's `companyId` state silently stays seeded from `activeCompanyId`. Place it via
+ * `DocLetterhead` as the topmost, leftmost cell of the paper-style `DocSheet`. */
 export function CompanyField({ id, readOnly, name, companies, value, onChange, autoFocus }: Props) {
+  const { showCompanyColumn } = useAuth()
+  if (!showCompanyColumn) return null
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>Company</Label>
+    <DocCell label="Company" htmlFor={id}>
       {readOnly ? (
-        <Input id={id} value={name ?? '—'} readOnly autoFocus={autoFocus} />
+        <Input id={id} value={name ?? '—'} readOnly autoFocus={autoFocus} className="text-base font-semibold" />
       ) : (
         <SearchableSelect
           id={id}
           value={value === '' || value === undefined ? '' : String(value)}
           onChange={v => onChange?.(v ? Number(v) : '')}
           options={(companies ?? []).map(c => ({ value: String(c.id), label: c.name }))}
-          placeholder="Select a company…"
           autoFocus={autoFocus}
         />
       )}
-    </div>
+    </DocCell>
   )
+}
+
+/** Row 1 of a `DocSheet`: the `CompanyField` letterhead (top-left) beside the `DocHeader`
+ * title block. In a single-company session the company cell is dropped entirely and the
+ * header takes the full row, so hiding it leaves no empty gap. */
+export function DocLetterhead({ company, children }: { company: ReactNode; children: ReactNode }) {
+  const { showCompanyColumn } = useAuth()
+  return showCompanyColumn
+    ? <DocRow cols="3fr 2fr">{company}{children}</DocRow>
+    : <DocRow>{children}</DocRow>
 }

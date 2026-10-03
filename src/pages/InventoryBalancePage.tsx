@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { Search, FileDown } from 'lucide-react'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -11,27 +11,16 @@ import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
+import { useLookup, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 type BalanceMode = 'current' | 'asOf' | 'period'
-
-interface WarehouseOption {
-  id: number
-  name: string
-  active: boolean
-}
-
-interface ItemOption {
-  id: number
-  itemCode: string
-  name: string
-  active: boolean
-}
 
 interface Balance {
   companyId: number
@@ -93,7 +82,7 @@ function buildColumns(mode: BalanceMode, showCompanyColumn: boolean, canViewCost
 
 export function InventoryBalancePage() {
   const { toast } = useToast()
-  const { hasPermission, showCompanyColumn } = useAuth()
+  const { hasPermission, showCompanyColumn, activeCompanyId } = useAuth()
   const { zone } = useContentFocus()
   const canViewCostPrice = hasPermission('VIEW_COST_PRICE')
 
@@ -119,14 +108,15 @@ export function InventoryBalancePage() {
     return base
   }, [warehouseId, itemId, mode, asOfDate, startDate, endDate])
 
-  const { items: balances, page, setPage, totalPages, totalElements } = usePagedList<Balance>('/inventory-balances', {
+  const { items: balances, page, setPage, totalPages, totalElements, loading: listLoading, reload } = usePagedList<Balance>('/inventory-balances', {
     onError: () => toast('Failed to load inventory balances.', 'error'),
     search: debouncedSearch,
     filters,
     searchText: balanceSearchText,
   })
-  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([])
-  const [items, setItems] = useState<ItemOption[]>([])
+  // Filter-bar options for the session's active company.
+  const warehouses = useLookup<LookupOption>('warehouses', activeCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
+  const items = useLookup<ItemLookupOption>('items', activeCompanyId, { onError: () => toast('Failed to load items.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-balances')
 
@@ -138,16 +128,8 @@ export function InventoryBalancePage() {
 
   useHotkeys([
     { key: '/', handler: () => searchInputRef.current?.focus() },
+    { key: 'r', handler: () => reload() },
   ], zone === 'content')
-
-  useEffect(() => {
-    fetchAllContent<WarehouseOption>('/warehouses')
-      .then(data => setWarehouses(data.filter(w => w.active)))
-      .catch(() => toast('Failed to load warehouses.', 'error'))
-    fetchAllContent<ItemOption>('/items')
-      .then(data => setItems(data.filter(i => i.active)))
-      .catch(() => toast('Failed to load items.', 'error'))
-  }, [])
 
   async function handleExport() {
     const qs = filtersToQueryString(filters)
@@ -197,7 +179,7 @@ export function InventoryBalancePage() {
           <SearchableSelect
             value={itemId}
             onChange={setItemId}
-            options={items.map(i => ({ value: String(i.id), label: `${i.itemCode} — ${i.name}` }))}
+            options={items.map(i => ({ value: String(i.id), label: `${i.code} — ${i.name}` }))}
             placeholder="All items"
             className="w-52"
           />
@@ -236,6 +218,7 @@ export function InventoryBalancePage() {
               />
             </>
           )}
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />

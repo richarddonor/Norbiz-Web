@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useInDocCell } from '@/components/ui/doc-cell-context'
 
 export interface SearchableSelectOption {
   value: string
@@ -33,6 +34,22 @@ function focusNextElement(current: HTMLElement) {
   if (index >= 0 && index < focusable.length - 1) focusable[index + 1]?.focus()
 }
 
+/** The visible box `el` is clipped to: the nearest scrolling ancestor, intersected with the viewport. */
+function clippingRect(el: HTMLElement): { top: number; bottom: number } {
+  let top = 0
+  let bottom = window.innerHeight
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'hidden') {
+      const rect = node.getBoundingClientRect()
+      top = Math.max(top, rect.top)
+      bottom = Math.min(bottom, rect.bottom)
+      break
+    }
+  }
+  return { top, bottom }
+}
+
 /** A text-searchable dropdown — the app-wide replacement for plain `<select>` elements
  * whenever the option list represents records (companies, warehouses, items, ...) rather
  * than a couple of fixed values. Keeps the same value/onChange contract as a native select
@@ -48,6 +65,7 @@ export function SearchableSelect({
   id, value, onChange, options, placeholder = 'Select…', searchPlaceholder = 'Type to search…',
   emptyText = 'No matches.', disabled, autoFocus, className,
 }: Props) {
+  const inCell = useInDocCell()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
@@ -55,6 +73,7 @@ export function SearchableSelect({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find(o => o.value === value) ?? null
 
@@ -77,9 +96,36 @@ export function SearchableSelect({
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [open])
 
+  // Scrolls only the option list itself — `scrollIntoView` would also scroll every ancestor
+  // (e.g. the dialog), which on a bottom-of-form field parks the viewport right under the
+  // blank placeholder entry and hides the real options below it.
   useEffect(() => {
-    if (open) listRef.current?.children[highlight]?.scrollIntoView({ block: 'nearest' })
+    if (!open) return
+    const list = listRef.current
+    const row = list?.children[highlight] as HTMLElement | undefined
+    if (!list || !row) return
+    if (row.offsetTop < list.scrollTop) list.scrollTop = row.offsetTop
+    else if (row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = row.offsetTop + row.offsetHeight - list.clientHeight
+    }
   }, [highlight, open])
+
+  // Opens upward when the panel wouldn't fit between the trigger and the bottom of its
+  // clipping container (the dialog's scroll area, or the viewport) — e.g. the last line
+  // of a transaction form. Measured once per open, with the full unfiltered list.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!open || !rootRef.current || !panel) return
+    const trigger = rootRef.current.getBoundingClientRect()
+    const clip = clippingRect(rootRef.current)
+    const below = clip.bottom - trigger.bottom
+    const above = trigger.top - clip.top
+    const dropUp = below < panel.offsetHeight + 4 && above > below
+    panel.style.top = dropUp ? 'auto' : '100%'
+    panel.style.bottom = dropUp ? '100%' : 'auto'
+    panel.style.marginTop = dropUp ? '0' : '0.25rem'
+    panel.style.marginBottom = dropUp ? '0.25rem' : '0'
+  }, [open])
 
   // `focusInput` is only set true from a mouse click on the trigger — a single discrete
   // gesture, safe to hand focus to the nested search box. Keyboard-driven opens (arrow/typing)
@@ -209,6 +255,7 @@ export function SearchableSelect({
         autoFocus={autoFocus}
         className={cn(
           'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-[hsl(var(--input))] bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:cursor-not-allowed disabled:opacity-50',
+          inCell && 'h-8 rounded-none border-0 px-0 shadow-none focus-visible:ring-0',
           className
         )}
       >
@@ -219,7 +266,10 @@ export function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-[12rem] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-md">
+        <div
+          ref={panelRef}
+          className="absolute top-full z-50 mt-1 w-full min-w-[12rem] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-md"
+        >
           <input
             ref={inputRef}
             value={query}
@@ -228,7 +278,7 @@ export function SearchableSelect({
             placeholder={searchPlaceholder}
             className="w-full h-8 px-2.5 text-sm border-b border-[hsl(var(--border))] bg-transparent focus-visible:outline-none"
           />
-          <ul ref={listRef} className="max-h-56 overflow-y-auto py-1 text-sm">
+          <ul ref={listRef} className="relative max-h-56 overflow-y-auto py-1 text-sm">
             {filtered.length === 0 ? (
               <li className="px-3 py-1.5 text-[hsl(var(--muted-foreground))]">{emptyText}</li>
             ) : (

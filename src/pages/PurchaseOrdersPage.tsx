@@ -5,25 +5,29 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocStamp, PendingNumber } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
-import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
+import { TransactionActionsMenu, TransactionHistory } from '@/components/TransactionActivity'
+import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { useDocumentPrint } from '@/hooks/useDocumentPrint'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
+import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { formatDate, formatDateTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { useLookup, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { formatCurrency, formatDate } from '@/lib/format'
+import { byLineNumber, cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create'
 
@@ -32,37 +36,9 @@ interface CompanyOption {
   name: string
 }
 
-interface WarehouseOption {
-  id: number
-  companyId: number
-  name: string
-  active: boolean
-}
-
-interface SupplierOption {
-  id: number
-  companyId: number
-  name: string
-  active: boolean
-}
-
-interface PriceEntry {
-  priceType: 'UNIT_PRICE' | 'COST_PRICE' | 'FOCAL_PRICE' | 'MARKDOWN_PRICE'
-  amount: number
-}
-
-interface ItemOption {
-  id: number
-  companyId: number
-  itemCode: string
-  name: string
-  tags: string[]
-  active: boolean
-  prices: PriceEntry[]
-}
-
 interface OrderLine {
   id: number
+  lineNumber: number
   itemId: number
   itemCode: string
   itemName: string
@@ -135,20 +111,24 @@ export function PurchaseOrdersPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: orders, page, setPage, totalPages, totalElements, reload } = usePagedList<PurchaseOrder>('/purchase-orders', {
+  const inRecordTab = useIsRecordTab()
+  const { items: orders, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<PurchaseOrder>('/purchase-orders', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load purchase orders.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: orderSearchText,
   })
-  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([])
-  const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
-  const [items, setItems] = useState<ItemOption[]>([])
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
-  const [open, setOpen]                       = useState(false)
   const [mode, setMode]                       = useState<FormMode>('view')
+  const rec = useRecordTab<PurchaseOrder>({
+    mode,
+    onOpen: { view: openView, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<PurchaseOrder>(`/purchase-orders/${id}`),
+  })
   const [activeOrder, setActiveOrder]         = useState<PurchaseOrder | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [warehouseId, setWarehouseId]         = useState<number | ''>('')
@@ -158,12 +138,13 @@ export function PurchaseOrdersPage() {
   const [sheetNumber, setSheetNumber]         = useState('')
   const [lines, setLines]                     = useState<LineDraft[]>([{ itemId: '', quantity: '', costPrice: '' }])
   const [loading, setLoading]                 = useState(false)
-  const formWarehouses = companyId ? warehouses.filter(w => w.companyId === companyId) : warehouses
-  const formSuppliers = companyId ? suppliers.filter(s => s.companyId === companyId) : suppliers
-  const formInventoryItems = (companyId ? items.filter(i => i.companyId === companyId) : items).filter(i => i.tags.includes('INVENTORY'))
+  // Dropdowns are scoped to the form's company (the active company on the list tab).
+  const lookupCompanyId = companyId || activeCompanyId
+  const formWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
+  const formSuppliers = useLookup<LookupOption>('suppliers', lookupCompanyId, { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load suppliers.', 'error') })
+  const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-orders')
-  const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
   const { print, printPortal } = useDocumentPrint()
   const [printing, setPrinting] = useState(false)
@@ -172,28 +153,21 @@ export function PurchaseOrdersPage() {
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
   const canVoid = hasPermission('VOID_PURCHASE_ORDER')
   const [voiding, setVoiding] = useState(false)
+  const activity = useTransactionActivity('PURCHASE_ORDER', inRecordTab && mode === 'view' ? activeOrder?.id : null, activeOrder?.referenceNumber, activeOrder?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: orders,
     onView: openView,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
-    fetchAllContent<WarehouseOption>('/warehouses')
-      .then(data => setWarehouses(data.filter(w => w.active)))
-      .catch(() => toast('Failed to load warehouses.', 'error'))
-    fetchAllContent<SupplierOption>('/suppliers')
-      .then(data => setSuppliers(data.filter(s => s.active)))
-      .catch(() => toast('Failed to load suppliers.', 'error'))
-    fetchAllContent<ItemOption>('/items')
-      .then(data => setItems(data.filter(i => i.active)))
-      .catch(() => toast('Failed to load items.', 'error'))
     if (isSuperAdmin) {
       fetchAllContent<CompanyOption>('/companies')
         .then(setAllCompanies)
@@ -202,12 +176,13 @@ export function PurchaseOrdersPage() {
   }, [])
 
   function openView(order: PurchaseOrder) {
+    if (!rec.isRecordTab) return rec.open('view', order)
     setActiveOrder(order)
     setMode('view')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveOrder(null)
     const nextCompanyId = activeCompanyId ?? ''
     const nextOrderDate = todayIso()
@@ -221,11 +196,10 @@ export function PurchaseOrdersPage() {
     setLines(nextLines)
     markClean({ companyId: nextCompanyId, warehouseId: '', supplierId: '', orderDate: nextOrderDate, remarks: '', sheetNumber: '', lines: nextLines })
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose({ companyId, warehouseId, supplierId, orderDate, remarks, sheetNumber, lines }, () => setOpen(false))
+    guardedClose({ companyId, warehouseId, supplierId, orderDate, remarks, sheetNumber, lines }, () => rec.close())
   }
 
   function handleCompanyChange(value: number | '') {
@@ -242,9 +216,8 @@ export function PurchaseOrdersPage() {
   function handleLineItemChange(index: number, itemId: number | '') {
     let costPrice = ''
     if (itemId !== '' && canViewCostPrice) {
-      const item = items.find(i => i.id === itemId)
-      const costEntry = item?.prices.find(p => p.priceType === 'COST_PRICE')
-      costPrice = costEntry ? String(costEntry.amount) : ''
+      const item = formInventoryItems.find(i => i.id === itemId)
+      costPrice = item?.costPrice != null ? String(item.costPrice) : ''
     }
     updateLine(index, { itemId, costPrice })
   }
@@ -294,7 +267,7 @@ export function PurchaseOrdersPage() {
       }
       await apiFetch<PurchaseOrder>('/purchase-orders', { method: 'POST', body: JSON.stringify(body) })
       toast('Purchase order posted successfully.', 'success')
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast('Failed to post purchase order.', 'error')
@@ -351,10 +324,12 @@ export function PurchaseOrdersPage() {
     }
   }
 
-  const dialogTitle = mode === 'view' ? 'Purchase Order Details' : 'New Purchase Order'
+  const recordName = activeOrder?.referenceNumber ?? ''
+  const tabTitle = mode === 'create' ? 'New Purchase Order' : recordName || 'Purchase Order'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Purchase Orders</h1>
         <div className="flex items-center gap-2">
@@ -371,10 +346,11 @@ export function PurchaseOrdersPage() {
           <SearchableSelect
             value={filters.warehouseId ?? ''}
             onChange={v => setFilters(prev => ({ ...prev, warehouseId: v }))}
-            options={warehouses.map(w => ({ value: String(w.id), label: w.name }))}
+            options={formWarehouses.map(w => ({ value: String(w.id), label: w.name }))}
             placeholder="All warehouses"
             className="w-44"
           />
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -383,97 +359,52 @@ export function PurchaseOrdersPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Purchase Order
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
+      </>)}
 
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-4xl">
           {mode === 'view' && activeOrder ? (
-            <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Reference #</Label>
-                  <div className="font-mono flex items-center gap-2">
-                    {activeOrder.referenceNumber}
-                    {activeOrder.voided && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
-                        Voided
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Sheet #</Label>
-                  <div>{activeOrder.sheetNumber ?? '—'}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Warehouse</Label>
-                  <div>{activeOrder.warehouseName}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Supplier</Label>
-                  <div>{activeOrder.supplierName}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Order Date</Label>
-                  <div>{formatDate(activeOrder.orderDate)}</div>
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <Label className="text-xs text-[hsl(var(--muted-foreground))]">Remarks</Label>
-                  <div>{activeOrder.remarks ?? '—'}</div>
-                </div>
-              </div>
+            <div className="space-y-4">
+              <DocSheet>
+                {activeOrder.voided && <DocStamp text="Voided" />}
+                <DocLetterhead company={<CompanyField id="po-company" readOnly name={activeOrder.companyName} />}>
+                  <DocHeader title="Purchase Order" number={activeOrder.referenceNumber}>
+                    <DocRow>
+                      <DocCell label="Order Date"><DocText>{formatDate(activeOrder.orderDate)}</DocText></DocCell>
+                      <DocCell label="Sheet #"><DocText>{activeOrder.sheetNumber}</DocText></DocCell>
+                    </DocRow>
+                  </DocHeader>
+                </DocLetterhead>
+                <DocRow>
+                  <DocCell label="Supplier"><DocText>{activeOrder.supplierName}</DocText></DocCell>
+                  <DocCell label="Deliver To (Warehouse)"><DocText>{activeOrder.warehouseName}</DocText></DocCell>
+                </DocRow>
+                <DocLines
+                  rows={byLineNumber(activeOrder.lines)}
+                  rowKey={line => line.id}
+                  lineNumber={line => line.lineNumber}
+                  minRows={5}
+                  columns={[
+                    { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
+                    { key: 'quantity', label: 'Quantity', align: 'right', width: '8rem', render: line => line.quantity },
+                    canViewCostPrice && { key: 'costPrice', label: 'Unit Cost', align: 'right', width: '9rem', render: line => formatCurrency(line.costPrice) },
+                  ]}
+                />
+                <DocRow>
+                  <DocCell label="Remarks"><DocText>{activeOrder.remarks}</DocText></DocCell>
+                </DocRow>
+                <TransactionHistory activity={activity} record={activeOrder} />
+              </DocSheet>
 
-              <div className="space-y-1.5">
-                <Label>Lines</Label>
-                <div className="rounded-md border border-[hsl(var(--border))] overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/40">
-                        <th className="text-left py-1.5 px-3 font-medium">Item</th>
-                        <th className="text-right py-1.5 px-3 font-medium">Quantity</th>
-                        {canViewCostPrice && <th className="text-right py-1.5 px-3 font-medium">Cost Price</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeOrder.lines.map(line => (
-                        <tr key={line.id} className="border-b border-[hsl(var(--border))] last:border-0">
-                          <td className="py-1.5 px-3">{line.itemCode} — {line.itemName}</td>
-                          <td className="py-1.5 px-3 text-right tabular-nums">{line.quantity}</td>
-                          {canViewCostPrice && <td className="py-1.5 px-3 text-right tabular-nums">{line.costPrice ?? '—'}</td>}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                {showCompanyColumn && (
-                  <div className="flex justify-between">
-                    <span>Company</span>
-                    <span className="text-[hsl(var(--foreground))]">{activeOrder.companyName}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span>Posted by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeOrder.createdBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Posted at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeOrder.createdAt)}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className={RECORD_ACTIONS}>
+                <TransactionActionsMenu activity={activity} voided={activeOrder.voided} />
                 {canVoid && !activeOrder.voided && (
                   <Button type="button" variant="outline" onClick={handleVoid} loading={voiding}>
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
@@ -490,116 +421,120 @@ export function PurchaseOrdersPage() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4 mt-2" onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); addLine() } }}>
-              {showCompanyColumn && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="po-company">Company</Label>
-                  <SearchableSelect
-                    id="po-company"
-                    value={companyId === '' ? '' : String(companyId)}
-                    onChange={v => handleCompanyChange(v ? Number(v) : '')}
-                    options={companyOptions.map(c => ({ value: String(c.id), label: c.name }))}
-                    placeholder="Select a company…"
-                    autoFocus
-                  />
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="po-warehouse">Warehouse</Label>
-                  <SearchableSelect
-                    id="po-warehouse"
-                    value={warehouseId === '' ? '' : String(warehouseId)}
-                    onChange={v => setWarehouseId(v ? Number(v) : '')}
-                    options={formWarehouses.map(w => ({ value: String(w.id), label: w.name }))}
-                    placeholder="Select a warehouse…"
-                    autoFocus={!showCompanyColumn}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="po-supplier">Supplier</Label>
-                  <SearchableSelect
-                    id="po-supplier"
-                    value={supplierId === '' ? '' : String(supplierId)}
-                    onChange={v => setSupplierId(v ? Number(v) : '')}
-                    options={formSuppliers.map(s => ({ value: String(s.id), label: s.name }))}
-                    placeholder="Select a supplier…"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="po-date">Order Date</Label>
-                <Input id="po-date" type="date" value={orderDate}
-                  onChange={e => setOrderDate(e.target.value)} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="po-sheet">Sheet #</Label>
-                <Input id="po-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} placeholder="Optional control number" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="po-remarks">Remarks</Label>
-                <Input id="po-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Optional" />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label>Lines</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Line
-                    <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {lines.map((line, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <div className="flex-1">
+            <form onSubmit={handleSubmit} className="space-y-4" onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); addLine() } }}>
+              <DocSheet>
+                <DocLetterhead company={
+                    <CompanyField
+                      id="po-company"
+                      readOnly={!showCompanyColumn}
+                      name={companyOptions.find(c => c.id === companyId)?.name}
+                      companies={companyOptions}
+                      value={companyId}
+                      onChange={handleCompanyChange}
+                      autoFocus={showCompanyColumn}
+                    />
+                }>
+                  <DocHeader title="Purchase Order" number={<PendingNumber />}>
+                    <DocRow>
+                      <DocCell label="Order Date" htmlFor="po-date">
+                        <Input id="po-date" type="date" value={orderDate}
+                          onChange={e => setOrderDate(e.target.value)} required />
+                      </DocCell>
+                      <DocCell label="Sheet #" htmlFor="po-sheet">
+                        <Input id="po-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      </DocCell>
+                    </DocRow>
+                  </DocHeader>
+                </DocLetterhead>
+                <DocRow>
+                  <DocCell label="Supplier" htmlFor="po-supplier">
+                    <SearchableSelect
+                      id="po-supplier"
+                      value={supplierId === '' ? '' : String(supplierId)}
+                      onChange={v => setSupplierId(v ? Number(v) : '')}
+                      options={formSuppliers.map(s => ({ value: String(s.id), label: s.name }))}
+                      autoFocus={!showCompanyColumn}
+                    />
+                  </DocCell>
+                  <DocCell label="Deliver To (Warehouse)" htmlFor="po-warehouse">
+                    <SearchableSelect
+                      id="po-warehouse"
+                      value={warehouseId === '' ? '' : String(warehouseId)}
+                      onChange={v => setWarehouseId(v ? Number(v) : '')}
+                      options={formWarehouses.map(w => ({ value: String(w.id), label: w.name }))}
+                    />
+                  </DocCell>
+                </DocRow>
+                <DocLines
+                  rows={lines}
+                  columns={[
+                    {
+                      key: 'item', label: 'Item',
+                      render: (line, i) => (
                         <SearchableSelect
                           value={line.itemId === '' ? '' : String(line.itemId)}
                           onChange={v => handleLineItemChange(i, v ? Number(v) : '')}
-                          options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.itemCode} — ${item.name}` }))}
-                          placeholder="Select an item…"
+                          options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
                         />
-                      </div>
-                      <Input
-                        type="number"
-                        step="0.0001"
-                        placeholder="Quantity"
-                        value={line.quantity}
-                        onChange={e => updateLine(i, { quantity: e.target.value })}
-                        className="w-28"
-                      />
-                      {canViewCostPrice && (
-                        <Input
-                          type="number"
-                          step="0.0001"
-                          placeholder="Cost Price"
-                          value={line.costPrice}
-                          onChange={e => updateLine(i, { costPrice: e.target.value })}
-                          className="w-28"
-                        />
-                      )}
-                      <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(i)} disabled={lines.length === 1}>
-                        <X className="w-4 h-4" />
+                      ),
+                    },
+                    {
+                      key: 'quantity', label: 'Quantity', align: 'right', width: '8rem',
+                      render: (line, i) => (
+                        <Input type="number" step="0.0001" aria-label={`Line ${i + 1} quantity`} value={line.quantity}
+                          onChange={e => updateLine(i, { quantity: e.target.value })} className="text-right" />
+                      ),
+                    },
+                    canViewCostPrice && {
+                      key: 'costPrice', label: 'Unit Cost', align: 'right', width: '9rem',
+                      render: (line, i) => (
+                        <Input type="number" step="0.0001" aria-label={`Line ${i + 1} unit cost`} value={line.costPrice}
+                          onChange={e => updateLine(i, { costPrice: e.target.value })} className="text-right" />
+                      ),
+                    },
+                    {
+                      key: 'remove', label: '', align: 'center', width: '2.75rem',
+                      render: (_, i) => (
+                        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label={`Remove line ${i + 1}`}
+                          onClick={() => removeLine(i)} disabled={lines.length === 1}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      ),
+                    },
+                  ]}
+                  footer={
+                    <div className="flex items-center justify-between gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={addLine}>
+                        <Plus className="w-3.5 h-3.5" />
+                        Add Line
+                        <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
                       </Button>
+                      {formInventoryItems.length === 0 && (
+                        <span className="text-xs text-[hsl(var(--muted-foreground))]">
+                          No items are tagged Inventory — tag an item on the Items page before posting a purchase order.
+                        </span>
+                      )}
                     </div>
-                  ))}
-                </div>
-                {formInventoryItems.length === 0 && (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    No items are tagged Inventory — tag an item on the Items page before posting a purchase order.
-                  </p>
-                )}
-              </div>
+                  }
+                />
+                <DocRow>
+                  <DocCell label="Remarks" htmlFor="po-remarks">
+                    <Input id="po-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  </DocCell>
+                </DocRow>
+                <TransactionHistory pending />
+              </DocSheet>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
                 <Button type="submit" loading={loading}>Post Purchase Order</Button>
               </div>
             </form>
           )}
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -668,6 +603,7 @@ export function PurchaseOrdersPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
       {printPortal}
     </div>
   )

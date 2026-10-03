@@ -20,9 +20,20 @@ interface Options<T> {
   /** lowercase blob of every searchable field on the item, including columns the user has hidden */
   searchText?: (item: T) => string
   onError?: () => void
+  /** `false` skips fetching — a page rendered in a record tab doesn't need its list. */
+  enabled?: boolean
 }
 
 const EMPTY_FILTERS: Record<string, string> = {}
+
+// A save in a record tab has to refresh the list in the module tab, which is a
+// different instance of the same page — so `reload()` is broadcast to every
+// mounted list of that endpoint instead of only bumping its own instance.
+const listChanges = new EventTarget()
+
+function endpointBase(endpoint: string) {
+  return endpoint.split('?')[0]
+}
 
 /** Serializes non-empty column filters into a query string — reused by
  * Export handlers so they fetch the same filtered set that's on screen. */
@@ -46,18 +57,30 @@ function buildQuery(endpoint: string, page: number, size: number, filters: Recor
   return `${endpoint}${sep}${params.toString()}`
 }
 
-/** For reference/lookup lists (e.g. populating a dropdown) rather than a
- * paginated table — fetches one large page and returns just the content. */
-export async function fetchAllContent<T>(endpoint: string, size = 500): Promise<T[]> {
+/** Backend hard cap on `size` (`spring.data.web.pageable.max-page-size`) — a larger
+ * request is silently clamped, so never rely on one big page holding everything. */
+const MAX_PAGE_SIZE = 1000
+
+/** Fetches EVERY page of a paginated endpoint and returns the combined content —
+ * used for spreadsheet export (all matching rows, not just the page on screen)
+ * and for dropdown option lists. `size` is the per-request page size, capped at
+ * the backend maximum. */
+export async function fetchAllContent<T>(endpoint: string, size = MAX_PAGE_SIZE): Promise<T[]> {
+  const pageSize = Math.min(size, MAX_PAGE_SIZE)
   const sep = endpoint.includes('?') ? '&' : '?'
-  const res = await apiFetch<PageResponse<T>>(`${endpoint}${sep}page=1&size=${size}`)
-  return res.content
+  const all: T[] = []
+  for (let page = 1; ; page++) {
+    const res = await apiFetch<PageResponse<T>>(`${endpoint}${sep}page=${page}&size=${pageSize}`)
+    all.push(...res.content)
+    if (res.last || res.content.length === 0) return all
+  }
 }
 
 /** Fetches one page at a time from a paginated backend endpoint (1-indexed,
  * default size 50). Call `reload()` after create/update/delete instead of
  * patching the local array — the affected record may now sort onto a
- * different page.
+ * different page. `reload()` refreshes every mounted list of the same endpoint
+ * (so calling it from a record tab refreshes the list tab too).
  *
  * Column `filters` are sent to the backend as query params, composed with
  * real server-side pagination — changing a filter refetches. `search` never
@@ -74,6 +97,16 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
   const [pagedResult, setPagedResult] = useState<PageResponse<T> | null>(null)
   const [loading, setLoading] = useState(true)
   const [reloadToken, setReloadToken] = useState(0)
+  const enabled = options?.enabled ?? true
+  const base = endpointBase(endpoint)
+
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === base) setReloadToken(t => t + 1)
+    }
+    listChanges.addEventListener('change', onChange)
+    return () => listChanges.removeEventListener('change', onChange)
+  }, [base])
 
   // Reset to page 1 whenever the filters change — adjusted during render
   // (this hook's established pattern) instead of an effect. Search doesn't
@@ -85,13 +118,14 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
   }
 
   useEffect(() => {
+    if (!enabled) return
     Promise.resolve()
       .then(() => setLoading(true))
       .then(() => apiFetch<PageResponse<T>>(buildQuery(endpoint, page, pageSize, filters)))
       .then(setPagedResult)
       .catch(() => options?.onError?.())
       .finally(() => setLoading(false))
-  }, [endpoint, page, pageSize, filtersKey, reloadToken])
+  }, [endpoint, page, pageSize, filtersKey, reloadToken, enabled])
 
   const searchTextFn = options?.searchText
   const term = search.trim().toLowerCase()
@@ -109,6 +143,6 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
     totalPages: pagedResult?.totalPages ?? 1,
     totalElements: pagedResult?.totalElements ?? 0,
     loading,
-    reload: () => setReloadToken(t => t + 1),
+    reload: () => listChanges.dispatchEvent(new CustomEvent('change', { detail: base })),
   }
 }

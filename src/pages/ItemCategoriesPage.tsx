@@ -5,9 +5,9 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
@@ -17,8 +17,9 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
-import { CompanyField } from '@/components/CompanyField'
+import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
@@ -72,15 +73,22 @@ export function ItemCategoriesPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: categories, page, setPage, totalPages, totalElements, reload } = usePagedList<ItemCategory>('/item-categories', {
+  const inRecordTab = useIsRecordTab()
+  const { items: categories, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<ItemCategory>('/item-categories', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load item categories.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: categorySearchText,
   })
 
-  const [open, setOpen]                   = useState(false)
   const [mode, setMode]                   = useState<FormMode>('view')
+  const rec = useRecordTab<ItemCategory>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<ItemCategory>(`/item-categories/${id}`),
+  })
   const [activeCategory, setActiveCategory] = useState<ItemCategory | null>(null)
   const [name, setName]                   = useState('')
   const [companyId, setCompanyId]         = useState<number | ''>('')
@@ -101,13 +109,14 @@ export function ItemCategoriesPage() {
     onDelete: canDeleteCategory ? handleDelete : undefined,
     canEdit: canUpdate,
     canDelete: canDeleteCategory,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -118,33 +127,33 @@ export function ItemCategoriesPage() {
   }, [])
 
   function openView(category: ItemCategory) {
+    if (!rec.isRecordTab) return rec.open('view', category)
     setActiveCategory(category)
     setName(category.name)
     markClean({ name: category.name, companyId })
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(category: ItemCategory) {
+    if (!rec.isRecordTab) return rec.open('edit', category)
     setActiveCategory(category)
     setName(category.name)
     markClean({ name: category.name, companyId })
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveCategory(null)
     setName('')
     const nextCompanyId = activeCompanyId ?? ''
     setCompanyId(nextCompanyId)
     markClean({ name: '', companyId: nextCompanyId })
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose({ name, companyId }, () => setOpen(false))
+    guardedClose({ name, companyId }, () => rec.close())
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -169,7 +178,7 @@ export function ItemCategoriesPage() {
         })
         toast('Item category updated successfully.', 'success')
       }
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create item category.' : 'Failed to update item category.', 'error')
@@ -203,11 +212,13 @@ export function ItemCategoriesPage() {
     exportToXlsx('item-categories', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
-  const dialogTitle = mode === 'view' ? 'Category Details' : mode === 'create' ? 'New Category' : 'Edit Category'
+  const recordName = activeCategory?.name ?? ''
+  const tabTitle = mode === 'create' ? 'New Item Category' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Item Category'
   const ro = mode === 'view'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Item Categories</h1>
         <div className="flex items-center gap-2">
@@ -221,6 +232,7 @@ export function ItemCategoriesPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -229,63 +241,55 @@ export function ItemCategoriesPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Category
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <CompanyField
-              id="category-company"
-              readOnly={mode !== 'create' || !showCompanyColumn}
-              name={mode === 'create' ? activeCompany?.name : activeCategory?.companyName}
-              companies={companyOptions}
-              value={companyId}
-              onChange={setCompanyId}
-              autoFocus={mode === 'create' && showCompanyColumn}
-            />
-            <div className="space-y-1.5">
-              <Label htmlFor="category-name">Name</Label>
-              <Input
-                id="category-name"
-                value={name}
-                readOnly={ro}
-                autoFocus={!(mode === 'create' && showCompanyColumn)}
-                onChange={e => setName(e.target.value)}
-                placeholder={ro ? undefined : 'e.g. Electronics'}
-                required={!ro}
-              />
-            </div>
+      </>)}
 
-            {ro && activeCategory && (
-              <div className="space-y-2 rounded-md border border-[hsl(var(--border))] p-3 text-sm text-[hsl(var(--muted-foreground))]">
-                <div className="flex justify-between">
-                  <span>Created by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeCategory.createdBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Created at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeCategory.createdAt)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last updated by</span>
-                  <span className="text-[hsl(var(--foreground))]">{resolveDisplayName(activeCategory.updatedBy)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last updated at</span>
-                  <span className="text-[hsl(var(--foreground))]">{formatDateTime(activeCategory.updatedAt)}</span>
-                </div>
-              </div>
-            )}
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DocSheet>
+              <DocLetterhead company={
+                  <CompanyField
+                    id="category-company"
+                    readOnly={mode !== 'create' || !showCompanyColumn}
+                    name={mode === 'create' ? activeCompany?.name : activeCategory?.companyName}
+                    companies={companyOptions}
+                    value={companyId}
+                    onChange={setCompanyId}
+                    autoFocus={mode === 'create' && showCompanyColumn}
+                  />
+              }>
+                <DocHeader title="Item Category Record" />
+              </DocLetterhead>
+              <DocRow>
+                <DocCell label="Name" htmlFor="category-name">
+                  <Input
+                    id="category-name"
+                    value={name}
+                    readOnly={ro}
+                    autoFocus={!(mode === 'create' && showCompanyColumn)}
+                    onChange={e => setName(e.target.value)}
+                    required={!ro}
+                  />
+                </DocCell>
+              </DocRow>
+              {ro && activeCategory && (
+                <DocSignatures entries={[
+                  { label: 'Created by', value: resolveDisplayName(activeCategory.createdBy) },
+                  { label: 'Created at', value: formatDateTime(activeCategory.createdAt) },
+                  { label: 'Last updated by', value: resolveDisplayName(activeCategory.updatedBy) },
+                  { label: 'Last updated at', value: formatDateTime(activeCategory.updatedAt) },
+                ]} />
+              )}
+            </DocSheet>
 
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
@@ -303,8 +307,10 @@ export function ItemCategoriesPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -370,6 +376,7 @@ export function ItemCategoriesPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
     </div>
   )
 }

@@ -30,6 +30,10 @@ interface AuthContextType {
    * picked one yet — the /login route must stay on the company-selection step instead
    * of auto-redirecting to /dashboard just because a token now exists. */
   awaitingCompanySelection: boolean
+  /** True while a token exists but `/auth/me` hasn't answered yet — permissions are still
+   * unknown, so permission-gated routes must wait rather than redirect (a hard refresh of
+   * `/purchase-orders/12`, or a restored workspace tab, would otherwise bounce to /dashboard). */
+  profileLoading: boolean
   hasPermission: (...required: string[]) => boolean
   login: (username: string, password: string) => Promise<LoginResult>
   selectCompany: (companyId: number) => void
@@ -153,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       showCompanyColumn,
       isAuthenticated: !!token,
       awaitingCompanySelection,
+      profileLoading: !!token && !me,
       hasPermission,
       login,
       selectCompany,

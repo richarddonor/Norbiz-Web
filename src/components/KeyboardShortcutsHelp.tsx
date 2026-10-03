@@ -8,16 +8,24 @@ interface Shortcut {
 const globalShortcuts: Shortcut[] = [
   { keys: ['Ctrl', 'K'], description: 'Open command palette (jump to any page)' },
   { keys: ['?'], description: 'Show this shortcuts panel' },
+  { keys: ['Alt', '1–9'], description: 'Switch to an open tab (Alt+1 is the list)' },
+  { keys: ['Alt', 'W'], description: 'Close the current record tab' },
 ]
 
 const listPageShortcuts: Shortcut[] = [
   { keys: ['/'], description: 'Focus the search box' },
   { keys: ['N'], description: 'Create a new record' },
+  { keys: ['R'], description: 'Reload the list from the server (keeps page & filters)' },
   { keys: ['↑', '↓'], description: 'Move between rows' },
-  { keys: ['Enter'], description: 'Open the selected row' },
+  { keys: ['Enter'], description: 'Open the selected row in a new tab' },
   { keys: ['E'], description: 'Edit the selected row' },
   { keys: ['Delete'], description: 'Delete the selected row' },
-  { keys: ['Esc'], description: 'Close a dialog or clear row selection' },
+  { keys: ['Esc'], description: 'Clear row selection (in a record tab: close it)' },
+]
+
+const transactionShortcuts: Shortcut[] = [
+  { keys: ['A'], description: 'Open the Actions menu (posted transaction)' },
+  { keys: ['Ctrl', 'Enter'], description: 'Add a line (new transaction)' },
 ]
 
 function ShortcutRow({ keys, description }: Shortcut) {
@@ -58,6 +66,12 @@ export function KeyboardShortcutsHelp({ open, onOpenChange }: Props) {
             <h3 className="text-xs font-semibold uppercase text-[hsl(var(--muted-foreground))] mb-1">On list pages</h3>
             <div className="divide-y divide-[hsl(var(--border))]">
               {listPageShortcuts.map(s => <ShortcutRow key={s.description} {...s} />)}
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xs font-semibold uppercase text-[hsl(var(--muted-foreground))] mb-1">On transaction records</h3>
+            <div className="divide-y divide-[hsl(var(--border))]">
+              {transactionShortcuts.map(s => <ShortcutRow key={s.description} {...s} />)}
             </div>
           </div>
         </div>

@@ -8,8 +8,9 @@ interface Props {
 }
 
 export function ProtectedRoute({ children, requiredPermissions }: Props) {
-  const { isAuthenticated, hasPermission } = useAuth()
+  const { isAuthenticated, profileLoading, hasPermission } = useAuth()
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (requiredPermissions && profileLoading) return null
   if (requiredPermissions && !hasPermission(...requiredPermissions)) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }

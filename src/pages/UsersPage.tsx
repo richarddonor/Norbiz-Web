@@ -3,11 +3,12 @@ import { Plus, Pencil, Trash2, Eye, Search, FileDown, KeyRound } from 'lucide-re
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
+import { DocLetterhead } from '@/components/CompanyField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocCheck, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { ResetPasswordDialog } from '@/components/ResetPasswordDialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -17,9 +18,11 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
+import { useLookup, type LookupOption } from '@/lib/lookups'
 import { cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create' | 'edit'
@@ -64,6 +67,10 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   return columns
 }
 
+// Row-actions cell, pinned to the table's right edge. Needs its own opaque background so
+// scrolled columns pass underneath instead of showing through.
+const STICKY_ACTIONS = 'sticky right-0 py-2 px-4 bg-[hsl(var(--card))]'
+
 function emptyForm(): UserForm {
   return { username: '', displayName: '', email: '', password: '' }
 }
@@ -87,31 +94,20 @@ function CompanyCheckboxes({
   if (readOnly) {
     const selected = allCompanies.filter(c => selectedIds.has(c.id))
     return (
-      <div className="space-y-1.5">
-        <Label>Companies</Label>
-        <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
-          {selected.length > 0 ? selected.map(c => c.name).join(', ') : '—'}
-        </div>
-      </div>
+      <DocCell label="Companies">
+        <DocText className="font-semibold">{selected.map(c => c.name).join(', ')}</DocText>
+      </DocCell>
     )
   }
   return (
-    <div className="space-y-1.5">
-      <Label>Companies</Label>
-      <div className="max-h-36 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
+    <DocCell label="Companies">
+      <div className="max-h-36 overflow-y-auto pb-1">
         {allCompanies.map(c => (
-          <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selectedIds.has(c.id)}
-              onChange={() => onChange(c.id)}
-              className="accent-[hsl(var(--primary))]"
-            />
-            {c.name}
-          </label>
+          <DocCheck key={c.id} id={`user-company-${c.id}`} label={c.name}
+            checked={selectedIds.has(c.id)} onChange={() => onChange(c.id)} />
         ))}
       </div>
-    </div>
+    </DocCell>
   )
 }
 
@@ -131,38 +127,27 @@ function RolesField({
 }) {
   if (readOnly) {
     return (
-      <div className="space-y-1.5">
-        <Label>Roles</Label>
-        <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
-          {userRoleNames && userRoleNames.length > 0 ? userRoleNames.join(', ') : '—'}
-        </div>
-      </div>
+      <DocCell label="Roles">
+        <DocText>{userRoleNames?.join(', ')}</DocText>
+      </DocCell>
     )
   }
   return (
-    <div className="space-y-1.5">
-      <Label>Roles</Label>
-      <div className="max-h-36 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
+    <DocCell label="Roles">
+      <div className="max-h-36 overflow-y-auto pb-1">
         {allRoles.map(role => (
-          <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selectedIds.has(role.id)}
-              onChange={() => onToggle(role.id)}
-              className="accent-[hsl(var(--primary))]"
-            />
-            {role.displayName ?? role.name}
-          </label>
+          <DocCheck key={role.id} id={`user-role-${role.id}`} label={role.displayName ?? role.name}
+            checked={selectedIds.has(role.id)} onChange={() => onToggle(role.id)} />
         ))}
       </div>
-    </div>
+    </DocCell>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function UsersPage() {
   const { toast } = useToast()
-  const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
+  const { hasPermission, activeCompanyId, activeCompany, showCompanyColumn } = useAuth()
   const { zone } = useContentFocus()
   const isSuperAdmin = hasPermission('MANAGE_SYSTEM')
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
@@ -173,17 +158,28 @@ export function UsersPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: users, page, setPage, totalPages, totalElements, reload } = usePagedList<User>('/users', {
+  const inRecordTab = useIsRecordTab()
+  // Roles are system-wide, so their lookup isn't company-scoped.
+  const roleOptions = useLookup<LookupOption>('roles', null, { global: true, enabled: inRecordTab, onError: () => toast('Failed to load roles.', 'error') })
+  const allRoles = useMemo<Role[]>(
+    () => roleOptions.filter(r => r.code !== 'SUPER_ADMIN').map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })),
+    [roleOptions])
+  const { items: users, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<User>('/users', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load users.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: userSearchText,
   })
-  const [allRoles, setAllRoles]         = useState<Role[]>([])
   const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([])
 
-  const [open, setOpen]               = useState(false)
   const [mode, setMode]               = useState<FormMode>('view')
+  const rec = useRecordTab<User>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => fetchAllContent<User>('/users', 100000).then(all => { const found = all.find(r => String(r.id) === id); if (!found) throw new Error('not found'); return found }),
+  })
   const [activeUser, setActiveUser]   = useState<User | null>(null)
   const [form, setForm]               = useState<UserForm>(emptyForm())
   const [roleIds, setRoleIds]         = useState<Set<number>>(new Set())
@@ -206,19 +202,16 @@ export function UsersPage() {
     onDelete: canDeleteUser ? handleDelete : undefined,
     canEdit: canUpdate,
     canDelete: canDeleteUser,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
-    fetchAllContent<Role>('/roles')
-      .then(data => setAllRoles(data.filter(r => r.name !== 'SUPER_ADMIN')))
-      .catch(() => toast('Failed to load roles.', 'error'))
-
     if (isSuperAdmin) {
       fetchAllContent<CompanyInfo>('/companies')
         .then(setAllCompanies)
@@ -233,6 +226,7 @@ export function UsersPage() {
   }
 
   function openView(user: User) {
+    if (!rec.isRecordTab) return rec.open('view', user)
     setActiveUser(user)
     const nextForm = { username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' }
     const nextRoleIds = new Set(user.roleIds)
@@ -242,10 +236,10 @@ export function UsersPage() {
     setCompanyIds(nextCompanyIds)
     markClean({ form: nextForm, roleIds: nextRoleIds, companyIds: nextCompanyIds })
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(user: User) {
+    if (!rec.isRecordTab) return rec.open('edit', user)
     setActiveUser(user)
     const nextForm = { username: user.username, displayName: user.displayName ?? '', email: user.email, password: '' }
     const nextRoleIds = new Set(user.roleIds)
@@ -257,10 +251,10 @@ export function UsersPage() {
     setCompanyIds(nextCompanyIds)
     markClean({ form: nextForm, roleIds: nextRoleIds, companyIds: nextCompanyIds })
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveUser(null)
     const nextForm = emptyForm()
     const nextRoleIds = new Set<number>()
@@ -270,11 +264,10 @@ export function UsersPage() {
     setCompanyIds(nextCompanyIds)
     markClean({ form: nextForm, roleIds: nextRoleIds, companyIds: nextCompanyIds })
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose({ form, roleIds, companyIds }, () => setOpen(false))
+    guardedClose({ form, roleIds, companyIds }, () => rec.close())
   }
 
   function switchToEdit() {
@@ -310,7 +303,7 @@ export function UsersPage() {
         })
         toast('User updated successfully.', 'success')
       }
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create user.' : 'Failed to update user.', 'error')
@@ -346,13 +339,15 @@ export function UsersPage() {
   }
 
   const ro = mode === 'view'
-  const dialogTitle = mode === 'view' ? 'User Details' : mode === 'create' ? 'New User' : 'Edit User'
+  const recordName = activeUser ? activeUser.displayName || activeUser.username : ''
+  const tabTitle = mode === 'create' ? 'New User' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'User'
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      {!inRecordTab && (<>
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Users</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input
@@ -363,6 +358,7 @@ export function UsersPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -371,77 +367,86 @@ export function UsersPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New User
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="form-username">Username</Label>
-              <Input id="form-username" value={form.username} readOnly={ro || mode === 'edit'} autoFocus
-                onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required={!ro} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="form-displayName">Display Name</Label>
-              <Input id="form-displayName" value={form.displayName} readOnly={ro}
-                onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="form-email">Email</Label>
-              <Input id="form-email" type={ro ? 'text' : 'email'} value={form.email} readOnly={ro}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required={!ro} />
-            </div>
-            {mode === 'create' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="form-password">Password</Label>
-                <Input id="form-password" type="password" value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
-              </div>
-            )}
+      </>)}
 
-            {mode !== 'create' && (
-              <RolesField
-                allRoles={allRoles}
-                selectedIds={roleIds}
-                onToggle={id => setRoleIds(prev => toggleSet(prev, id))}
-                readOnly={ro}
-                userRoleNames={activeUser?.roles}
-              />
-            )}
-
-            {isSuperAdmin ? (
-              <CompanyCheckboxes
-                allCompanies={allCompanies}
-                selectedIds={companyIds}
-                onChange={id => setCompanyIds(prev => toggleSet(prev, id))}
-                readOnly={ro}
-              />
-            ) : (
-              <div className="space-y-1.5">
-                <Label>Company</Label>
-                {ro ? (
-                  <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] px-3 py-2 text-sm min-h-[2.5rem]">
-                    {activeUser?.companies.map(c => c.name).join(', ') || '—'}
-                  </div>
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DocSheet>
+              <DocLetterhead company={
+                isSuperAdmin ? (
+                  <CompanyCheckboxes
+                    allCompanies={allCompanies}
+                    selectedIds={companyIds}
+                    onChange={id => setCompanyIds(prev => toggleSet(prev, id))}
+                    readOnly={ro}
+                  />
                 ) : (
-                  <p className="text-sm text-[hsl(var(--muted-foreground))] px-1">
-                    {mode === 'create'
-                      ? 'User will be added to your current company.'
-                      : 'User will remain in your current company.'}
-                  </p>
-                )}
-              </div>
-            )}
+                  <DocCell label="Company">
+                    <DocText className="font-semibold">
+                      {ro ? activeUser?.companies.map(c => c.name).join(', ') : activeCompany?.name}
+                    </DocText>
+                    {!ro && (
+                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
+                        {mode === 'create'
+                          ? 'User will be added to your current company.'
+                          : 'User will remain in your current company.'}
+                      </p>
+                    )}
+                  </DocCell>
+                )
+              }>
+                <DocHeader title="User Account">
+                  <DocRow>
+                    <DocCell label="Username" htmlFor="form-username">
+                      <Input id="form-username" value={form.username} readOnly={ro || mode === 'edit'} autoFocus
+                        onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required={!ro} />
+                    </DocCell>
+                  </DocRow>
+                </DocHeader>
+              </DocLetterhead>
+              <DocRow>
+                <DocCell label="Display Name" htmlFor="form-displayName">
+                  <Input id="form-displayName" value={form.displayName} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
+                </DocCell>
+                <DocCell label="Email" htmlFor="form-email">
+                  <Input id="form-email" type={ro ? 'text' : 'email'} value={form.email} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required={!ro} />
+                </DocCell>
+              </DocRow>
+              {mode === 'create' && (
+                <DocRow>
+                  <DocCell label="Initial Password" htmlFor="form-password">
+                    <Input id="form-password" type="password" value={form.password}
+                      onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+                  </DocCell>
+                </DocRow>
+              )}
+              {mode !== 'create' && (
+                <>
+                  <DocSection title="Access" />
+                  <DocRow>
+                    <RolesField
+                      allRoles={allRoles}
+                      selectedIds={roleIds}
+                      onToggle={id => setRoleIds(prev => toggleSet(prev, id))}
+                      readOnly={ro}
+                      userRoleNames={activeUser?.roles}
+                    />
+                  </DocRow>
+                </>
+              )}
+            </DocSheet>
 
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   {canResetPassword && activeUser && (
@@ -465,11 +470,17 @@ export function UsersPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
+          {/* Scroll wide tables inside the card, with the actions column pinned right, so
+              Edit/Delete stay reachable on narrow windows (a multi-company session adds the
+              Companies column, which is what pushes this table past ~1140px). */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
@@ -478,7 +489,7 @@ export function UsersPage() {
                 {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Username</th>}
                 {isVisible('email') && <th className="text-left py-2 px-4 font-medium">Email</th>}
                 {isVisible('roles') && <th className="text-left py-2 px-4 font-medium">Roles</th>}
-                <th className="py-2 px-4" />
+                <th className={STICKY_ACTIONS} />
               </tr>
               <ColumnFilterRow
                 columns={COLUMNS}
@@ -500,7 +511,7 @@ export function UsersPage() {
                     key={user.id}
                     onClick={() => { setActiveIndex(i); openView(user) }}
                     className={cn(
-                      'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
+                      'group border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
@@ -513,7 +524,10 @@ export function UsersPage() {
                     {isVisible('username') && <td className="py-2 px-4">{user.username}</td>}
                     {isVisible('email') && <td className="py-2 px-4">{user.email}</td>}
                     {isVisible('roles') && <td className="py-2 px-4">{user.roles.join(', ') || '—'}</td>}
-                    <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
+                    <td
+                      className={cn(STICKY_ACTIONS, 'text-right transition-colors group-hover:bg-[hsl(var(--secondary))]', i === activeIndex && 'bg-[hsl(var(--secondary))]')}
+                      onClick={e => e.stopPropagation()}
+                    >
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(user)}>
                           <Eye className="w-4 h-4" />
@@ -540,9 +554,11 @@ export function UsersPage() {
               )}
             </tbody>
           </table>
+          </div>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
 
       <ResetPasswordDialog
         open={!!resetPasswordUser}

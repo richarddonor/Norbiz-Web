@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import { createContext, useContext, useMemo, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, LogOut, CircleUser, Search, KeyRound } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -17,17 +17,21 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { WorkspaceProvider, useTabInstance } from '@/context/WorkspaceContext'
+import { WorkspaceTabBar, WorkspacePanels } from '@/components/WorkspaceTabs'
 
-export type FocusZone = 'content' | 'sidebar'
+/** `'inactive'` means the page is in a workspace tab the user isn't looking at. */
+export type FocusZone = 'content' | 'sidebar' | 'inactive'
 
-export interface LayoutOutletContext {
-  zone: FocusZone
-}
+const LayoutZoneContext = createContext<FocusZone>('content')
 
-/** List pages read this to know whether the sidebar currently owns arrow-key
- * input, so they can suspend their own row navigation while it does. */
-export function useContentFocus() {
-  return useOutletContext<LayoutOutletContext>()
+/** Pages read this to know whether they currently own keyboard input — not while the
+ * sidebar has arrow-key focus, and not while their tab is hidden behind another one —
+ * so they can suspend their hotkeys and row navigation otherwise. */
+export function useContentFocus(): { zone: FocusZone } {
+  const zone = useContext(LayoutZoneContext)
+  const { active } = useTabInstance()
+  return { zone: active ? zone : 'inactive' }
 }
 
 interface SidebarEntry {
@@ -38,6 +42,14 @@ interface SidebarEntry {
 }
 
 export function AppLayout() {
+  return (
+    <WorkspaceProvider>
+      <Workspace />
+    </WorkspaceProvider>
+  )
+}
+
+function Workspace() {
   const { logout, hasPermission, displayName, username } = useAuth()
   const { pathname } = useLocation()
   const navigate = useNavigate()
@@ -165,7 +177,10 @@ export function AppLayout() {
       {/* Sidebar */}
       <aside className="w-60 shrink-0 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--card))]">
         <div className="px-4 py-5 border-b border-[hsl(var(--border))]">
-          <span className="text-xl font-bold text-[hsl(var(--primary))]">Norbiz</span>
+          <span className="flex items-center gap-2 text-lg font-bold tracking-tight">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm text-[hsl(var(--primary-foreground))]">N</span>
+            Norbiz
+          </span>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
@@ -270,8 +285,11 @@ export function AppLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 bg-[hsl(var(--background))]">
-          <Outlet context={{ zone } satisfies LayoutOutletContext} />
+        <WorkspaceTabBar />
+        <main className="flex-1 min-h-0 flex flex-col">
+          <LayoutZoneContext.Provider value={zone}>
+            <WorkspacePanels />
+          </LayoutZoneContext.Provider>
         </main>
       </div>
 

@@ -5,9 +5,9 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DocSheet, DocRow, DocCell, DocHeader, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -16,6 +16,7 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { exportToXlsx } from '@/lib/exportXlsx'
@@ -91,27 +92,27 @@ function PermissionsField({
   }
 
   return (
-    <div className="space-y-2">
-      <Label>Permissions</Label>
+    <DocCell label={readOnly ? undefined : 'Search Permissions'} htmlFor="role-perm-search">
       {!readOnly && (
         <Input
-          placeholder="Search permissions..."
+          id="role-perm-search"
+          placeholder="Type to filter…"
           value={search}
           onChange={e => onSearchChange(e.target.value)}
         />
       )}
-      <div className="max-h-48 overflow-y-auto rounded-md border border-[hsl(var(--border))] p-3 space-y-2">
+      <div className="max-h-56 overflow-y-auto border-t border-[hsl(var(--rule))] py-1 sm:columns-2">
         {readOnly ? (
           selected.size > 0
             ? allPermissions
                 .filter(p => selected.has(p.name))
                 .map(p => (
-                  <div key={p.name} className="text-sm py-0.5">{label(p)}</div>
+                  <div key={p.name} className="break-inside-avoid py-0.5 text-sm">☑ {label(p)}</div>
                 ))
             : <div className="text-sm text-[hsl(var(--muted-foreground))]">No permissions assigned.</div>
         ) : (
           filtered.map(p => (
-            <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
+            <label key={p.id} className="flex break-inside-avoid items-center gap-2 py-0.5 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={selected.has(p.name)}
@@ -123,7 +124,7 @@ function PermissionsField({
           ))
         )}
       </div>
-    </div>
+    </DocCell>
   )
 }
 
@@ -139,7 +140,9 @@ export function RolesPage() {
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
-  const { items: roles, page, setPage, totalPages, totalElements, reload } = usePagedList<Role>('/roles', {
+  const inRecordTab = useIsRecordTab()
+  const { items: roles, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<Role>('/roles', {
+    enabled: !inRecordTab,
     onError: () => toast('Failed to load roles.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
@@ -147,8 +150,13 @@ export function RolesPage() {
   })
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
 
-  const [open, setOpen]               = useState(false)
   const [mode, setMode]               = useState<FormMode>('view')
+  const rec = useRecordTab<Role>({
+    mode,
+    onOpen: { view: openView, edit: openEdit, create: openCreate },
+    onRequestClose: requestClose,
+    fetchRecord: id => apiFetch<Role>(`/roles/${id}`),
+  })
   const [activeRole, setActiveRole]   = useState<Role | null>(null)
   const [form, setForm]               = useState<RoleForm>(emptyForm())
   const [permSearch, setPermSearch]   = useState('')
@@ -168,13 +176,14 @@ export function RolesPage() {
     onDelete: canDeleteRole ? handleDelete : undefined,
     canEdit: canUpdate,
     canDelete: canDeleteRole,
-    enabled: !open && zone === 'content',
+    enabled: !inRecordTab && zone === 'content',
   })
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
     { key: '/', handler: () => searchInputRef.current?.focus() },
-  ], !open && zone === 'content')
+    { key: 'r', handler: () => reload() },
+  ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
     fetchAllContent<Permission>('/permissions')
@@ -183,37 +192,37 @@ export function RolesPage() {
   }, [])
 
   function openView(role: Role) {
+    if (!rec.isRecordTab) return rec.open('view', role)
     setActiveRole(role)
     const nextForm = roleToForm(role)
     setForm(nextForm)
     setPermSearch('')
     markClean(nextForm)
     setMode('view')
-    setOpen(true)
   }
 
   function openEdit(role: Role) {
+    if (!rec.isRecordTab) return rec.open('edit', role)
     setActiveRole(role)
     const nextForm = roleToForm(role)
     setForm(nextForm)
     setPermSearch('')
     markClean(nextForm)
     setMode('edit')
-    setOpen(true)
   }
 
   function openCreate() {
+    if (!rec.isRecordTab) return rec.open('create')
     setActiveRole(null)
     const nextForm = emptyForm()
     setForm(nextForm)
     setPermSearch('')
     markClean(nextForm)
     setMode('create')
-    setOpen(true)
   }
 
   function requestClose() {
-    guardedClose(form, () => setOpen(false))
+    guardedClose(form, () => rec.close())
   }
 
   function switchToEdit() {
@@ -250,7 +259,7 @@ export function RolesPage() {
         })
         toast('Role updated successfully.', 'success')
       }
-      setOpen(false)
+      rec.close()
       reload()
     } catch {
       toast(mode === 'create' ? 'Failed to create role.' : 'Failed to update role.', 'error')
@@ -284,10 +293,12 @@ export function RolesPage() {
   }
 
   const ro = mode === 'view'
-  const dialogTitle = mode === 'view' ? 'Role Details' : mode === 'create' ? 'New Role' : 'Edit Role'
+  const recordName = activeRole ? activeRole.displayName || activeRole.name : ''
+  const tabTitle = mode === 'create' ? 'New Role' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Role'
 
   return (
     <div className="space-y-6">
+      {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Roles</h1>
         <div className="flex items-center gap-2">
@@ -301,6 +312,7 @@ export function RolesPage() {
               className="pl-8 w-56"
             />
           </div>
+          <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
@@ -309,42 +321,50 @@ export function RolesPage() {
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
-              New Role
+              New
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={open} onOpenChange={v => (v ? setOpen(true) : requestClose())}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto" onFocusOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="form-name">Role Name</Label>
-              <Input id="form-name" value={form.name} readOnly={ro || mode === 'edit'} autoFocus
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="form-displayName">Display Name</Label>
-              <Input id="form-displayName" value={form.displayName} readOnly={ro}
-                onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
-            </div>
+      </>)}
 
-            {(mode === 'edit' || mode === 'view') && (
-              <PermissionsField
-                allPermissions={allPermissions}
-                selected={form.selectedPermissions}
-                onToggle={togglePermission}
-                readOnly={ro}
-                search={permSearch}
-                onSearchChange={setPermSearch}
-              />
-            )}
+      {inRecordTab && (
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DocSheet>
+              <DocRow cols="3fr 2fr">
+                <DocCell label="Role Name" htmlFor="form-name">
+                  <Input id="form-name" value={form.name} readOnly={ro || mode === 'edit'} autoFocus
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} className="font-semibold" />
+                </DocCell>
+                <DocHeader title="Role Definition" />
+              </DocRow>
+              <DocRow>
+                <DocCell label="Display Name" htmlFor="form-displayName">
+                  <Input id="form-displayName" value={form.displayName} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
+                </DocCell>
+              </DocRow>
+              {(mode === 'edit' || mode === 'view') && (
+                <>
+                  <DocSection title="Permissions Granted" />
+                  <DocRow>
+                    <PermissionsField
+                      allPermissions={allPermissions}
+                      selected={form.selectedPermissions}
+                      onToggle={togglePermission}
+                      readOnly={ro}
+                      search={permSearch}
+                      onSearchChange={setPermSearch}
+                    />
+                  </DocRow>
+                </>
+              )}
+            </DocSheet>
 
-            <div key={mode} className="flex justify-end gap-2 pt-2">
+            <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
@@ -362,8 +382,10 @@ export function RolesPage() {
               )}
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </RecordSheet>
+      )}
+
+      {!inRecordTab && (<>
 
       <Card>
         <CardContent className="pt-6">
@@ -431,6 +453,7 @@ export function RolesPage() {
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>
+      </>)}
     </div>
   )
 }

@@ -1,10 +1,13 @@
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRight, Home } from 'lucide-react'
-import { findNavItem } from '@/lib/nav'
+import { findNavItem, findRecordBase } from '@/lib/nav'
+import { useWorkspace } from '@/context/WorkspaceContext'
 
 export function Breadcrumbs() {
   const { pathname } = useLocation()
-  const current = findNavItem(pathname)
+  const { tabs } = useWorkspace()
+  const recordBase = findRecordBase(pathname)
+  const current = recordBase ?? findNavItem(pathname)
   const onDashboard = !current || current.to === '/dashboard'
 
   // The root crumb is a neutral Home anchor, not a literal "Dashboard" label —
@@ -16,6 +19,8 @@ export function Breadcrumbs() {
     if (current.group) crumbs.push({ label: current.group })
     if (current.subGroup) crumbs.push({ label: current.subGroup })
     crumbs.push({ label: current.label, to: current.to })
+    // A record tab: the module crumb links back to the list tab, the record is the leaf.
+    if (recordBase) crumbs.push({ label: tabs.find(t => t.key === pathname)?.title ?? recordBase.recordLabel ?? '' })
   }
 
   return (
