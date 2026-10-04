@@ -36,6 +36,8 @@ const DOCUMENT_TYPES = [
   { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
   { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice' },
   { value: 'PURCHASE_RECEIVE', label: 'Purchase Receive' },
+  { value: 'DELIVERY_RECEIPT', label: 'Delivery Receipt' },
+  { value: 'OUTLET_RECEIVE', label: 'Outlet Receive' },
 ]
 
 interface DocumentTemplate {

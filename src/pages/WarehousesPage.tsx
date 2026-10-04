@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch, deleteErrorMessage } from '@/lib/api'
+import { apiFetch, ApiError, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSignatures } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocText, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -39,6 +39,10 @@ interface Warehouse {
   code: string | null
   name: string
   active: boolean
+  /** The company's main warehouse — Delivery Receipts deduct stock from it. */
+  main: boolean
+  /** Auto-created for an OUTLET customer and managed through that customer. */
+  outlet: boolean
   createdAt: string | null
   updatedAt: string | null
   createdBy: string | null
@@ -49,12 +53,13 @@ type WarehouseForm = {
   code: string
   name: string
   active: boolean
+  main: boolean
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
-  columns.push({ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' })
+  columns.push({ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }, { key: 'kind', label: 'Type' })
   columns.push(
     { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
@@ -64,15 +69,19 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
 }
 
 function emptyForm(): WarehouseForm {
-  return { code: '', name: '', active: true }
+  return { code: '', name: '', active: true, main: false }
 }
 
 function warehouseToForm(w: Warehouse): WarehouseForm {
-  return { code: w.code ?? '', name: w.name, active: w.active }
+  return { code: w.code ?? '', name: w.name, active: w.active, main: w.main }
+}
+
+function warehouseKind(w: Warehouse): string {
+  return w.main ? 'Main' : w.outlet ? 'Outlet' : ''
 }
 
 function warehouseSearchText(w: Warehouse): string {
-  return [w.code ?? '', w.name, w.companyName, w.active ? 'active' : 'inactive', w.createdBy ?? '', w.updatedBy ?? ''].join(' ')
+  return [w.code ?? '', w.name, warehouseKind(w), w.companyName, w.active ? 'active' : 'inactive', w.createdBy ?? '', w.updatedBy ?? ''].join(' ')
 }
 
 export function WarehousesPage() {
@@ -153,6 +162,10 @@ export function WarehousesPage() {
   }
 
   function openEdit(warehouse: Warehouse) {
+    if (warehouse.outlet) {
+      toast(`"${warehouse.name}" is an outlet's warehouse — edit it through its customer record.`, 'error')
+      return
+    }
     if (!rec.isRecordTab) return rec.open('edit', warehouse)
     setActiveWarehouse(warehouse)
     const nextForm = warehouseToForm(warehouse)
@@ -182,11 +195,15 @@ export function WarehousesPage() {
       toast('Select a company.', 'error')
       return
     }
+    if (form.main && !form.active) {
+      toast('The main warehouse must be active.', 'error')
+      return
+    }
     if (!window.confirm(mode === 'create' ? `Create warehouse "${form.name}"?` : `Save changes to warehouse "${form.name}"?`)) return
     setLoading(true)
     try {
       const submitCompanyId = mode === 'create' ? companyId : activeWarehouse!.companyId
-      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, active: form.active }
+      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, active: form.active, main: form.main }
       if (mode === 'create') {
         await apiFetch<Warehouse>('/warehouses', { method: 'POST', body: JSON.stringify(body) })
         toast('Warehouse created successfully.', 'success')
@@ -196,14 +213,20 @@ export function WarehousesPage() {
       }
       rec.close()
       reload()
-    } catch {
-      toast(mode === 'create' ? 'Failed to create warehouse.' : 'Failed to update warehouse.', 'error')
+    } catch (err) {
+      toast(err instanceof ApiError && err.status === 400 && err.message
+        ? err.message
+        : mode === 'create' ? 'Failed to create warehouse.' : 'Failed to update warehouse.', 'error')
     } finally {
       setLoading(false)
     }
   }
 
   async function handleDelete(warehouse: Warehouse) {
+    if (warehouse.outlet) {
+      toast(`"${warehouse.name}" is an outlet's warehouse — it's removed together with its customer.`, 'error')
+      return
+    }
     if (!window.confirm(`Delete warehouse "${warehouse.name}"?`)) return
     try {
       await apiFetch(`/warehouses/${warehouse.id}`, { method: 'DELETE' })
@@ -222,6 +245,7 @@ export function WarehousesPage() {
     const rows = matching.map(w => ({
       code: w.code ?? '',
       name: w.name,
+      kind: warehouseKind(w),
       company: w.companyName,
       active: w.active ? 'Yes' : 'No',
       createdBy: resolveDisplayName(w.createdBy),
@@ -302,6 +326,13 @@ export function WarehousesPage() {
                         disabled={ro}
                         onChange={active => setForm(f => ({ ...f, active }))}
                       />
+                      <DocCheck
+                        id="warehouse-main"
+                        label="Main warehouse"
+                        checked={form.main}
+                        disabled={ro || !!activeWarehouse?.outlet}
+                        onChange={main => setForm(f => ({ ...f, main }))}
+                      />
                     </DocCell>
                   </DocRow>
                 </DocHeader>
@@ -317,6 +348,24 @@ export function WarehousesPage() {
                   />
                 </DocCell>
               </DocRow>
+              {form.main && !ro && !activeWarehouse?.main && (
+                <DocRow>
+                  <DocCell label="Main warehouse">
+                    <DocText className="text-xs text-[hsl(var(--muted-foreground))]">
+                      Delivery Receipts will deduct stock from this warehouse. Any other main warehouse in the company is unmarked on save.
+                    </DocText>
+                  </DocCell>
+                </DocRow>
+              )}
+              {activeWarehouse?.outlet && (
+                <DocRow>
+                  <DocCell label="Outlet warehouse">
+                    <DocText className="text-xs text-[hsl(var(--muted-foreground))]">
+                      Created automatically for an outlet customer. Its name, code and status follow that customer — change them on the Customers page.
+                    </DocText>
+                  </DocCell>
+                </DocRow>
+              )}
               {ro && activeWarehouse && (
                 <DocSignatures entries={[
                   { label: 'Created by', value: resolveDisplayName(activeWarehouse.createdBy) },
@@ -331,7 +380,7 @@ export function WarehousesPage() {
               {mode === 'view' ? (
                 <>
                   <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
-                  {hasPermission('UPDATE_WAREHOUSE') && (
+                  {hasPermission('UPDATE_WAREHOUSE') && !activeWarehouse?.outlet && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
@@ -358,6 +407,7 @@ export function WarehousesPage() {
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
+                {isVisible('kind') && <th className="text-left py-2 px-4 font-medium">Type</th>}
                 {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
@@ -368,6 +418,7 @@ export function WarehousesPage() {
                 isVisible={isVisible}
                 values={filters}
                 onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
+                filterable={key => key !== 'kind'}
               />
             </thead>
             <tbody>
@@ -390,6 +441,20 @@ export function WarehousesPage() {
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{warehouse.companyName}</td>}
                     {isVisible('code') && <td className="py-2 px-4 font-mono text-xs">{warehouse.code ?? '—'}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{warehouse.name}</td>}
+                    {isVisible('kind') && (
+                      <td className="py-2 px-4">
+                        {warehouseKind(warehouse) && (
+                          <span className={cn(
+                            'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium',
+                            warehouse.main
+                              ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
+                              : 'bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))]'
+                          )}>
+                            {warehouseKind(warehouse)}
+                          </span>
+                        )}
+                      </td>
+                    )}
                     {isVisible('active') && (
                       <td className="py-2 px-4">
                         <span className={cn(
@@ -409,12 +474,12 @@ export function WarehousesPage() {
                         <Button variant="ghost" size="sm" onClick={() => openView(warehouse)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {canUpdate && (
+                        {canUpdate && !warehouse.outlet && (
                           <Button variant="ghost" size="sm" onClick={() => openEdit(warehouse)}>
                             <Pencil className="w-4 h-4" />
                           </Button>
                         )}
-                        {canDeleteWarehouse && (
+                        {canDeleteWarehouse && !warehouse.outlet && (
                           <Button variant="ghost" size="sm" onClick={() => handleDelete(warehouse)}>
                             <Trash2 className="w-4 h-4 text-[hsl(var(--destructive))]" />
                           </Button>

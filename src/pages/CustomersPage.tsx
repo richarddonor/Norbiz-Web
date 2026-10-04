@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch, deleteErrorMessage } from '@/lib/api'
+import { apiFetch, ApiError, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSection, DocSignatures } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocText, DocSection, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
@@ -47,6 +47,9 @@ interface Customer {
   email: string | null
   phone: string | null
   active: boolean
+  /** OUTLET only: the outlet's own warehouse, created automatically by the backend. */
+  warehouseId: number | null
+  warehouseName: string | null
   createdAt: string | null
   updatedAt: string | null
   createdBy: string | null
@@ -211,8 +214,11 @@ export function CustomersPage() {
       }
       rec.close()
       reload()
-    } catch {
-      toast(mode === 'create' ? 'Failed to create customer.' : 'Failed to update customer.', 'error')
+    } catch (err) {
+      // 400s carry a useful reason (e.g. an outlet's warehouse code clashes, or an outlet can't revert to Customer).
+      toast(err instanceof ApiError && err.status === 400 && err.message
+        ? err.message
+        : mode === 'create' ? 'Failed to create customer.' : 'Failed to update customer.', 'error')
     } finally {
       setLoading(false)
     }
@@ -318,7 +324,8 @@ export function CustomersPage() {
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
                 </DocCell>
                 <DocCell label="Type" htmlFor="cust-type">
-                  {ro ? (
+                  {/* An outlet with its own warehouse can't revert to a plain customer (it may hold stock). */}
+                  {ro || !!activeCustomer?.warehouseId ? (
                     <Input id="cust-type" value={TYPE_LABELS[form.type]} readOnly />
                   ) : (
                     <SearchableSelect
@@ -331,6 +338,19 @@ export function CustomersPage() {
                   )}
                 </DocCell>
               </DocRow>
+              {(activeCustomer?.warehouseId || (!ro && form.type === 'OUTLET')) && (
+                <DocRow>
+                  <DocCell label="Outlet Warehouse">
+                    {activeCustomer?.warehouseId ? (
+                      <DocText>{activeCustomer.warehouseName}</DocText>
+                    ) : (
+                      <DocText className="italic text-[hsl(var(--muted-foreground))]">
+                        Created automatically on save, named after this outlet — deliveries post here in transit.
+                      </DocText>
+                    )}
+                  </DocCell>
+                </DocRow>
+              )}
               <DocSection title="Contact Information" />
               <DocRow>
                 <DocCell label="Email" htmlFor="cust-email">

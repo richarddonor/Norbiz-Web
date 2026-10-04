@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Boxes, Barcode, Warehouse, Contact,
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
+  PackageOpen, PackagePlus,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -30,6 +31,8 @@ export const navItems: NavItem[] = [
   { to: '/customers', label: 'Customers', icon: Store, permission: 'VIEW_CUSTOMER', group: 'People', recordLabel: 'Customer' },
   { to: '/suppliers', label: 'Suppliers', icon: Truck, permission: 'VIEW_SUPPLIER', group: 'People', recordLabel: 'Supplier' },
   { to: '/inventory-adjustments', label: 'Inventory Adjustment', icon: ClipboardList, permission: 'VIEW_INVENTORY_ADJUSTMENT', group: 'Inventory', recordLabel: 'Inventory Adjustment' },
+  { to: '/outlet-receives', label: 'Outlet Receives', icon: PackagePlus, permission: 'VIEW_OUTLET_RECEIVE', group: 'Inventory', recordLabel: 'Outlet Receive' },
+  { to: '/delivery-receipts', label: 'Delivery Receipts', icon: PackageOpen, permission: 'VIEW_DELIVERY_RECEIPT', group: 'Sales', recordLabel: 'Delivery Receipt' },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, permission: 'VIEW_PURCHASE_ORDER', group: 'Purchases', recordLabel: 'Purchase Order' },
   { to: '/purchase-invoices', label: 'Purchase Invoices', icon: Receipt, permission: 'VIEW_PURCHASE_INVOICE', group: 'Purchases', recordLabel: 'Purchase Invoice' },
   { to: '/purchase-receives', label: 'Purchase Receives', icon: PackageCheck, permission: 'VIEW_PURCHASE_RECEIVE', group: 'Purchases', recordLabel: 'Purchase Receive' },

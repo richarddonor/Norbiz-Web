@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useTabInstance } from '@/context/WorkspaceContext'
 import { fetchAllContent } from '@/hooks/usePagedList'
 import { apiFetch } from '@/lib/api'
 
@@ -23,6 +24,8 @@ export interface ItemLookupOption extends LookupOption {
   tags: string[]
   /** null unless the caller has VIEW_COST_PRICE */
   costPrice: number | null
+  /** selling price (UNIT_PRICE); null when the item has none */
+  unitPrice: number | null
 }
 
 export interface SourceLine {
@@ -35,6 +38,8 @@ export interface SourceLine {
   quantityLoaded: number
   /** null unless the caller has VIEW_COST_PRICE */
   costPrice: number | null
+  /** Delivery Receipt only: the line's selling price */
+  unitPrice: number | null
 }
 
 export interface TransactionLookupOption {
@@ -42,8 +47,13 @@ export interface TransactionLookupOption {
   companyId: number
   referenceNumber: string
   transactionDate: string
-  supplierId: number
-  supplierName: string
+  /** null for Delivery Receipts */
+  supplierId: number | null
+  supplierName: string | null
+  /** Delivery Receipt only (the outlet customer) */
+  customerId: number | null
+  customerName: string | null
+  /** Delivery Receipt: the outlet's warehouse, where the Outlet Receive posts */
   warehouseId: number
   warehouseName: string
   /** Purchase Invoice only: the originating PO, null for a Direct invoice */
@@ -58,6 +68,11 @@ export interface TransactionLookupOption {
  * when the company changes (e.g. the form's CompanyField). Returns `[]` until a
  * company is known — lookups never mix companies. Roles are system-wide, so pass
  * `{ global: true }` for them.
+ *
+ * Also refetches whenever its workspace tab is re-activated: record tabs stay mounted
+ * in the background, so without this a form opened before a record was created in
+ * another tab (e.g. a new Delivery Receipt for an open Outlet Receive) would never
+ * see it. The current options stay visible while the refresh loads.
  */
 export function useLookup<T>(
   path: string,
@@ -76,6 +91,15 @@ export function useLookup<T>(
   // the previous company's options while the new ones load.
   const [state, setState] = useState<{ url: string | null; rows: T[] }>({ url: null, rows: [] })
 
+  // Bumped each time the tab comes back to the foreground (not on first mount).
+  const { active } = useTabInstance()
+  const [refresh, setRefresh] = useState(0)
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (active && !wasActive.current) setRefresh(n => n + 1)
+    wasActive.current = active
+  }, [active])
+
   useEffect(() => {
     if (!url) return
     let cancelled = false
@@ -85,7 +109,7 @@ export function useLookup<T>(
     return () => { cancelled = true }
     // options.onError is intentionally not a dependency — callers pass inline lambdas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url])
+  }, [url, refresh])
 
   return url && state.url === url ? state.rows : EMPTY
 }
