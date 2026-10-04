@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
-import { X, Home } from 'lucide-react'
+import { X, XSquare, Home } from 'lucide-react'
 import { useWorkspace, TabInstanceContext, MAIN_TAB, type WorkspaceTab, type TabInstance } from '@/context/WorkspaceContext'
 import { findNavItem, findRecordBase } from '@/lib/nav'
 import { PageRoutes } from '@/routes'
@@ -14,20 +14,27 @@ function tabMeta(tab: WorkspaceTab) {
 }
 
 /** Alt+1…9 jumps to a tab (Alt+1 is always the module/list tab), Alt+W closes the
- * current record tab. Matched on `e.code` so it works on macOS, where Option+digit
+ * current record tab, Alt+Shift+W closes every record tab. Matched on `e.code` so it works on macOS, where Option+digit
  * produces a symbol in `e.key`. Deliberately not Ctrl+W/Ctrl+Tab — browsers reserve those. */
 function useTabShortcuts() {
-  const { tabs, activeKey, activate, requestCloseTab } = useWorkspace()
-  const latest = useRef({ tabs, activeKey, activate, requestCloseTab })
+  const { tabs, activeKey, activate, requestCloseTab, requestCloseAllTabs } = useWorkspace()
+  const latest = useRef({ tabs, activeKey, activate, requestCloseTab, requestCloseAllTabs })
   useEffect(() => {
-    latest.current = { tabs, activeKey, activate, requestCloseTab }
+    latest.current = { tabs, activeKey, activate, requestCloseTab, requestCloseAllTabs }
   })
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!e.altKey || e.ctrlKey || e.metaKey) return
       if (document.querySelector('[role="dialog"][data-state="open"]')) return
-      const { tabs, activeKey, activate, requestCloseTab } = latest.current
+      const { tabs, activeKey, activate, requestCloseTab, requestCloseAllTabs } = latest.current
+      if (e.code === 'KeyW' && e.shiftKey) {
+        if (tabs.length > 1) {
+          e.preventDefault()
+          requestCloseAllTabs()
+        }
+        return
+      }
       const digit = /^Digit([1-9])$/.exec(e.code)
       if (digit) {
         const tab = tabs[Number(digit[1]) - 1]
@@ -46,55 +53,67 @@ function useTabShortcuts() {
 }
 
 export function WorkspaceTabBar() {
-  const { tabs, activeKey, activate, requestCloseTab } = useWorkspace()
+  const { tabs, activeKey, activate, requestCloseTab, requestCloseAllTabs } = useWorkspace()
   useTabShortcuts()
 
   // Only the module tab — no strip needed until a record is opened.
   if (tabs.length === 1) return null
 
   return (
-    <div
-      role="tablist"
-      aria-label="Open records"
-      className="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 pt-1.5"
-    >
-      {tabs.map((tab, i) => {
-        const { icon: Icon, title } = tabMeta(tab)
-        const active = tab.key === activeKey
-        const closable = tab.key !== MAIN_TAB
-        return (
-          <div
-            key={tab.key}
-            role="tab"
-            aria-selected={active}
-            tabIndex={-1}
-            title={`${title}${i < 9 ? `  (Alt+${i + 1})` : ''}`}
-            onClick={() => activate(tab.key)}
-            onAuxClick={e => { if (e.button === 1 && closable) { e.preventDefault(); requestCloseTab(tab.key) } }}
-            className={cn(
-              'group relative -mb-px flex h-9 max-w-56 shrink-0 cursor-pointer select-none items-center gap-2 rounded-t-lg border border-b-0 px-3 text-sm transition-colors',
-              active
-                ? 'border-[hsl(var(--border))] bg-[hsl(var(--background))] font-medium text-[hsl(var(--foreground))]'
-                : 'border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]'
-            )}
-          >
-            {active && <span className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-[hsl(var(--primary))]" aria-hidden />}
-            <Icon className={cn('h-4 w-4 shrink-0', active && 'text-[hsl(var(--primary))]')} />
-            <span className="truncate">{title}</span>
-            {closable && (
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label={`Close ${title}`}
-                onClick={e => { e.stopPropagation(); requestCloseTab(tab.key) }}
-                className="-mr-1 rounded p-0.5 opacity-60 hover:bg-[hsl(var(--foreground))]/10 hover:opacity-100"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        )
-      })}
+    <div className="flex shrink-0 items-end border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+      <div
+        role="tablist"
+        aria-label="Open records"
+        className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto px-4 pt-1.5"
+      >
+        {tabs.map((tab, i) => {
+          const { icon: Icon, title } = tabMeta(tab)
+          const active = tab.key === activeKey
+          const closable = tab.key !== MAIN_TAB
+          return (
+            <div
+              key={tab.key}
+              role="tab"
+              aria-selected={active}
+              tabIndex={-1}
+              title={`${title}${i < 9 ? `  (Alt+${i + 1})` : ''}`}
+              onClick={() => activate(tab.key)}
+              onAuxClick={e => { if (e.button === 1 && closable) { e.preventDefault(); requestCloseTab(tab.key) } }}
+              className={cn(
+                'group relative -mb-px flex h-9 max-w-56 shrink-0 cursor-pointer select-none items-center gap-2 rounded-t-lg border border-b-0 px-3 text-sm transition-colors',
+                active
+                  ? 'border-[hsl(var(--border))] bg-[hsl(var(--background))] font-medium text-[hsl(var(--foreground))]'
+                  : 'border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]'
+              )}
+            >
+              {active && <span className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-[hsl(var(--primary))]" aria-hidden />}
+              <Icon className={cn('h-4 w-4 shrink-0', active && 'text-[hsl(var(--primary))]')} />
+              <span className="truncate">{title}</span>
+              {closable && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={`Close ${title}`}
+                  onClick={e => { e.stopPropagation(); requestCloseTab(tab.key) }}
+                  className="-mr-1 rounded p-0.5 opacity-60 hover:bg-[hsl(var(--foreground))]/10 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <button
+        type="button"
+        tabIndex={-1}
+        title="Close all record tabs  (Alt+Shift+W)"
+        onClick={requestCloseAllTabs}
+        className="mb-1 mr-3 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]"
+      >
+        <XSquare className="h-3.5 w-3.5" />
+        Close all
+      </button>
     </div>
   )
 }

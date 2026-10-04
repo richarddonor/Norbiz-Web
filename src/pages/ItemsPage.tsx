@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, ImageOff, Eye, Search, FileDown } from 'lucide-react'
-import { apiFetch, apiUpload, deleteErrorMessage } from '@/lib/api'
+import { Plus, Pencil, Trash2, ImageOff, Eye, Search, FileDown, X } from 'lucide-react'
+import { apiFetch, apiUpload, deleteErrorMessage, ApiError } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection, DocLines } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
@@ -70,9 +70,10 @@ interface PriceEntry {
   amount: string
 }
 
-interface ItemSku {
-  id: number
+/** One SKU line on the item form; the backend matches lines to the item's SKUs by code. */
+interface SkuLine {
   skuCode: string
+  unitPrice: string
 }
 
 interface Item {
@@ -88,6 +89,8 @@ interface Item {
   imagePath: string | null
   active: boolean
   skus: string[]
+  /** Absent on list responses cached before the field existed — the form then leaves SKUs alone. */
+  skuLines?: { id: number; skuCode: string; unitPrice: string | number }[] | null
   prices: PriceEntry[]
   tags: string[]
 }
@@ -97,7 +100,8 @@ type ItemForm = {
   name: string
   categoryId: number | ''
   groupId: number | ''
-  skus: string[]
+  /** null = unknown (stale cached row): sent as null so the backend leaves the SKUs untouched. */
+  skus: SkuLine[] | null
   prices: Record<PriceType, string>
   tags: Set<string>
 }
@@ -113,7 +117,9 @@ function formToPayload(form: ItemForm, companyId: number) {
     name: form.name,
     itemCategoryId: form.categoryId,
     itemGroupId: form.groupId === '' ? null : form.groupId,
-    skus: form.skus,
+    skuLines: form.skus === null ? null : form.skus
+      .filter(l => l.skuCode.trim() !== '')
+      .map(l => ({ skuCode: l.skuCode.trim(), unitPrice: Number(l.unitPrice) })),
     prices: PRICE_TYPES
       .filter(t => form.prices[t] !== '')
       .map(t => ({ priceType: t, amount: Number(form.prices[t]) })),
@@ -131,7 +137,7 @@ function itemToForm(item: Item): ItemForm {
     name: item.name,
     categoryId: item.itemCategoryId,
     groupId: item.itemGroupId ?? '',
-    skus: item.skus,
+    skus: item.skuLines ? item.skuLines.map(l => ({ skuCode: l.skuCode, unitPrice: String(l.unitPrice) })) : null,
     prices,
     tags: new Set(item.tags),
   }
@@ -222,12 +228,13 @@ function ItemFormFields({
   setForm,
   categories,
   groups,
-  allSkus,
   currentImagePath,
   onFileSelected,
   mode,
   cacheBust,
   canViewCostPrice,
+  currentSkuCodes,
+  onAddSku,
   footer,
 }: {
   companyField: React.ReactNode
@@ -236,20 +243,23 @@ function ItemFormFields({
   setForm: React.Dispatch<React.SetStateAction<ItemForm>>
   categories: LookupOption[]
   groups: LookupOption[]
-  allSkus: ItemSku[]
   currentImagePath: string | null
   onFileSelected: (f: File | null) => void
   mode: FormMode
   cacheBust?: number
   canViewCostPrice: boolean
+  /** The saved record's SKU codes, shown when `form.skus` is null. */
+  currentSkuCodes: string[]
+  onAddSku: () => void
   /** Rendered at the foot of the sheet (view mode's Change History). */
   footer?: React.ReactNode
 }) {
   const ro = mode === 'view'
-  const [skuSearch, setSkuSearch] = useState('')
-  const filteredSkus = allSkus.filter(s =>
-    s.skuCode.toLowerCase().includes(skuSearch.toLowerCase())
-  )
+  const skus = form.skus
+  const updateSku = (index: number, patch: Partial<SkuLine>) =>
+    setForm(f => ({ ...f, skus: (f.skus ?? []).map((l, i) => i === index ? { ...l, ...patch } : l) }))
+  const removeSku = (index: number) =>
+    setForm(f => ({ ...f, skus: (f.skus ?? []).filter((_, i) => i !== index) }))
   return (
     <DocSheet>
       <DocRow cols="minmax(0, 1fr) 12rem">
@@ -325,52 +335,50 @@ function ItemFormFields({
         ))}
       </DocRow>
 
-      <DocSection title="SKU Codes" />
-      <DocRow>
-        <DocCell label={ro ? undefined : 'Search SKUs'} htmlFor="form-sku-search">
-          {ro ? (
-            <DocText>{form.skus.join(', ')}</DocText>
-          ) : (
-            <>
-              <Input
-                id="form-sku-search"
-                placeholder="Type to filter…"
-                value={skuSearch}
-                onChange={e => setSkuSearch(e.target.value)}
-              />
-              <div className="max-h-36 overflow-y-auto border-t border-[hsl(var(--rule))] py-1 columns-2 sm:columns-3">
-                {filteredSkus.length === 0 ? (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] py-2">
-                    {allSkus.length === 0 ? 'No SKUs in database.' : 'No SKUs match.'}
-                  </p>
-                ) : (
-                  filteredSkus.map(sku => (
-                    <label key={sku.id} className="flex items-center gap-2 text-sm cursor-pointer px-1 py-0.5 break-inside-avoid hover:bg-[hsl(var(--secondary))]">
-                      <input
-                        type="checkbox"
-                        className="accent-[hsl(var(--primary))]"
-                        checked={form.skus.includes(sku.skuCode)}
-                        onChange={e => setForm(f => ({
-                          ...f,
-                          skus: e.target.checked
-                            ? [...f.skus, sku.skuCode]
-                            : f.skus.filter(s => s !== sku.skuCode),
-                        }))}
-                      />
-                      {sku.skuCode}
-                    </label>
-                  ))
-                )}
-              </div>
-              {form.skus.length > 0 && (
-                <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                  {form.skus.length} selected: {form.skus.join(', ')}
-                </p>
-              )}
-            </>
+      <DocSection title="SKUs" />
+      {skus === null ? (
+        // Stale cached row without unit prices — show the codes, keep them out of the save.
+        <DocRow>
+          <DocCell label="SKU Codes"><DocText>{currentSkuCodes.join(', ')}</DocText></DocCell>
+        </DocRow>
+      ) : (
+        <DocLines
+          rows={skus}
+          minRows={ro ? 1 : 0}
+          columns={[
+            {
+              key: 'code', label: 'SKU Code',
+              render: (line, i) => ro ? line.skuCode : (
+                <Input aria-label={`SKU line ${i + 1} code`} value={line.skuCode} maxLength={100}
+                  onChange={e => updateSku(i, { skuCode: e.target.value })} />
+              ),
+            },
+            {
+              key: 'unitPrice', label: 'Unit Price', align: 'right', width: '10rem',
+              render: (line, i) => ro ? formatCurrency(line.unitPrice || null) : (
+                <Input type="number" step="0.0001" min="0" aria-label={`SKU line ${i + 1} unit price`} value={line.unitPrice}
+                  onChange={e => updateSku(i, { unitPrice: e.target.value })} className="text-right" />
+              ),
+            },
+            !ro && {
+              key: 'remove', label: '', align: 'center', width: '2.75rem',
+              render: (_, i) => (
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label={`Remove SKU line ${i + 1}`}
+                  onClick={() => removeSku(i)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              ),
+            },
+          ]}
+          footer={!ro && (
+            <Button type="button" variant="ghost" size="sm" onClick={onAddSku}>
+              <Plus className="w-3.5 h-3.5" />
+              Add SKU
+              <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
+            </Button>
           )}
-        </DocCell>
-      </DocRow>
+        />
+      )}
       {footer}
     </DocSheet>
   )
@@ -400,7 +408,6 @@ export function ItemsPage() {
     filters: debouncedFilters,
     searchText: itemSearchText,
   })
-  const [allSkus, setAllSkus] = useState<ItemSku[]>([])
 
   const [mode, setMode]               = useState<FormMode>('view')
   const rec = useRecordTab<Item>({
@@ -449,9 +456,6 @@ export function ItemsPage() {
   ], !inRecordTab && zone === 'content')
 
   useEffect(() => {
-    fetchAllContent<ItemSku>('/item-skus')
-      .then(setAllSkus)
-      .catch(() => toast('Failed to load SKUs.', 'error'))
     if (isSuperAdmin) {
       fetchAllContent<CompanyOption>('/companies')
         .then(setAllCompanies)
@@ -491,6 +495,12 @@ export function ItemsPage() {
     setMode('create')
   }
 
+  // New SKUs default to the item's unit price — usually what a variant sells for.
+  function addSkuLine() {
+    if (form.skus === null) return
+    setForm(f => ({ ...f, skus: [...(f.skus ?? []), { skuCode: '', unitPrice: f.prices.UNIT_PRICE }] }))
+  }
+
   function requestClose() {
     guardedClose({ form, companyId, hasFile: !!selectedFile }, () => rec.close())
   }
@@ -520,6 +530,21 @@ export function ItemsPage() {
       toast('Select a category.', 'error')
       return
     }
+    const skuLines = (form.skus ?? []).filter(l => l.skuCode.trim() !== '' || l.unitPrice !== '')
+    if (skuLines.some(l => l.skuCode.trim() === '')) {
+      toast('Enter a code for every SKU line.', 'error')
+      return
+    }
+    if (skuLines.some(l => l.unitPrice === '' || Number(l.unitPrice) < 0)) {
+      toast('Enter a unit price for every SKU.', 'error')
+      return
+    }
+    const codes = skuLines.map(l => l.skuCode.trim())
+    const duplicate = codes.find((c, i) => codes.indexOf(c) !== i)
+    if (duplicate) {
+      toast(`SKU code "${duplicate}" is listed twice.`, 'error')
+      return
+    }
     if (!window.confirm(mode === 'create' ? `Create item "${form.name}"?` : `Save changes to item "${form.name}"?`)) return
     setLoading(true)
     try {
@@ -544,8 +569,12 @@ export function ItemsPage() {
       }
       rec.close()
       reload()
-    } catch {
-      toast(mode === 'create' ? 'Failed to create item.' : 'Failed to update item.', 'error')
+    } catch (err) {
+      // 4xx messages are user-facing (e.g. "SKU code already exists: X").
+      const status = err instanceof ApiError ? err.status : 0
+      toast(status >= 400 && status < 500 && err instanceof Error && err.message
+        ? err.message
+        : mode === 'create' ? 'Failed to create item.' : 'Failed to update item.', 'error')
     } finally {
       setLoading(false)
     }
@@ -619,7 +648,8 @@ export function ItemsPage() {
 
       {inRecordTab && (
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-3xl">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4"
+            onKeyDown={e => { if (mode !== 'view' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); addSkuLine() } }}>
             <ItemFormFields
               companyField={
                 <CompanyField
@@ -637,7 +667,8 @@ export function ItemsPage() {
               setForm={setForm}
               categories={categories}
               groups={groups}
-              allSkus={allSkus}
+              currentSkuCodes={activeItem?.skus ?? []}
+              onAddSku={addSkuLine}
               currentImagePath={activeItem?.imagePath ?? null}
               onFileSelected={setSelectedFile}
               mode={mode}

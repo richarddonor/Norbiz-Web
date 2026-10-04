@@ -118,7 +118,7 @@ export function TransactionHistory(props: { activity: TransactionActivity; recor
         rows={rows}
         rowKey={r => r.key}
         columns={[
-          { key: 'at', label: 'Date / Time', width: '9.5rem', render: r => <span className="tabular-nums">{r.at}</span> },
+          { key: 'at', label: 'Date / Time', width: '11rem', render: r => <span className="whitespace-nowrap tabular-nums">{r.at}</span> },
           { key: 'action', label: 'Action', render: r => r.action },
           { key: 'by', label: 'By', render: r => r.by || '—' },
           { key: 'remarks', label: 'Remarks', render: r => r.remarks || '' },

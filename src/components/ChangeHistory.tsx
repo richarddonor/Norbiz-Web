@@ -160,7 +160,7 @@ export function ChangeHistory({ type, id, refreshKey }: {
           rows={entries}
           rowKey={e => e.id}
           columns={[
-            { key: 'at', label: 'Date / Time', width: '9.5rem', render: e => <span className="tabular-nums">{formatDateTime(e.changedAt)}</span> },
+            { key: 'at', label: 'Date / Time', width: '11rem', render: e => <span className="whitespace-nowrap tabular-nums">{formatDateTime(e.changedAt)}</span> },
             { key: 'action', label: 'Action', width: '6rem', render: e => ACTION_LABEL[e.action] },
             { key: 'by', label: 'By', width: '10rem', render: e => <span className="block truncate">{e.changedBy ? resolveDisplayName(e.changedBy) : '—'}</span> },
             { key: 'changes', label: 'Changes', render: renderChanges },

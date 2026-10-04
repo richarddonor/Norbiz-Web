@@ -41,6 +41,9 @@ interface WorkspaceValue {
   /** Closes the tab the way the user asked to (tab ×, Alt+W): routes through the tab's
    * registered close handler so unsaved changes are confirmed first. */
   requestCloseTab: (key: string) => void
+  /** Requests closing every record tab, each through its own guarded close handler — a
+   * tab with unsaved changes whose discard the user declines stays open. */
+  requestCloseAllTabs: () => void
   setTabTitle: (key: string, title: string) => void
   registerCloseHandler: (key: string, handler: (() => void) | null) => void
   openRecord: (pathname: string, request: Omit<RecordRequest, 'nonce'>) => void
@@ -113,6 +116,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // was on before it, like a browser, rather than always jumping back to the list.
   const history = useRef<string[]>([MAIN_TAB])
   const closeHandlers = useRef(new Map<string, () => void>())
+  // While `requestCloseAllTabs` runs, `closeTab` only collects keys so all the tabs are
+  // removed (and the URL moved) once at the end, not one stale-state update per tab.
+  const closingBatch = useRef<Set<string> | null>(null)
 
   // Sync tabs to the URL — adjusted during render (this project's convention for
   // derived state) rather than an effect, so the right panel shows on the first paint.
@@ -176,6 +182,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const closeTab = useCallback((key: string) => {
     if (key === MAIN_TAB) return
     closeHandlers.current.delete(key)
+    if (closingBatch.current) {
+      closingBatch.current.add(key)
+      return
+    }
     const remaining = tabsRef.current.filter(t => t.key !== key)
     setTabs(remaining)
     if (key === activeKey) {
@@ -190,6 +200,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (handler) handler()
     else closeTab(key)
   }, [closeTab])
+
+  const requestCloseAllTabs = useCallback(() => {
+    const batch = new Set<string>()
+    closingBatch.current = batch
+    try {
+      for (const tab of tabsRef.current) {
+        if (tab.key !== MAIN_TAB) requestCloseTab(tab.key)
+      }
+    } finally {
+      closingBatch.current = null
+    }
+    if (batch.size === 0) return
+    const remaining = tabsRef.current.filter(t => !batch.has(t.key))
+    setTabs(remaining)
+    if (batch.has(activeKey)) {
+      const nextKey = history.current.find(k => remaining.some(t => t.key === k)) ?? MAIN_TAB
+      goTo(remaining.find(t => t.key === nextKey)!)
+    }
+  }, [activeKey, goTo, requestCloseTab])
 
   const setTabTitle = useCallback((key: string, title: string) => {
     setTabs(prev => (prev.some(t => t.key === key && t.title !== title)
@@ -207,8 +236,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [navigate])
 
   const value = useMemo<WorkspaceValue>(() => ({
-    tabs, activeKey, activate, closeTab, requestCloseTab, setTabTitle, registerCloseHandler, openRecord,
-  }), [tabs, activeKey, activate, closeTab, requestCloseTab, setTabTitle, registerCloseHandler, openRecord])
+    tabs, activeKey, activate, closeTab, requestCloseTab, requestCloseAllTabs, setTabTitle, registerCloseHandler, openRecord,
+  }), [tabs, activeKey, activate, closeTab, requestCloseTab, requestCloseAllTabs, setTabTitle, registerCloseHandler, openRecord])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }
