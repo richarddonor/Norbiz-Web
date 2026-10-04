@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocCheck, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { ResetPasswordDialog } from '@/components/ResetPasswordDialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -444,6 +445,7 @@ export function UsersPage() {
                   </DocRow>
                 </>
               )}
+              {ro && activeUser && <ChangeHistory type="USER" id={activeUser.id} />}
             </DocSheet>
 
             <div key={mode} className={RECORD_ACTIONS}>

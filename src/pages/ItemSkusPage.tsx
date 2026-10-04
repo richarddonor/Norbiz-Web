@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -309,6 +310,7 @@ export function ItemSkusPage() {
                   )}
                 </DocCell>
               </DocRow>
+              {ro && activeSku && <ChangeHistory type="ITEM_SKU" id={activeSku.id} />}
             </DocSheet>
 
             <div key={mode} className={RECORD_ACTIONS}>

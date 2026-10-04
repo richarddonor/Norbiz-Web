@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -288,6 +289,7 @@ export function BrandsPage() {
                   { label: 'Last updated at', value: formatDateTime(activeBrand.updatedAt) },
                 ]} />
               )}
+              {ro && activeBrand && <ChangeHistory type="BRAND" id={activeBrand.id} refreshKey={activeBrand.updatedAt} />}
             </DocSheet>
 
             <div key={mode} className={RECORD_ACTIONS}>

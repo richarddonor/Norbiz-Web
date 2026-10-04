@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
+import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -227,6 +228,7 @@ function ItemFormFields({
   mode,
   cacheBust,
   canViewCostPrice,
+  footer,
 }: {
   companyField: React.ReactNode
   codeAutoFocus: boolean
@@ -240,6 +242,8 @@ function ItemFormFields({
   mode: FormMode
   cacheBust?: number
   canViewCostPrice: boolean
+  /** Rendered at the foot of the sheet (view mode's Change History). */
+  footer?: React.ReactNode
 }) {
   const ro = mode === 'view'
   const [skuSearch, setSkuSearch] = useState('')
@@ -367,6 +371,7 @@ function ItemFormFields({
           )}
         </DocCell>
       </DocRow>
+      {footer}
     </DocSheet>
   )
 }
@@ -638,6 +643,7 @@ export function ItemsPage() {
               mode={mode}
               cacheBust={activeItem ? imageVersions[activeItem.id] : undefined}
               canViewCostPrice={hasPermission('VIEW_COST_PRICE')}
+              footer={mode === 'view' && activeItem && <ChangeHistory type="ITEM" id={activeItem.id} />}
             />
             <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
