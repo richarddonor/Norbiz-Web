@@ -38,6 +38,8 @@ const DOCUMENT_TYPES = [
   { value: 'PURCHASE_RECEIVE', label: 'Purchase Receive' },
   { value: 'DELIVERY_RECEIPT', label: 'Delivery Receipt' },
   { value: 'OUTLET_RECEIVE', label: 'Outlet Receive' },
+  { value: 'OUTLET_DELIVERY_RECEIPT', label: 'Outlet Delivery Receipt' },
+  { value: 'OUTLET_DELIVERY_RETURN', label: 'Outlet Delivery Return' },
 ]
 
 interface DocumentTemplate {

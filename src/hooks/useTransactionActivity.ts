@@ -6,7 +6,7 @@ import type { PageResponse } from '@/hooks/usePagedList'
 // Backend: /transactions/{type}/{id}/history|actions — see ../Norbiz/docs/TRANSACTION_ACTIONS.md.
 
 export type TransactionType = 'INVENTORY_ADJUSTMENT' | 'PURCHASE_ORDER' | 'PURCHASE_INVOICE' | 'PURCHASE_RECEIVE'
-  | 'DELIVERY_RECEIPT' | 'OUTLET_RECEIVE'
+  | 'DELIVERY_RECEIPT' | 'OUTLET_RECEIVE' | 'OUTLET_DELIVERY_RECEIPT' | 'OUTLET_DELIVERY_RETURN'
 
 // Mirrors the backend's TransactionType enum — add an entry when a new transaction type is registered there.
 export const TRANSACTION_TYPES: { value: TransactionType; label: string }[] = [
@@ -16,6 +16,8 @@ export const TRANSACTION_TYPES: { value: TransactionType; label: string }[] = [
   { value: 'PURCHASE_RECEIVE', label: 'Purchase Receive' },
   { value: 'DELIVERY_RECEIPT', label: 'Delivery Receipt' },
   { value: 'OUTLET_RECEIVE', label: 'Outlet Receive' },
+  { value: 'OUTLET_DELIVERY_RECEIPT', label: 'Outlet Delivery Receipt' },
+  { value: 'OUTLET_DELIVERY_RETURN', label: 'Outlet Delivery Return' },
 ]
 
 export function transactionTypeLabel(value: string): string {

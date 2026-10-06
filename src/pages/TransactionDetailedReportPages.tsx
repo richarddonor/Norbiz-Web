@@ -44,6 +44,9 @@ interface DetailedReportRow {
   warehouseName: string
   counterpartyId: number | null
   counterpartyName: string | null
+  /** Outlet Delivery Receipt / Return only: the sales agent */
+  agentId: number | null
+  agentName: string | null
   sourceReferenceNumber: string | null
   remarks: string | null
   voided: boolean
@@ -71,6 +74,8 @@ interface DetailedReportConfig {
   /** column-visibility storage key and export file name */
   key: string
   counterparty?: { label: string; lookup: 'suppliers' | 'customers'; param: 'supplierId' | 'customerId' }
+  /** adds the Agent column and an agent (employees tagged AGENT) filter */
+  agent?: boolean
   /** header label for the transaction this one loads from; omit when it has none */
   sourceLabel?: string
   loadedLabel: string
@@ -88,6 +93,7 @@ function buildColumns(config: DetailedReportConfig, showCompanyColumn: boolean):
     { key: 'warehouse', label: 'Warehouse' },
   )
   if (config.counterparty) columns.push({ key: 'counterparty', label: config.counterparty.label })
+  if (config.agent) columns.push({ key: 'agent', label: 'Agent' })
   if (config.sourceLabel) columns.push({ key: 'sourceReferenceNumber', label: config.sourceLabel })
   columns.push(
     { key: 'remarks', label: 'Remarks' },
@@ -115,7 +121,7 @@ const NUMERIC = new Set(['lineNumber', 'quantity', 'quantityLoaded', 'price', 'd
 const PINNED = 'referenceNumber'
 
 function rowSearchText(r: DetailedReportRow): string {
-  return [r.companyName, r.referenceNumber, r.sheetNumber ?? '', formatDate(r.transactionDate), r.warehouseName, r.counterpartyName ?? '',
+  return [r.companyName, r.referenceNumber, r.sheetNumber ?? '', formatDate(r.transactionDate), r.warehouseName, r.counterpartyName ?? '', r.agentName ?? '',
     r.sourceReferenceNumber ?? '', r.remarks ?? '', r.itemCode, r.itemName, r.createdBy ?? '', r.voided ? 'voided' : ''].join(' ')
 }
 
@@ -129,13 +135,15 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   const [warehouseId, setWarehouseId] = useState('')
   const [counterpartyId, setCounterpartyId] = useState('')
   const [itemId, setItemId] = useState('')
+  const [agentId, setAgentId] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
-  const isFiltering = !!debouncedSearch.trim() || !!warehouseId || !!counterpartyId || !!itemId || Object.values(debouncedFilters).some(v => v.trim())
+  const isFiltering = !!debouncedSearch.trim() || !!warehouseId || !!counterpartyId || !!itemId || !!agentId || Object.values(debouncedFilters).some(v => v.trim())
 
   const combinedFilters: Record<string, string> = { ...debouncedFilters, warehouseId, itemId }
   if (config.counterparty) combinedFilters[config.counterparty.param] = counterpartyId
+  if (config.agent) combinedFilters.agentId = agentId
 
   const { items: rows, page, setPage, totalPages, totalElements, loading: listLoading, reload } = usePagedList<DetailedReportRow>(config.endpoint, {
     onError: () => toast(`Failed to load ${config.title}.`, 'error'),
@@ -152,6 +160,11 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
     params: lookupParams,
     enabled: !!config.counterparty,
     onError: () => toast(`Failed to load ${config.counterparty?.label.toLowerCase()}s.`, 'error'),
+  })
+  const agents = useLookup<LookupOption>('employees', activeCompanyId, {
+    params: { ...lookupParams, tag: 'AGENT' },
+    enabled: !!config.agent,
+    onError: () => toast('Failed to load agents.', 'error'),
   })
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility(config.key)
@@ -179,6 +192,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
       case 'date': return formatDate(r.transactionDate)
       case 'warehouse': return r.warehouseName
       case 'counterparty': return r.counterpartyName ?? ''
+      case 'agent': return r.agentName ?? ''
       case 'sourceReferenceNumber': return r.sourceReferenceNumber ?? ''
       case 'remarks': return r.remarks ?? ''
       case 'lineNumber': return String(r.lineNumber)
@@ -232,6 +246,15 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
               onChange={setCounterpartyId}
               options={counterparties.map(c => ({ value: String(c.id), label: c.name }))}
               placeholder={`All ${config.counterparty.label.toLowerCase()}s`}
+              className="w-44"
+            />
+          )}
+          {config.agent && (
+            <SearchableSelect
+              value={agentId}
+              onChange={setAgentId}
+              options={agents.map(a => ({ value: String(a.id), label: a.code ? `${a.code} — ${a.name}` : a.name }))}
+              placeholder="All agents"
               className="w-44"
             />
           )}
@@ -346,9 +369,20 @@ const DELIVERY_RECEIPT: DetailedReportConfig = {
   counterparty: CUSTOMER, loadedLabel: 'Qty Received', priceLabel: 'Unit Price',
 }
 
+const OUTLET_DELIVERY_RECEIPT: DetailedReportConfig = {
+  title: 'Outlet Delivery Receipt - Detailed', endpoint: '/reports/detailed/outlet-delivery-receipts', transactionType: 'OUTLET_DELIVERY_RECEIPT', key: 'outlet-delivery-receipt-detailed',
+  counterparty: { ...CUSTOMER, label: 'Outlet' }, agent: true, loadedLabel: 'Qty Returned', priceLabel: 'Unit Price',
+}
+const OUTLET_DELIVERY_RETURN: DetailedReportConfig = {
+  title: 'Outlet Delivery Return - Detailed', endpoint: '/reports/detailed/outlet-delivery-returns', transactionType: 'OUTLET_DELIVERY_RETURN', key: 'outlet-delivery-return-detailed',
+  counterparty: { ...CUSTOMER, label: 'Outlet' }, agent: true, sourceLabel: 'ODR #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price',
+}
+
 export const InventoryAdjustmentDetailedPage = () => <TransactionDetailedReport config={INVENTORY_ADJUSTMENT} />
 export const OutletReceiveDetailedPage = () => <TransactionDetailedReport config={OUTLET_RECEIVE} />
 export const PurchaseOrderDetailedPage = () => <TransactionDetailedReport config={PURCHASE_ORDER} />
 export const PurchaseInvoiceDetailedPage = () => <TransactionDetailedReport config={PURCHASE_INVOICE} />
 export const PurchaseReceiveDetailedPage = () => <TransactionDetailedReport config={PURCHASE_RECEIVE} />
 export const DeliveryReceiptDetailedPage = () => <TransactionDetailedReport config={DELIVERY_RECEIPT} />
+export const OutletDeliveryReceiptDetailedPage = () => <TransactionDetailedReport config={OUTLET_DELIVERY_RECEIPT} />
+export const OutletDeliveryReturnDetailedPage = () => <TransactionDetailedReport config={OUTLET_DELIVERY_RETURN} />

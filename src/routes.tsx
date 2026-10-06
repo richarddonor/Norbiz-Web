@@ -21,12 +21,15 @@ import { PurchaseInvoicesPage } from '@/pages/PurchaseInvoicesPage'
 import { PurchaseReceivesPage } from '@/pages/PurchaseReceivesPage'
 import { DeliveryReceiptsPage } from '@/pages/DeliveryReceiptsPage'
 import { OutletReceivesPage } from '@/pages/OutletReceivesPage'
+import { OutletDeliveryReceiptsPage } from '@/pages/OutletDeliveryReceiptsPage'
+import { OutletDeliveryReturnsPage } from '@/pages/OutletDeliveryReturnsPage'
 import { ReportCategoryPage } from '@/pages/ReportCategoryPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
 import {
   InventoryAdjustmentDetailedPage, OutletReceiveDetailedPage, PurchaseOrderDetailedPage,
   PurchaseInvoiceDetailedPage, PurchaseReceiveDetailedPage, DeliveryReceiptDetailedPage,
+  OutletDeliveryReceiptDetailedPage, OutletDeliveryReturnDetailedPage,
 } from '@/pages/TransactionDetailedReportPages'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
 import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
@@ -52,6 +55,8 @@ const pageComponents: Record<string, ComponentType> = {
   '/purchase-receives': PurchaseReceivesPage,
   '/delivery-receipts': DeliveryReceiptsPage,
   '/outlet-receives': OutletReceivesPage,
+  '/outlet-delivery-receipts': OutletDeliveryReceiptsPage,
+  '/outlet-delivery-returns': OutletDeliveryReturnsPage,
   ...Object.fromEntries(reportCategories.map(c => [c.to, ReportCategoryPage])),
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
@@ -61,6 +66,8 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/purchase-invoice-detailed': PurchaseInvoiceDetailedPage,
   '/reports/purchase-receive-detailed': PurchaseReceiveDetailedPage,
   '/reports/delivery-receipt-detailed': DeliveryReceiptDetailedPage,
+  '/reports/outlet-delivery-receipt-detailed': OutletDeliveryReceiptDetailedPage,
+  '/reports/outlet-delivery-return-detailed': OutletDeliveryReturnDetailedPage,
   '/document-templates': DocumentTemplatesPage,
   '/transaction-actions': TransactionActionsPage,
 }

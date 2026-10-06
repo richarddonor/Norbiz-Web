@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Boxes, Barcode, Warehouse, Contact,
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
-  PackageOpen, PackagePlus, FileSpreadsheet,
+  PackageOpen, PackagePlus, FileSpreadsheet, HandCoins, Undo2,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -42,6 +42,8 @@ const reports: (NavItem & { parent: (typeof reportCategories)[number]['to'] })[]
   { to: '/reports/purchase-invoice-detailed', label: 'Purchase Invoice - Detailed', icon: FileSpreadsheet, permission: 'VIEW_PURCHASE_INVOICE_DETAILED_REPORT', parent: '/reports/purchases', description: 'Purchase invoices, one row per line item.' },
   { to: '/reports/purchase-receive-detailed', label: 'Purchase Receive - Detailed', icon: FileSpreadsheet, permission: 'VIEW_PURCHASE_RECEIVE_DETAILED_REPORT', parent: '/reports/purchases', description: 'Purchase receives, one row per line item.' },
   { to: '/reports/delivery-receipt-detailed', label: 'Delivery Receipt - Detailed', icon: FileSpreadsheet, permission: 'VIEW_DELIVERY_RECEIPT_DETAILED_REPORT', parent: '/reports/sales', description: 'Delivery receipts, one row per line item.' },
+  { to: '/reports/outlet-delivery-receipt-detailed', label: 'Outlet Delivery Receipt - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_DELIVERY_RECEIPT_DETAILED_REPORT', parent: '/reports/sales', description: 'Outlet sales, one row per line item, with the agent.' },
+  { to: '/reports/outlet-delivery-return-detailed', label: 'Outlet Delivery Return - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_DELIVERY_RETURN_DETAILED_REPORT', parent: '/reports/sales', description: 'Outlet sales returns, one row per line item, with the agent.' },
 ]
 
 function reportNavItems(): NavItem[] {
@@ -79,6 +81,8 @@ export const navItems: NavItem[] = [
   { to: '/inventory-adjustments', label: 'Inventory Adjustment', icon: ClipboardList, permission: 'VIEW_INVENTORY_ADJUSTMENT', group: 'Inventory', recordLabel: 'Inventory Adjustment' },
   { to: '/outlet-receives', label: 'Outlet Receives', icon: PackagePlus, permission: 'VIEW_OUTLET_RECEIVE', group: 'Inventory', recordLabel: 'Outlet Receive' },
   { to: '/delivery-receipts', label: 'Delivery Receipts', icon: PackageOpen, permission: 'VIEW_DELIVERY_RECEIPT', group: 'Sales', recordLabel: 'Delivery Receipt' },
+  { to: '/outlet-delivery-receipts', label: 'Outlet Delivery Receipts', icon: HandCoins, permission: 'VIEW_OUTLET_DELIVERY_RECEIPT', group: 'Sales', recordLabel: 'Outlet Delivery Receipt' },
+  { to: '/outlet-delivery-returns', label: 'Outlet Delivery Returns', icon: Undo2, permission: 'VIEW_OUTLET_DELIVERY_RETURN', group: 'Sales', recordLabel: 'Outlet Delivery Return' },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, permission: 'VIEW_PURCHASE_ORDER', group: 'Purchases', recordLabel: 'Purchase Order' },
   { to: '/purchase-invoices', label: 'Purchase Invoices', icon: Receipt, permission: 'VIEW_PURCHASE_INVOICE', group: 'Purchases', recordLabel: 'Purchase Invoice' },
   { to: '/purchase-receives', label: 'Purchase Receives', icon: PackageCheck, permission: 'VIEW_PURCHASE_RECEIVE', group: 'Purchases', recordLabel: 'Purchase Receive' },

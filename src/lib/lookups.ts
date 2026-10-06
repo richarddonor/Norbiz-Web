@@ -28,6 +28,14 @@ export interface ItemLookupOption extends LookupOption {
   unitPrice: number | null
 }
 
+/** `/lookups/customers` option. */
+export interface CustomerLookupOption extends LookupOption {
+  type: 'CUSTOMER' | 'OUTLET'
+  /** OUTLET only: the outlet's own warehouse; null for a plain customer */
+  warehouseId: number | null
+  warehouseName: string | null
+}
+
 export interface SourceLine {
   id: number
   lineNumber: number
@@ -38,7 +46,7 @@ export interface SourceLine {
   quantityLoaded: number
   /** null unless the caller has VIEW_COST_PRICE */
   costPrice: number | null
-  /** Delivery Receipt only: the line's selling price */
+  /** Delivery Receipt / Outlet Delivery Receipt only: the line's selling price */
   unitPrice: number | null
 }
 
@@ -47,15 +55,18 @@ export interface TransactionLookupOption {
   companyId: number
   referenceNumber: string
   transactionDate: string
-  /** null for Delivery Receipts */
+  /** null for Delivery Receipts / Outlet Delivery Receipts */
   supplierId: number | null
   supplierName: string | null
-  /** Delivery Receipt only (the outlet customer) */
+  /** Delivery Receipt / Outlet Delivery Receipt only (the outlet customer) */
   customerId: number | null
   customerName: string | null
-  /** Delivery Receipt: the outlet's warehouse, where the Outlet Receive posts */
+  /** Delivery Receipt / Outlet Delivery Receipt: the outlet's warehouse, where the receive/return posts */
   warehouseId: number
   warehouseName: string
+  /** Outlet Delivery Receipt only: the agent credited with the sale */
+  agentId: number | null
+  agentName: string | null
   /** Purchase Invoice only: the originating PO, null for a Direct invoice */
   purchaseOrderId: number | null
   voided: boolean

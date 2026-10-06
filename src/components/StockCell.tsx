@@ -3,9 +3,10 @@ import { formatQuantity } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /**
- * Read-only On Hand / In Transit figure beside a transaction line on create — only a
- * guide to whether there's enough stock, so it never appears on a posted transaction.
- * `short` flags the line (destructive colour) when the entered quantity would exceed it.
+ * Read-only On Hand / In Transit figure beside a transaction line on create, so it never
+ * appears on a posted transaction. `short` flags the line (destructive colour) when the entered
+ * quantity would exceed it; forms that deduct on-hand derive it from `shortItems` (lib/stock)
+ * and also block Post, since the backend rejects any posting that takes on-hand below zero.
  */
 export function StockCell({ stock, field, itemId, warehouseChosen, short }: {
   stock: Map<number, StockRow>

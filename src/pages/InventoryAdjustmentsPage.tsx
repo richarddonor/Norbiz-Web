@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Eye, Search, FileDown, Ban, X } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, mutationErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
+import { shortItems } from '@/lib/stock'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
@@ -139,6 +140,8 @@ export function InventoryAdjustmentsPage() {
   const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
   // An adjustment posts to on-hand quantity only, so that's the balance shown as a guide while creating.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load stock balances.', 'error') })
+  // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
+  const shortStock = shortItems(lines, stock, l => -Number(l.quantity))
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('inventory-adjustments')
   const { markClean, guardedClose } = useDirtyGuard()
@@ -228,6 +231,10 @@ export function InventoryAdjustmentsPage() {
       toast('Add at least one line with an item and quantity.', 'error')
       return
     }
+    if (shortStock.size > 0) {
+      toast('Not enough stock on hand for the highlighted line(s) — stock cannot go below zero. Reduce the quantity or restock first.', 'error')
+      return
+    }
     if (!window.confirm('Post this inventory adjustment? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
@@ -243,8 +250,8 @@ export function InventoryAdjustmentsPage() {
       toast('Inventory adjustment posted successfully.', 'success')
       rec.close()
       reload()
-    } catch {
-      toast('Failed to post inventory adjustment.', 'error')
+    } catch (err) {
+      toast(mutationErrorMessage(err, 'Failed to post inventory adjustment.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -285,8 +292,8 @@ export function InventoryAdjustmentsPage() {
       setActiveAdjustment(voided)
       toast('Adjustment voided.', 'success')
       reload()
-    } catch {
-      toast('Failed to void adjustment.', 'error')
+    } catch (err) {
+      toast(mutationErrorMessage(err, 'Failed to void adjustment.'), 'error')
     } finally {
       setVoiding(false)
     }
@@ -443,7 +450,7 @@ export function InventoryAdjustmentsPage() {
                       key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
                         <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''}
-                          short={available => line.quantity.trim() !== '' && available + Number(line.quantity) < 0} />
+                          short={() => line.itemId !== '' && shortStock.has(line.itemId)} />
                       ),
                     },
                     {

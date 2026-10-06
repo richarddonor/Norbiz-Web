@@ -120,6 +120,33 @@ export function deleteErrorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+// Error code the backend sends (409) when posting or voiding an inventory transaction would take
+// on-hand stock below zero — details: { shortfalls: InsufficientStockShortfall[] }.
+export const INSUFFICIENT_STOCK = 'INSUFFICIENT_STOCK'
+
+export interface InsufficientStockShortfall {
+  itemId: number
+  itemCode: string
+  itemName: string
+  warehouseId: number
+  warehouseName: string
+  available: number
+  required: number
+}
+
+export function isInsufficientStock(err: unknown): err is ApiError & { details?: { shortfalls?: InsufficientStockShortfall[] } } {
+  return err instanceof ApiError && err.code === INSUFFICIENT_STOCK
+}
+
+/**
+ * Toast text for a failed post/void: the backend's explanation for any 4xx (validation, insufficient
+ * stock, already loaded/voided, access denied), otherwise the page's generic fallback.
+ */
+export function mutationErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.status < 500 && err.message) return err.message
+  return fallback
+}
+
 // Backend wraps errors as AppErrorResponse { message, traceId?, code?, details? }.
 async function toApiError(response: Response): Promise<ApiError> {
   const text = await response.text()

@@ -25,21 +25,20 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type CustomerLookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create'
-type CustomerType = 'CUSTOMER' | 'OUTLET'
 
 interface CompanyOption {
   id: number
   name: string
 }
 
-interface DeliveryLine {
+interface OutletDeliveryLine {
   id: number
   lineNumber: number
   itemId: number
@@ -51,17 +50,17 @@ interface DeliveryLine {
   quantityLoaded: string
 }
 
-interface DeliveryReceipt {
+interface OutletDeliveryReceipt {
   id: number
   companyId: number
   companyName: string
   customerId: number
   customerName: string
-  customerType: CustomerType
   warehouseId: number
   warehouseName: string
-  destinationWarehouseId: number | null
-  destinationWarehouseName: string | null
+  agentId: number
+  agentCode: string
+  agentName: string
   referenceNumber: string
   sheetNumber: string | null
   deliveryDate: string
@@ -73,7 +72,7 @@ interface DeliveryReceipt {
   voidedAt: string | null
   voidedBy: string | null
   loaded: boolean
-  lines: DeliveryLine[]
+  lines: OutletDeliveryLine[]
 }
 
 interface LineDraft {
@@ -90,9 +89,9 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   columns.push(
     { key: 'referenceNumber', label: 'Reference #' },
     { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'customer', label: 'Customer' },
-    { key: 'warehouse', label: 'From Warehouse' },
-    { key: 'status', label: 'Outlet Receiving' },
+    { key: 'outlet', label: 'Outlet' },
+    { key: 'agent', label: 'Agent' },
+    { key: 'status', label: 'Returns' },
     { key: 'date', label: 'Delivery Date', type: 'date' },
     { key: 'total', label: 'Total Amount' },
     { key: 'voided', label: 'Voided', type: 'boolean' },
@@ -105,16 +104,14 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Outlet deliveries sit in transit until an Outlet Receive takes them in; plain-customer deliveries have nothing to receive.
-function receivingStatus(r: DeliveryReceipt): string {
-  if (r.customerType !== 'OUTLET') return '—'
-  if (r.loaded) return 'Received'
-  return r.lines.some(l => Number(l.quantityLoaded) > 0) ? 'Partially received' : 'In transit'
+function returnStatus(r: OutletDeliveryReceipt): string {
+  if (r.loaded) return 'Fully returned'
+  return r.lines.some(l => Number(l.quantityLoaded) > 0) ? 'Partially returned' : '—'
 }
 
-function receiptSearchText(r: DeliveryReceipt): string {
-  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.destinationWarehouseName ?? '',
-    receivingStatus(r), r.remarks ?? '', r.companyName, formatDate(r.deliveryDate)].join(' ')
+function receiptSearchText(r: OutletDeliveryReceipt): string {
+  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.agentCode, r.agentName,
+    returnStatus(r), r.remarks ?? '', r.companyName, formatDate(r.deliveryDate)].join(' ')
 }
 
 function lineAmount(line: LineDraft): number {
@@ -123,7 +120,11 @@ function lineAmount(line: LineDraft): number {
   return Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0
 }
 
-export function DeliveryReceiptsPage() {
+function agentLabel(a: LookupOption): string {
+  return a.code ? `${a.code} — ${a.name}` : a.name
+}
+
+export function OutletDeliveryReceiptsPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
@@ -137,9 +138,9 @@ export function DeliveryReceiptsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
+  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<OutletDeliveryReceipt>('/outlet-delivery-receipts', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load delivery receipts.', 'error'),
+    onError: () => toast('Failed to load outlet delivery receipts.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: receiptSearchText,
@@ -148,15 +149,16 @@ export function DeliveryReceiptsPage() {
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [mode, setMode]                       = useState<FormMode>('view')
-  const rec = useRecordTab<DeliveryReceipt>({
+  const rec = useRecordTab<OutletDeliveryReceipt>({
     mode,
     onOpen: { view: openView, create: openCreate },
     onRequestClose: requestClose,
-    fetchRecord: id => apiFetch<DeliveryReceipt>(`/delivery-receipts/${id}`),
+    fetchRecord: id => apiFetch<OutletDeliveryReceipt>(`/outlet-delivery-receipts/${id}`),
   })
-  const [activeReceipt, setActiveReceipt]     = useState<DeliveryReceipt | null>(null)
+  const [activeReceipt, setActiveReceipt]     = useState<OutletDeliveryReceipt | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [customerId, setCustomerId]           = useState<number | ''>('')
+  const [agentId, setAgentId]                 = useState<number | ''>('')
   const [deliveryDate, setDeliveryDate]       = useState(todayIso())
   const [remarks, setRemarks]                 = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
@@ -165,28 +167,26 @@ export function DeliveryReceiptsPage() {
   // Dropdowns are scoped to the form's company (the active company on the list tab).
   const lookupCompanyId = companyId || activeCompanyId
   const creating = inRecordTab && mode === 'create'
-  const customers = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, onError: () => toast('Failed to load customers.', 'error') })
-  // The customer lookup is slim (no type), so outlets are a second, outlet-only lookup.
-  const outlets = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
-  // Stock always leaves the company's main warehouse — there's no warehouse picker.
-  const mainWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: creating, params: { mainOnly: 'true' }, onError: () => toast('Failed to load the main warehouse.', 'error') })
-  const mainWarehouse = mainWarehouses[0]
+  const outlets = useLookup<CustomerLookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
+  // Only employees tagged AGENT earn sales commission; the backend rejects anyone else.
+  const agents = useLookup<LookupOption>('employees', lookupCompanyId, { enabled: !inRecordTab || creating, params: { tag: 'AGENT' }, onError: () => toast('Failed to load agents.', 'error') })
   const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
-  const isOutlet = customerId !== '' && outlets.some(o => o.id === customerId)
-  // A delivery deducts on-hand stock from the main warehouse, so that's the balance shown as a guide.
-  const stock = useStock(lookupCompanyId, mainWarehouse?.id ?? '', lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
+  const selectedOutlet = customerId === '' ? undefined : outlets.find(o => o.id === customerId)
+  const outletWarehouseId = selectedOutlet?.warehouseId ?? ''
+  // A sale deducts on-hand stock from the outlet's own warehouse, so that's the balance shown as a guide.
+  const stock = useStock(lookupCompanyId, outletWarehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
   const shortStock = shortItems(lines, stock, l => Number(l.quantity))
   const draftTotal = lines.reduce((sum, l) => sum + (l.itemId !== '' ? lineAmount(l) : 0), 0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, menu: columnMenu } = useColumnVisibility('delivery-receipts')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('outlet-delivery-receipts')
   const { markClean, guardedClose } = useDirtyGuard()
 
-  const canCreate = hasPermission('CREATE_DELIVERY_RECEIPT')
+  const canCreate = hasPermission('CREATE_OUTLET_DELIVERY_RECEIPT')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
-  const canVoid = hasPermission('VOID_DELIVERY_RECEIPT')
+  const canVoid = hasPermission('VOID_OUTLET_DELIVERY_RECEIPT')
   const [voiding, setVoiding] = useState(false)
-  const activity = useTransactionActivity('DELIVERY_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
+  const activity = useTransactionActivity('OUTLET_DELIVERY_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: receipts,
@@ -208,7 +208,7 @@ export function DeliveryReceiptsPage() {
     }
   }, [])
 
-  function openView(receipt: DeliveryReceipt) {
+  function openView(receipt: OutletDeliveryReceipt) {
     if (!rec.isRecordTab) return rec.open('view', receipt)
     setActiveReceipt(receipt)
     setMode('view')
@@ -222,21 +222,23 @@ export function DeliveryReceiptsPage() {
     const nextLines: LineDraft[] = [EMPTY_LINE]
     setCompanyId(nextCompanyId)
     setCustomerId('')
+    setAgentId('')
     setDeliveryDate(nextDate)
     setRemarks('')
     setSheetNumber('')
     setLines(nextLines)
-    markClean({ companyId: nextCompanyId, customerId: '', deliveryDate: nextDate, remarks: '', sheetNumber: '', lines: nextLines })
+    markClean({ companyId: nextCompanyId, customerId: '', agentId: '', deliveryDate: nextDate, remarks: '', sheetNumber: '', lines: nextLines })
     setMode('create')
   }
 
   function requestClose() {
-    guardedClose({ companyId, customerId, deliveryDate, remarks, sheetNumber, lines }, () => rec.close())
+    guardedClose({ companyId, customerId, agentId, deliveryDate, remarks, sheetNumber, lines }, () => rec.close())
   }
 
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
     setCustomerId('')
+    setAgentId('')
     setLines([EMPTY_LINE])
   }
 
@@ -264,12 +266,16 @@ export function DeliveryReceiptsPage() {
       toast('Select a company.', 'error')
       return
     }
-    if (!mainWarehouse) {
-      toast('No main warehouse is set for this company. Mark one as Main on the Warehouses page first.', 'error')
+    if (!customerId) {
+      toast('Select an outlet.', 'error')
       return
     }
-    if (!customerId) {
-      toast('Select a customer.', 'error')
+    if (selectedOutlet && selectedOutlet.warehouseId == null) {
+      toast(`${selectedOutlet.name} has no warehouse to sell from.`, 'error')
+      return
+    }
+    if (!agentId) {
+      toast('Select an agent.', 'error')
       return
     }
     const validLines = lines.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
@@ -289,12 +295,13 @@ export function DeliveryReceiptsPage() {
       toast('Not enough stock on hand for the highlighted line(s) — stock cannot go below zero. Reduce the quantity or restock first.', 'error')
       return
     }
-    if (!window.confirm('Post this delivery receipt? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this outlet delivery receipt? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
         companyId,
         customerId,
+        agentId,
         deliveryDate,
         remarks: remarks || null,
         sheetNumber: sheetNumber || null,
@@ -304,12 +311,12 @@ export function DeliveryReceiptsPage() {
           unitPrice: l.unitPrice.trim() !== '' ? Number(l.unitPrice) : null,
         })),
       }
-      await apiFetch<DeliveryReceipt>('/delivery-receipts', { method: 'POST', body: JSON.stringify(body) })
-      toast('Delivery receipt posted successfully.', 'success')
+      await apiFetch<OutletDeliveryReceipt>('/outlet-delivery-receipts', { method: 'POST', body: JSON.stringify(body) })
+      toast('Outlet delivery receipt posted successfully.', 'success')
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to post delivery receipt.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to post outlet delivery receipt.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -317,57 +324,57 @@ export function DeliveryReceiptsPage() {
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<DeliveryReceipt>(qs ? `/delivery-receipts?${qs}` : '/delivery-receipts', 100000)
+    const all = await fetchAllContent<OutletDeliveryReceipt>(qs ? `/outlet-delivery-receipts?${qs}` : '/outlet-delivery-receipts', 100000)
     const term = debouncedSearch.trim().toLowerCase()
     const matching = term ? all.filter(r => receiptSearchText(r).toLowerCase().includes(term)) : all
     const rows = matching.map(r => ({
       referenceNumber: r.referenceNumber,
       sheetNumber: r.sheetNumber ?? '',
-      customer: r.customerName,
-      warehouse: r.warehouseName,
-      status: receivingStatus(r),
+      outlet: r.customerName,
+      agent: `${r.agentCode} — ${r.agentName}`,
+      status: returnStatus(r),
       date: formatDate(r.deliveryDate),
       total: formatCurrency(r.totalAmount),
       voided: r.voided ? 'Yes' : '',
       company: r.companyName,
     }))
-    exportToXlsx('delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('outlet-delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   function printFailed() {
     if (!activeReceipt) return
     toast(
-      `No active print template configured for Delivery Receipts under ${activeReceipt.companyName}. Create one under Document Templates while ${activeReceipt.companyName} is your active company.`,
+      `No active print template configured for Outlet Delivery Receipts under ${activeReceipt.companyName}. Create one under Document Templates while ${activeReceipt.companyName} is your active company.`,
       'error'
     )
   }
 
   async function handleVoid() {
     if (!activeReceipt) return
-    if (!window.confirm(`Void delivery receipt "${activeReceipt.referenceNumber}"? This returns the stock to ${activeReceipt.warehouseName} and cannot be undone.`)) return
+    if (!window.confirm(`Void outlet delivery receipt "${activeReceipt.referenceNumber}"? This returns the stock to ${activeReceipt.warehouseName} and cannot be undone.`)) return
     setVoiding(true)
     try {
-      const voided = await apiFetch<DeliveryReceipt>(`/delivery-receipts/${activeReceipt.id}/void`, { method: 'POST' })
+      const voided = await apiFetch<OutletDeliveryReceipt>(`/outlet-delivery-receipts/${activeReceipt.id}/void`, { method: 'POST' })
       setActiveReceipt(voided)
-      toast('Delivery receipt voided.', 'success')
+      toast('Outlet delivery receipt voided.', 'success')
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to void delivery receipt.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to void outlet delivery receipt.'), 'error')
     } finally {
       setVoiding(false)
     }
   }
 
   const recordName = activeReceipt?.referenceNumber ?? ''
-  const tabTitle = mode === 'create' ? 'New Delivery Receipt' : recordName || 'Delivery Receipt'
-  // Received (even partly) by an outlet: the backend blocks voiding until those receives are voided.
-  const receivedByOutlet = !!activeReceipt && activeReceipt.lines.some(l => Number(l.quantityLoaded) > 0)
+  const tabTitle = mode === 'create' ? 'New Outlet Delivery Receipt' : recordName || 'Outlet Delivery Receipt'
+  // Returned (even partly): the backend blocks voiding until those returns are voided.
+  const hasReturns = !!activeReceipt && activeReceipt.lines.some(l => Number(l.quantityLoaded) > 0)
 
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">Delivery Receipts</h1>
+        <h1 className="text-2xl font-bold">Outlet Delivery Receipts</h1>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
@@ -375,15 +382,22 @@ export function DeliveryReceiptsPage() {
               ref={searchInputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search delivery receipts… (/)"
-              className="pl-8 w-56"
+              placeholder="Search outlet delivery receipts… (/)"
+              className="pl-8 w-64"
             />
           </div>
           <SearchableSelect
             value={filters.customerId ?? ''}
             onChange={v => setFilters(prev => ({ ...prev, customerId: v }))}
-            options={customers.map(c => ({ value: String(c.id), label: c.name }))}
-            placeholder="All customers"
+            options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
+            placeholder="All outlets"
+            className="w-44"
+          />
+          <SearchableSelect
+            value={filters.agentId ?? ''}
+            onChange={v => setFilters(prev => ({ ...prev, agentId: v }))}
+            options={agents.map(a => ({ value: String(a.id), label: agentLabel(a) }))}
+            placeholder="All agents"
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
@@ -410,8 +424,8 @@ export function DeliveryReceiptsPage() {
             <div className="space-y-4">
               <DocSheet>
                 {activeReceipt.voided && <DocStamp text="Voided" />}
-                <DocLetterhead company={<CompanyField id="dr-company" readOnly name={activeReceipt.companyName} />}>
-                  <DocHeader title="Delivery Receipt" number={activeReceipt.referenceNumber}>
+                <DocLetterhead company={<CompanyField id="odr-company" readOnly name={activeReceipt.companyName} />}>
+                  <DocHeader title="Outlet Delivery Receipt" number={activeReceipt.referenceNumber}>
                     <DocRow>
                       <DocCell label="Delivery Date"><DocText>{formatDate(activeReceipt.deliveryDate)}</DocText></DocCell>
                       <DocCell label="Sheet #"><DocText>{activeReceipt.sheetNumber}</DocText></DocCell>
@@ -419,17 +433,13 @@ export function DeliveryReceiptsPage() {
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={activeReceipt.customerType === 'OUTLET' ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'}>
-                    <DocText>{activeReceipt.customerName}</DocText>
-                  </DocCell>
-                  <DocCell label="Deliver From (Warehouse)"><DocText>{activeReceipt.warehouseName}</DocText></DocCell>
+                  <DocCell label="Outlet"><DocText>{activeReceipt.customerName}</DocText></DocCell>
+                  <DocCell label="Sold From (Warehouse)"><DocText>{activeReceipt.warehouseName}</DocText></DocCell>
                 </DocRow>
-                {activeReceipt.customerType === 'OUTLET' && (
-                  <DocRow>
-                    <DocCell label="In Transit To (Outlet Warehouse)"><DocText>{activeReceipt.destinationWarehouseName}</DocText></DocCell>
-                    <DocCell label="Outlet Receiving"><DocText>{receivingStatus(activeReceipt)}</DocText></DocCell>
-                  </DocRow>
-                )}
+                <DocRow>
+                  <DocCell label="Agent"><DocText>{`${activeReceipt.agentCode} — ${activeReceipt.agentName}`}</DocText></DocCell>
+                  <DocCell label="Returns"><DocText>{returnStatus(activeReceipt)}</DocText></DocCell>
+                </DocRow>
                 <DocLines
                   rows={byLineNumber(activeReceipt.lines)}
                   rowKey={line => line.id}
@@ -438,9 +448,7 @@ export function DeliveryReceiptsPage() {
                   columns={[
                     { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
                     { key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', render: line => line.quantity },
-                    activeReceipt.customerType === 'OUTLET' && {
-                      key: 'received', label: 'Received', align: 'right', width: '7rem', render: line => line.quantityLoaded,
-                    },
+                    { key: 'returned', label: 'Returned', align: 'right', width: '7rem', render: line => line.quantityLoaded },
                     { key: 'unitPrice', label: 'Unit Price', align: 'right', width: '8rem', render: line => formatCurrency(line.unitPrice) },
                     { key: 'amount', label: 'Amount', align: 'right', width: '9rem', render: line => formatCurrency(line.amount) },
                   ]}
@@ -460,8 +468,8 @@ export function DeliveryReceiptsPage() {
                     variant="outline"
                     onClick={handleVoid}
                     loading={voiding}
-                    disabled={receivedByOutlet}
-                    title={receivedByOutlet ? 'Already received by the outlet — void its Outlet Receive(s) first.' : undefined}
+                    disabled={hasReturns}
+                    title={hasReturns ? 'Has returns — void its Outlet Delivery Return(s) first.' : undefined}
                   >
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -470,7 +478,7 @@ export function DeliveryReceiptsPage() {
                 {canPrint && (
                   <PrintButton
                     companyId={activeReceipt.companyId}
-                    documentType="DELIVERY_RECEIPT"
+                    documentType="OUTLET_DELIVERY_RECEIPT"
                     data={activeReceipt as unknown as Record<string, unknown>}
                     onError={printFailed}
                   />
@@ -483,7 +491,7 @@ export function DeliveryReceiptsPage() {
               <DocSheet>
                 <DocLetterhead company={
                     <CompanyField
-                      id="dr-company"
+                      id="odr-company"
                       readOnly={!showCompanyColumn}
                       name={companyOptions.find(c => c.id === companyId)?.name}
                       companies={companyOptions}
@@ -492,38 +500,49 @@ export function DeliveryReceiptsPage() {
                       autoFocus={showCompanyColumn}
                     />
                 }>
-                  <DocHeader title="Delivery Receipt" number={<PendingNumber />}>
+                  <DocHeader title="Outlet Delivery Receipt" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Delivery Date" htmlFor="dr-date" required>
-                        <Input id="dr-date" type="date" value={deliveryDate}
+                      <DocCell label="Delivery Date" htmlFor="odr-date" required>
+                        <Input id="odr-date" type="date" value={deliveryDate}
                           onChange={e => setDeliveryDate(e.target.value)} required />
                       </DocCell>
-                      <DocCell label="Sheet #" htmlFor="dr-sheet">
-                        <Input id="dr-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      <DocCell label="Sheet #" htmlFor="odr-sheet">
+                        <Input id="odr-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
                       </DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={isOutlet ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'} htmlFor="dr-customer" required>
+                  <DocCell label="Outlet" htmlFor="odr-outlet" required>
                     <SearchableSelect
-                      id="dr-customer"
+                      id="odr-outlet"
                       value={customerId === '' ? '' : String(customerId)}
                       onChange={v => setCustomerId(v ? Number(v) : '')}
-                      options={customers.map(c => ({ value: String(c.id), label: outlets.some(o => o.id === c.id) ? `${c.name} (Outlet)` : c.name }))}
+                      options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
                       disabled={!companyId}
                       autoFocus={!showCompanyColumn}
                     />
-                    {isOutlet && (
+                  </DocCell>
+                  <DocCell label="Sold From (Outlet Warehouse)">
+                    <DocText className={cn(!selectedOutlet?.warehouseName && 'italic text-[hsl(var(--muted-foreground))]')}>
+                      {selectedOutlet?.warehouseName ?? 'The outlet\'s own warehouse'}
+                    </DocText>
+                  </DocCell>
+                </DocRow>
+                <DocRow>
+                  <DocCell label="Agent" htmlFor="odr-agent" required>
+                    <SearchableSelect
+                      id="odr-agent"
+                      value={agentId === '' ? '' : String(agentId)}
+                      onChange={v => setAgentId(v ? Number(v) : '')}
+                      options={agents.map(a => ({ value: String(a.id), label: agentLabel(a) }))}
+                      disabled={!companyId}
+                    />
+                    {companyId && agents.length === 0 && (
                       <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        Posts as in transit to this outlet's warehouse until an Outlet Receive takes it in.
+                        No active employees are tagged Agent — tag one on the Employees page first.
                       </p>
                     )}
-                  </DocCell>
-                  <DocCell label="Deliver From (Main Warehouse)">
-                    <DocText className={cn(!mainWarehouse && 'italic text-[hsl(var(--destructive))]')}>
-                      {mainWarehouse?.name ?? (lookupCompanyId ? 'No main warehouse set — mark one on the Warehouses page' : '')}
-                    </DocText>
                   </DocCell>
                 </DocRow>
                 <DocLines
@@ -542,7 +561,7 @@ export function DeliveryReceiptsPage() {
                     {
                       key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
-                        <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={!!mainWarehouse}
+                        <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={outletWarehouseId !== ''}
                           short={() => line.itemId !== '' && shortStock.has(line.itemId)} />
                       ),
                     },
@@ -585,15 +604,15 @@ export function DeliveryReceiptsPage() {
                       </Button>
                       {formInventoryItems.length === 0 && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                          No items are tagged Inventory — tag an item on the Items page before posting a delivery receipt.
+                          No items are tagged Inventory — tag an item on the Items page before posting an outlet delivery receipt.
                         </span>
                       )}
                     </div>
                   }
                 />
                 <DocRow cols="3fr 2fr">
-                  <DocCell label="Remarks" htmlFor="dr-remarks">
-                    <Input id="dr-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  <DocCell label="Remarks" htmlFor="odr-remarks">
+                    <Input id="odr-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
                   </DocCell>
                   <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(draftTotal), grand: true }]} />
                 </DocRow>
@@ -602,7 +621,7 @@ export function DeliveryReceiptsPage() {
 
               <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Delivery Receipt</Button>
+                <Button type="submit" loading={loading}>Post Outlet Delivery Receipt</Button>
               </div>
             </form>
           )}
@@ -619,9 +638,9 @@ export function DeliveryReceiptsPage() {
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
-                {isVisible('customer') && <th className="text-left py-2 px-4 font-medium">Customer</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">From Warehouse</th>}
-                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Outlet Receiving</th>}
+                {isVisible('outlet') && <th className="text-left py-2 px-4 font-medium">Outlet</th>}
+                {isVisible('agent') && <th className="text-left py-2 px-4 font-medium">Agent</th>}
+                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Returns</th>}
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Delivery Date</th>}
                 {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
@@ -632,14 +651,14 @@ export function DeliveryReceiptsPage() {
                 isVisible={isVisible}
                 values={filters}
                 onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-                filterable={key => key !== 'customer' && key !== 'warehouse' && key !== 'company' && key !== 'status' && key !== 'total' && key !== 'voided'}
+                filterable={key => key !== 'outlet' && key !== 'agent' && key !== 'company' && key !== 'status' && key !== 'total' && key !== 'voided'}
               />
             </thead>
             <tbody>
               {receipts.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No delivery receipts match your search/filters.' : 'No delivery receipts to display.'}
+                    {isFiltering ? 'No outlet delivery receipts match your search/filters.' : 'No outlet delivery receipts to display.'}
                   </td>
                 </tr>
               ) : (
@@ -655,14 +674,9 @@ export function DeliveryReceiptsPage() {
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.companyName}</td>}
                     {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receipt.referenceNumber}</td>}
                     {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.sheetNumber ?? '—'}</td>}
-                    {isVisible('customer') && (
-                      <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
-                        {receipt.customerName}
-                        {receipt.customerType === 'OUTLET' && <span className="ml-1.5 text-xs">(Outlet)</span>}
-                      </td>
-                    )}
-                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.warehouseName}</td>}
-                    {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receivingStatus(receipt)}</td>}
+                    {isVisible('outlet') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.customerName}</td>}
+                    {isVisible('agent') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.agentName}</td>}
+                    {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{returnStatus(receipt)}</td>}
                     {isVisible('date') && <td className="py-2 px-4">{formatDate(receipt.deliveryDate)}</td>}
                     {isVisible('total') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(receipt.totalAmount)}</td>}
                     {isVisible('voided') && (

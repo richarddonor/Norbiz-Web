@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
 import { Plus, Eye, Search, FileDown, Ban } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, mutationErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -336,8 +336,8 @@ export function PurchaseReceivesPage() {
       toast('Purchase receive posted successfully.', 'success')
       rec.close()
       reload()
-    } catch {
-      toast('Failed to post purchase receive.', 'error')
+    } catch (err) {
+      toast(mutationErrorMessage(err, 'Failed to post purchase receive.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -378,8 +378,8 @@ export function PurchaseReceivesPage() {
       setActiveReceive(voided)
       toast('Purchase receive voided.', 'success')
       reload()
-    } catch {
-      toast('Failed to void purchase receive.', 'error')
+    } catch (err) {
+      toast(mutationErrorMessage(err, 'Failed to void purchase receive.'), 'error')
     } finally {
       setVoiding(false)
     }
