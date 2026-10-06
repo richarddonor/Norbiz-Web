@@ -130,6 +130,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem('auth_token')
     localStorage.removeItem('active_company_id')
+    // Saved workspace tabs (WorkspaceContext) are meant to survive a refresh, not a logout.
+    try {
+      Object.keys(sessionStorage)
+        .filter(k => k.startsWith('workspace_tabs:'))
+        .forEach(k => sessionStorage.removeItem(k))
+    } catch {
+      // Storage unavailable — nothing was saved.
+    }
     setToken(null)
     setMe(null)
     setActiveCompanyId(null)

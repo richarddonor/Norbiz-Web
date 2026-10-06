@@ -35,7 +35,7 @@ export function CompanyField({ id, readOnly, name, companies, value, onChange, a
   const { showCompanyColumn } = useAuth()
   if (!showCompanyColumn) return null
   return (
-    <DocCell label="Company" htmlFor={id}>
+    <DocCell label="Company" htmlFor={id} required={!readOnly}>
       {readOnly ? (
         <Input id={id} value={name ?? '—'} readOnly autoFocus={autoFocus} className="text-base font-semibold" />
       ) : (

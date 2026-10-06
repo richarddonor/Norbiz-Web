@@ -140,7 +140,7 @@ export function EmployeesPage() {
   const allUsers = useLookup<LookupOption>('users', userCompanyId, { enabled: inRecordTab && mode !== 'view', onError: () => toast('Failed to load users.', 'error') })
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('employees')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('employees')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -292,7 +292,7 @@ export function EmployeesPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -326,7 +326,7 @@ export function EmployeesPage() {
               }>
                 <DocHeader title="Employee Record">
                   <DocRow>
-                    <DocCell label="Employee No." htmlFor="emp-code">
+                    <DocCell label="Employee No." htmlFor="emp-code" required={!ro}>
                       <Input id="emp-code" value={form.employeeCode} readOnly={ro} autoFocus={!(mode === 'create' && showCompanyColumn)}
                         onChange={e => setForm(f => ({ ...f, employeeCode: e.target.value }))} required={!ro} />
                     </DocCell>
@@ -339,11 +339,11 @@ export function EmployeesPage() {
               </DocLetterhead>
               <DocSection title="Personal Information" />
               <DocRow>
-                <DocCell label="Last Name" htmlFor="emp-last">
+                <DocCell label="Last Name" htmlFor="emp-last" required={!ro}>
                   <Input id="emp-last" value={form.lastName} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} required={!ro} />
                 </DocCell>
-                <DocCell label="First Name" htmlFor="emp-first">
+                <DocCell label="First Name" htmlFor="emp-first" required={!ro}>
                   <Input id="emp-first" value={form.firstName} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} required={!ro} />
                 </DocCell>

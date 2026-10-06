@@ -187,7 +187,7 @@ export function UsersPage() {
   const [companyIds, setCompanyIds]   = useState<Set<number>>(new Set())
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('users')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('users')
   const { markClean, guardedClose } = useDirtyGuard()
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
 
@@ -360,7 +360,7 @@ export function UsersPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -406,7 +406,7 @@ export function UsersPage() {
               }>
                 <DocHeader title="User Account">
                   <DocRow>
-                    <DocCell label="Username" htmlFor="form-username">
+                    <DocCell label="Username" htmlFor="form-username" required={mode === 'create'}>
                       <Input id="form-username" value={form.username} readOnly={ro || mode === 'edit'} autoFocus
                         onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required={!ro} />
                     </DocCell>
@@ -418,14 +418,14 @@ export function UsersPage() {
                   <Input id="form-displayName" value={form.displayName} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
                 </DocCell>
-                <DocCell label="Email" htmlFor="form-email">
+                <DocCell label="Email" htmlFor="form-email" required={!ro}>
                   <Input id="form-email" type={ro ? 'text' : 'email'} value={form.email} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required={!ro} />
                 </DocCell>
               </DocRow>
               {mode === 'create' && (
                 <DocRow>
-                  <DocCell label="Initial Password" htmlFor="form-password">
+                  <DocCell label="Initial Password" htmlFor="form-password" required>
                     <Input id="form-password" type="password" value={form.password}
                       onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
                   </DocCell>

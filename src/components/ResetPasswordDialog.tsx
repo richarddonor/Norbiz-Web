@@ -62,7 +62,7 @@ export function ResetPasswordDialog({ open, onOpenChange, userId, username }: Pr
               <DocHeader title="Password Reset" />
             </DocRow>
             <DocRow>
-              <DocCell label="New Password" htmlFor="reset-new-password">
+              <DocCell label="New Password" htmlFor="reset-new-password" required>
                 <Input
                   id="reset-new-password"
                   type="password"
@@ -76,7 +76,7 @@ export function ResetPasswordDialog({ open, onOpenChange, userId, username }: Pr
               </DocCell>
             </DocRow>
             <DocRow>
-              <DocCell label="Confirm New Password" htmlFor="reset-confirm-password">
+              <DocCell label="Confirm New Password" htmlFor="reset-confirm-password" required>
                 <Input
                   id="reset-confirm-password"
                   type="password"

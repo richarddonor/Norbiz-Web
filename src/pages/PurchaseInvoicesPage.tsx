@@ -192,7 +192,7 @@ export function PurchaseInvoicesPage() {
   // A PO-based one posts nothing (the PO already did), so it shows no stock column at all.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating && invoiceMode === 'DIRECT', onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-invoices')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('purchase-invoices')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_PURCHASE_INVOICE')
@@ -459,7 +459,7 @@ export function PurchaseInvoicesPage() {
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -578,7 +578,7 @@ export function PurchaseInvoicesPage() {
                 }>
                   <DocHeader title="Purchase Invoice" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Invoice Date" htmlFor="pinv-date">
+                      <DocCell label="Invoice Date" htmlFor="pinv-date" required>
                         <Input id="pinv-date" type="date" value={invoiceDate}
                           onChange={e => setInvoiceDate(e.target.value)} required />
                       </DocCell>
@@ -587,7 +587,7 @@ export function PurchaseInvoicesPage() {
                       </DocCell>
                     </DocRow>
                     <DocRow>
-                      <DocCell label="Invoice Type" htmlFor="pinv-mode">
+                      <DocCell label="Invoice Type" htmlFor="pinv-mode" required>
                         <SearchableSelect
                           id="pinv-mode"
                           value={invoiceMode}
@@ -603,7 +603,7 @@ export function PurchaseInvoicesPage() {
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Supplier" htmlFor="pinv-supplier">
+                  <DocCell label="Supplier" htmlFor="pinv-supplier" required>
                     <SearchableSelect
                       id="pinv-supplier"
                       value={supplierId === '' ? '' : String(supplierId)}
@@ -615,7 +615,8 @@ export function PurchaseInvoicesPage() {
                       autoFocus={!showCompanyColumn}
                     />
                   </DocCell>
-                  <DocCell label="Deliver To (Warehouse)" htmlFor={invoiceMode === 'DIRECT' ? 'pinv-warehouse' : undefined}>
+                  <DocCell label="Deliver To (Warehouse)" htmlFor={invoiceMode === 'DIRECT' ? 'pinv-warehouse' : undefined}
+                    required={invoiceMode === 'DIRECT'}>
                     {invoiceMode === 'DIRECT' ? (
                       <SearchableSelect
                         id="pinv-warehouse"
@@ -634,7 +635,7 @@ export function PurchaseInvoicesPage() {
                 </DocRow>
                 {invoiceMode === 'PO_BASED' && (
                   <DocRow>
-                    <DocCell label="Purchase Order No." htmlFor="pinv-po">
+                    <DocCell label="Purchase Order No." htmlFor="pinv-po" required>
                       <SearchableSelect
                         id="pinv-po"
                         value={purchaseOrderId === '' ? '' : String(purchaseOrderId)}
@@ -655,7 +656,7 @@ export function PurchaseInvoicesPage() {
                   rows={lines}
                   columns={[
                     {
-                      key: 'item', label: 'Item',
+                      key: 'item', label: 'Item', required: invoiceMode === 'DIRECT',
                       render: (line, i) => {
                         if (invoiceMode === 'PO_BASED') {
                           const poLine = selectedPurchaseOrder?.lines.find(l => l.itemId === line.itemId)
@@ -671,11 +672,11 @@ export function PurchaseInvoicesPage() {
                       },
                     },
                     invoiceMode === 'DIRECT' && {
-                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem',
+                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem', readOnly: true,
                       render: line => <StockCell stock={stock} field="transitQuantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''} />,
                     },
                     {
-                      key: 'quantity', label: 'Quantity', align: 'right', width: '7rem',
+                      key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', required: invoiceMode === 'DIRECT',
                       render: (line, i) => invoiceMode === 'PO_BASED' ? line.quantity : (
                         <Input type="number" step="0.0001" aria-label={`Line ${i + 1} quantity`} value={line.quantity}
                           onChange={e => updateLine(i, { quantity: e.target.value })} className="text-right" />
@@ -735,14 +736,14 @@ export function PurchaseInvoicesPage() {
                     rows={fees}
                     columns={[
                       {
-                        key: 'description', label: 'Description',
+                        key: 'description', label: 'Description', required: true,
                         render: (fee, i) => (
                           <Input aria-label={`Fee ${i + 1} description`} value={fee.description}
                             onChange={e => updateFee(i, { description: e.target.value })} />
                         ),
                       },
                       {
-                        key: 'amount', label: 'Amount', align: 'right', width: '9rem',
+                        key: 'amount', label: 'Amount', align: 'right', width: '9rem', required: true,
                         render: (fee, i) => (
                           <Input type="number" step="0.01" aria-label={`Fee ${i + 1} amount`} value={fee.amount}
                             onChange={e => updateFee(i, { amount: e.target.value })} className="text-right" />

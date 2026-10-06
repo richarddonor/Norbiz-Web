@@ -11,6 +11,10 @@ const LABEL = 'block text-[11px] font-medium leading-tight text-[hsl(var(--muted
 /** Section / column headings: small caps with tracking, a notch stronger than field captions. */
 const CAPTION_TEXT = 'text-[10.5px] font-semibold uppercase leading-tight tracking-[0.08em] text-[hsl(var(--muted-foreground))]'
 const CAPTION = cn('block', CAPTION_TEXT)
+/** Required-field marker appended to a caption. Only shown while the field is editable. */
+function RequiredMark() {
+  return <span aria-hidden className="ml-0.5 text-[hsl(var(--destructive))]">*</span>
+}
 const FOCUS_BOX = 'transition-colors focus-within:bg-[hsl(var(--primary))]/[0.04] focus-within:shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]'
 
 /** The ruled frame of a paper-style form. Deliberately not `overflow-hidden` —
@@ -49,18 +53,21 @@ interface DocCellProps {
   /** Number of `DocRow` columns this cell spans. */
   span?: number
   align?: 'left' | 'right'
+  /** Marks the caption with a required asterisk. Pass it only while the field is editable
+   * (e.g. `required={!ro}`), never in view mode. */
+  required?: boolean
   className?: string
   children?: React.ReactNode
 }
 
 /** A single boxed field: small caption in the top-left corner, value/control below. */
-export function DocCell({ label, htmlFor, span, align, className, children }: DocCellProps) {
+export function DocCell({ label, htmlFor, span, align, required, className, children }: DocCellProps) {
   return (
     <div
       className={cn('min-w-0 border-l first:border-l-0 px-3 pt-2 pb-0.5', RULE, FOCUS_BOX, className)}
       style={span ? { gridColumn: `span ${span} / span ${span}` } : undefined}
     >
-      {label && <Label htmlFor={htmlFor} className={LABEL}>{label}</Label>}
+      {label && <Label htmlFor={htmlFor} className={LABEL}>{label}{required && <RequiredMark />}</Label>}
       <DocCellContext.Provider value={true}>
         <div className={cn(align === 'right' && 'text-right')}>{children}</div>
       </DocCellContext.Provider>
@@ -155,6 +162,11 @@ export interface DocColumn<T> {
   align?: 'left' | 'right' | 'center'
   /** CSS width for the column (e.g. `'8rem'`); unset columns share the remainder. */
   width?: string
+  /** Display-only column in an editable grid (stock guides, computed amounts, source-fixed
+   * values) — shaded so it reads as non-editable next to the input cells. */
+  readOnly?: boolean
+  /** Marks the column heading with a required asterisk (editable grids only). */
+  required?: boolean
   render: (row: T, index: number) => React.ReactNode
 }
 
@@ -171,6 +183,8 @@ interface DocLinesProps<T> {
   footer?: React.ReactNode
   className?: string
 }
+
+const READ_ONLY_CELL = 'cursor-default bg-[hsl(var(--muted))]/70 text-[hsl(var(--muted-foreground))]'
 
 const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' } as const
 
@@ -191,7 +205,8 @@ export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, fo
           <tr className="bg-[hsl(var(--secondary))]/50">
             <th className={cn('border-l first:border-l-0 px-2 py-2 text-center', RULE, CAPTION_TEXT)}>#</th>
             {cols.map(c => (
-              <th key={c.key} className={cn('border-l px-3 py-2', RULE, CAPTION_TEXT, ALIGN[c.align ?? 'left'])}>{c.label}</th>
+              <th key={c.key} className={cn('border-l px-3 py-2', RULE, CAPTION_TEXT, ALIGN[c.align ?? 'left'])}
+                title={c.readOnly ? 'Read-only' : c.required ? 'Required' : undefined}>{c.label}{c.required && <RequiredMark />}</th>
             ))}
           </tr>
         </thead>
@@ -200,7 +215,8 @@ export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, fo
             <tr key={rowKey ? rowKey(row, i) : i} className="transition-colors hover:bg-[hsl(var(--secondary))]/30">
               <td className={cn(cell, 'h-10 px-2 text-center text-xs tabular-nums text-[hsl(var(--muted-foreground))]')}>{lineNumber ? lineNumber(row, i) : i + 1}</td>
               {cols.map(c => (
-                <td key={c.key} className={cn(cell, FOCUS_BOX, ALIGN[c.align ?? 'left'], c.align === 'right' && 'tabular-nums')}>
+                <td key={c.key} className={cn(cell, FOCUS_BOX, ALIGN[c.align ?? 'left'], c.align === 'right' && 'tabular-nums',
+                  c.readOnly && READ_ONLY_CELL)}>
                   <DocCellContext.Provider value={true}>{c.render(row, i)}</DocCellContext.Provider>
                 </td>
               ))}

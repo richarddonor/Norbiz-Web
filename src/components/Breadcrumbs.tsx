@@ -17,7 +17,8 @@ export function Breadcrumbs() {
   ]
   if (!onDashboard && current) {
     if (current.group) crumbs.push({ label: current.group })
-    if (current.subGroup) crumbs.push({ label: current.subGroup })
+    const parent = current.parent ? findNavItem(current.parent) : undefined
+    if (parent) crumbs.push({ label: parent.label, to: parent.to })
     crumbs.push({ label: current.label, to: current.to })
     // A record tab: the module crumb links back to the list tab, the record is the leaf.
     if (recordBase) crumbs.push({ label: tabs.find(t => t.key === pathname)?.title ?? recordBase.recordLabel ?? '' })

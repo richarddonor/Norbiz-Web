@@ -95,7 +95,7 @@ export function ItemCategoriesPage() {
   const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('item-categories')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('item-categories')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -234,7 +234,7 @@ export function ItemCategoriesPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -269,7 +269,7 @@ export function ItemCategoriesPage() {
                 <DocHeader title="Item Category Record" />
               </DocLetterhead>
               <DocRow>
-                <DocCell label="Name" htmlFor="category-name">
+                <DocCell label="Name" htmlFor="category-name" required={!ro}>
                   <Input
                     id="category-name"
                     value={name}

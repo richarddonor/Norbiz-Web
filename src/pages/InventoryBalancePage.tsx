@@ -1,7 +1,9 @@
 import { useState, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, FileDown } from 'lucide-react'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
+import { useTabInstance, useWorkspace } from '@/context/WorkspaceContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,7 +18,9 @@ import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable, PINNED_TH, PINNED_TD } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
+import { findNavItem, canAccess } from '@/lib/nav'
 import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +49,23 @@ interface Balance {
 function todayIso(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const LEDGER_PATH = '/reports/inventory-ledger'
+
+/** The report's filter bar, read back from the URL — set when drilling down to the ledger,
+ * so Back returns to the same view. */
+function initialFilters(search: string) {
+  const params = new URLSearchParams(search)
+  const mode = params.get('mode')
+  return {
+    warehouseId: params.get('warehouseId') ?? '',
+    itemId: params.get('itemId') ?? '',
+    mode: (mode === 'asOf' || mode === 'period' ? mode : 'current') as BalanceMode,
+    asOfDate: params.get('asOfDate') || todayIso(),
+    startDate: params.get('startDate') || todayIso(),
+    endDate: params.get('endDate') || todayIso(),
+  }
 }
 
 function balanceSearchText(b: Balance): string {
@@ -85,14 +106,20 @@ export function InventoryBalancePage() {
   const { hasPermission, showCompanyColumn, activeCompanyId } = useAuth()
   const { zone } = useContentFocus()
   const canViewCostPrice = hasPermission('VIEW_COST_PRICE')
+  const ledger = findNavItem(LEDGER_PATH)
+  const canDrillDown = !!ledger && canAccess(ledger, hasPermission)
+  const navigate = useNavigate()
+  const { location } = useTabInstance()
+  const { openPage } = useWorkspace()
+  const [initial] = useState(() => initialFilters(location.search))
 
   const [search, setSearch] = useState('')
-  const [warehouseId, setWarehouseId] = useState('')
-  const [itemId, setItemId] = useState('')
-  const [mode, setMode] = useState<BalanceMode>('current')
-  const [asOfDate, setAsOfDate] = useState(todayIso())
-  const [startDate, setStartDate] = useState(todayIso())
-  const [endDate, setEndDate] = useState(todayIso())
+  const [warehouseId, setWarehouseId] = useState(initial.warehouseId)
+  const [itemId, setItemId] = useState(initial.itemId)
+  const [mode, setMode] = useState<BalanceMode>(initial.mode)
+  const [asOfDate, setAsOfDate] = useState(initial.asOfDate)
+  const [startDate, setStartDate] = useState(initial.startDate)
+  const [endDate, setEndDate] = useState(initial.endDate)
   const debouncedSearch = useDebouncedValue(search)
   const isFiltering = !!debouncedSearch.trim() || !!warehouseId || !!itemId || mode !== 'current'
 
@@ -118,11 +145,28 @@ export function InventoryBalancePage() {
   const warehouses = useLookup<LookupOption>('warehouses', activeCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
   const items = useLookup<ItemLookupOption>('items', activeCompanyId, { onError: () => toast('Failed to load items.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-balances')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('inventory-balances')
+
+  /** Opens the Inventory Ledger for this row's item and warehouse over the report's date
+   * range: As of Date → everything up to that day, Period → that range, Current → all.
+   * The ledger opens in a drill-down tab of its own with these filters locked (or switches to
+   * the one already open for them). */
+  function openLedger(b: Balance) {
+    if (!canDrillDown) return
+    // Remember this report's filters in its own URL first, so Back lands on the same view.
+    navigate(`${location.pathname}?${new URLSearchParams({ ...filters, mode })}`, { replace: true })
+    const params = new URLSearchParams({ warehouseId: String(b.warehouseId), itemId: String(b.itemId) })
+    if (mode === 'asOf') params.set('dateTo', asOfDate)
+    if (mode === 'period') {
+      params.set('dateFrom', startDate)
+      params.set('dateTo', endDate)
+    }
+    openPage(`${LEDGER_PATH}?${params}`)
+  }
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: balances,
-    onView: () => {},
+    onView: openLedger,
     enabled: zone === 'content',
   })
 
@@ -155,10 +199,10 @@ export function InventoryBalancePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+    <div className="flex h-full flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Inventory Balance</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input
@@ -219,7 +263,7 @@ export function InventoryBalancePage() {
             </>
           )}
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -227,32 +271,32 @@ export function InventoryBalancePage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
                 {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
-                {isVisible('itemName') && <th className="text-left py-2 px-4 font-medium">Item Name</th>}
+                {isVisible('itemName') && <th className={cn('text-left py-2 px-4 font-medium', PINNED_TH)}>Item Name</th>}
                 {mode === 'period' ? (
                   <>
-                    {isVisible('beginningQuantity') && <th className="text-left py-2 px-4 font-medium">Beginning Quantity</th>}
-                    {isVisible('beginningTransitQuantity') && <th className="text-left py-2 px-4 font-medium">Beginning Transit Quantity</th>}
-                    {isVisible('endingQuantity') && <th className="text-left py-2 px-4 font-medium">Ending Quantity</th>}
-                    {isVisible('endingTransitQuantity') && <th className="text-left py-2 px-4 font-medium">Ending Transit Quantity</th>}
-                    {isVisible('netQuantityChange') && <th className="text-left py-2 px-4 font-medium">Net Quantity Change</th>}
-                    {isVisible('netTransitQuantityChange') && <th className="text-left py-2 px-4 font-medium">Net Transit Quantity Change</th>}
+                    {isVisible('beginningQuantity') && <th className="text-right py-2 px-4 font-medium">Beginning Quantity</th>}
+                    {isVisible('beginningTransitQuantity') && <th className="text-right py-2 px-4 font-medium">Beginning Transit Quantity</th>}
+                    {isVisible('endingQuantity') && <th className="text-right py-2 px-4 font-medium">Ending Quantity</th>}
+                    {isVisible('endingTransitQuantity') && <th className="text-right py-2 px-4 font-medium">Ending Transit Quantity</th>}
+                    {isVisible('netQuantityChange') && <th className="text-right py-2 px-4 font-medium">Net Quantity Change</th>}
+                    {isVisible('netTransitQuantityChange') && <th className="text-right py-2 px-4 font-medium">Net Transit Quantity Change</th>}
                   </>
                 ) : (
                   <>
-                    {isVisible('quantity') && <th className="text-left py-2 px-4 font-medium">Quantity</th>}
-                    {isVisible('transitQuantity') && <th className="text-left py-2 px-4 font-medium">Transit Quantity</th>}
+                    {isVisible('quantity') && <th className="text-right py-2 px-4 font-medium">Quantity</th>}
+                    {isVisible('transitQuantity') && <th className="text-right py-2 px-4 font-medium">Transit Quantity</th>}
                   </>
                 )}
-                {canViewCostPrice && isVisible('costPrice') && <th className="text-left py-2 px-4 font-medium">Cost Price</th>}
-                {canViewCostPrice && isVisible('value') && <th className="text-left py-2 px-4 font-medium">Value</th>}
+                {canViewCostPrice && isVisible('costPrice') && <th className="text-right py-2 px-4 font-medium">Cost Price</th>}
+                {canViewCostPrice && isVisible('value') && <th className="text-right py-2 px-4 font-medium">Value</th>}
               </tr>
             </thead>
             <tbody>
@@ -266,38 +310,40 @@ export function InventoryBalancePage() {
                 balances.map((balance, i) => (
                   <tr
                     key={`${balance.itemId}-${balance.warehouseId}`}
-                    onClick={() => setActiveIndex(i)}
+                    onClick={() => { setActiveIndex(i); openLedger(balance) }}
+                    data-active={i === activeIndex || undefined}
+                    title={canDrillDown ? 'Open in Inventory Ledger' : undefined}
                     className={cn(
-                      'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
+                      'group border-b border-[hsl(var(--border))] last:border-0 cursor-pointer bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{balance.companyName}</td>}
                     {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{balance.warehouseName}</td>}
                     {isVisible('itemCode') && <td className="py-2 px-4 font-mono text-xs">{balance.itemCode}</td>}
-                    {isVisible('itemName') && <td className="py-2 px-4">{balance.itemName}</td>}
+                    {isVisible('itemName') && <td className={cn('py-2 px-4', PINNED_TD)}>{balance.itemName}</td>}
                     {mode === 'period' ? (
                       <>
-                        {isVisible('beginningQuantity') && <td className="py-2 px-4 tabular-nums">{balance.beginningQuantity}</td>}
-                        {isVisible('beginningTransitQuantity') && <td className="py-2 px-4 tabular-nums">{balance.beginningTransitQuantity}</td>}
-                        {isVisible('endingQuantity') && <td className="py-2 px-4 tabular-nums">{balance.endingQuantity}</td>}
-                        {isVisible('endingTransitQuantity') && <td className="py-2 px-4 tabular-nums">{balance.endingTransitQuantity}</td>}
-                        {isVisible('netQuantityChange') && <td className="py-2 px-4 tabular-nums">{balance.netQuantityChange}</td>}
-                        {isVisible('netTransitQuantityChange') && <td className="py-2 px-4 tabular-nums">{balance.netTransitQuantityChange}</td>}
+                        {isVisible('beginningQuantity') && <td className="py-2 px-4 text-right tabular-nums">{balance.beginningQuantity}</td>}
+                        {isVisible('beginningTransitQuantity') && <td className="py-2 px-4 text-right tabular-nums">{balance.beginningTransitQuantity}</td>}
+                        {isVisible('endingQuantity') && <td className="py-2 px-4 text-right tabular-nums">{balance.endingQuantity}</td>}
+                        {isVisible('endingTransitQuantity') && <td className="py-2 px-4 text-right tabular-nums">{balance.endingTransitQuantity}</td>}
+                        {isVisible('netQuantityChange') && <td className="py-2 px-4 text-right tabular-nums">{balance.netQuantityChange}</td>}
+                        {isVisible('netTransitQuantityChange') && <td className="py-2 px-4 text-right tabular-nums">{balance.netTransitQuantityChange}</td>}
                       </>
                     ) : (
                       <>
-                        {isVisible('quantity') && <td className="py-2 px-4 tabular-nums">{balance.quantity}</td>}
-                        {isVisible('transitQuantity') && <td className="py-2 px-4 tabular-nums">{balance.transitQuantity}</td>}
+                        {isVisible('quantity') && <td className="py-2 px-4 text-right tabular-nums">{balance.quantity}</td>}
+                        {isVisible('transitQuantity') && <td className="py-2 px-4 text-right tabular-nums">{balance.transitQuantity}</td>}
                       </>
                     )}
-                    {canViewCostPrice && isVisible('costPrice') && <td className="py-2 px-4 tabular-nums">{formatCurrency(balance.costPrice)}</td>}
-                    {canViewCostPrice && isVisible('value') && <td className="py-2 px-4 tabular-nums">{formatCurrency(balance.value)}</td>}
+                    {canViewCostPrice && isVisible('costPrice') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(balance.costPrice)}</td>}
+                    {canViewCostPrice && isVisible('value') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(balance.value)}</td>}
                   </tr>
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>

@@ -96,7 +96,7 @@ export function BrandsPage() {
   const [companyId, setCompanyId]     = useState<number | ''>('')
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('brands')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('brands')
   const { markClean, guardedClose } = useDirtyGuard()
   const resolveDisplayName = useUserDisplayNames()
 
@@ -235,7 +235,7 @@ export function BrandsPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -270,7 +270,7 @@ export function BrandsPage() {
                 <DocHeader title="Brand Record" />
               </DocLetterhead>
               <DocRow>
-                <DocCell label="Name" htmlFor="brand-name">
+                <DocCell label="Name" htmlFor="brand-name" required={!ro}>
                   <Input
                     id="brand-name"
                     value={name}

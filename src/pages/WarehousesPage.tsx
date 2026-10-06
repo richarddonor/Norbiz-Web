@@ -121,7 +121,7 @@ export function WarehousesPage() {
   const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('warehouses')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('warehouses')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -276,7 +276,7 @@ export function WarehousesPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -339,7 +339,7 @@ export function WarehousesPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow>
-                <DocCell label="Warehouse Name" htmlFor="warehouse-name">
+                <DocCell label="Warehouse Name" htmlFor="warehouse-name" required={!ro}>
                   <Input
                     id="warehouse-name"
                     value={form.name}

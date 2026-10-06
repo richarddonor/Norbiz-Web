@@ -12,11 +12,12 @@ interface Props {
   from: string
   to: string
   onChange: (from: string, to: string) => void
+  disabled?: boolean
 }
 
 /** A compact date-range filter: quick presets (Today, Current Week, …) plus
  * manual From/To date pickers, combined via AND with everything else. */
-export function DateRangeFilter({ label, from, to, onChange }: Props) {
+export function DateRangeFilter({ label, from, to, onChange, disabled }: Props) {
   const [open, setOpen] = useState(false)
   const hasValue = !!(from || to)
 
@@ -25,7 +26,8 @@ export function DateRangeFilter({ label, from, to, onChange }: Props) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="w-full h-7 px-2 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-xs text-left flex items-center gap-1.5 text-[hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
+          disabled={disabled}
+          className="w-full h-7 px-2 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-xs text-left flex items-center gap-1.5 text-[hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Calendar className="w-3 h-3 shrink-0 text-[hsl(var(--muted-foreground))]" />
           <span className={hasValue ? 'truncate' : 'truncate text-[hsl(var(--muted-foreground))]'}>

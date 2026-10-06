@@ -157,7 +157,7 @@ export function OutletReceivesPage() {
   // A receive moves stock from in transit to on hand in the outlet warehouse, so both balances are shown.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('outlet-receives')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('outlet-receives')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_OUTLET_RECEIVE')
@@ -376,7 +376,7 @@ export function OutletReceivesPage() {
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -465,7 +465,7 @@ export function OutletReceivesPage() {
                 }>
                   <DocHeader title="Outlet Receiving Report" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Receipt Date" htmlFor="orcv-date">
+                      <DocCell label="Receipt Date" htmlFor="orcv-date" required>
                         <Input id="orcv-date" type="date" value={receiptDate}
                           onChange={e => setReceiptDate(e.target.value)} required />
                       </DocCell>
@@ -476,7 +476,7 @@ export function OutletReceivesPage() {
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Outlet" htmlFor="orcv-outlet">
+                  <DocCell label="Outlet" htmlFor="orcv-outlet" required>
                     <SearchableSelect
                       id="orcv-outlet"
                       value={customerId === '' ? '' : String(customerId)}
@@ -493,7 +493,7 @@ export function OutletReceivesPage() {
                   </DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Delivery Receipt No." htmlFor="orcv-source">
+                  <DocCell label="Delivery Receipt No." htmlFor="orcv-source" required>
                     <SearchableSelect
                       id="orcv-source"
                       value={deliveryReceiptId === '' ? '' : String(deliveryReceiptId)}
@@ -513,14 +513,14 @@ export function OutletReceivesPage() {
                   rows={lines}
                   rowKey={line => line.itemId}
                   columns={[
-                    { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
-                    { key: 'outstanding', label: 'Outstanding', align: 'right', width: '8rem', render: line => line.outstanding },
+                    { key: 'item', label: 'Item', readOnly: true, render: line => `${line.itemCode} — ${line.itemName}` },
+                    { key: 'outstanding', label: 'Outstanding', align: 'right', width: '8rem', readOnly: true, render: line => line.outstanding },
                     {
-                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem',
+                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''} />,
                     },
                     {
-                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem',
+                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
                         <StockCell stock={stock} field="transitQuantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''}
                           short={available => line.quantity.trim() !== '' && Number(line.quantity) > available} />

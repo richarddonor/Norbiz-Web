@@ -176,7 +176,7 @@ export function DeliveryReceiptsPage() {
   const stock = useStock(lookupCompanyId, mainWarehouse?.id ?? '', lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   const draftTotal = lines.reduce((sum, l) => sum + (l.itemId !== '' ? lineAmount(l) : 0), 0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('delivery-receipts')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('delivery-receipts')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_DELIVERY_RECEIPT')
@@ -380,7 +380,7 @@ export function DeliveryReceiptsPage() {
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -487,7 +487,7 @@ export function DeliveryReceiptsPage() {
                 }>
                   <DocHeader title="Delivery Receipt" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Delivery Date" htmlFor="dr-date">
+                      <DocCell label="Delivery Date" htmlFor="dr-date" required>
                         <Input id="dr-date" type="date" value={deliveryDate}
                           onChange={e => setDeliveryDate(e.target.value)} required />
                       </DocCell>
@@ -498,7 +498,7 @@ export function DeliveryReceiptsPage() {
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={isOutlet ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'} htmlFor="dr-customer">
+                  <DocCell label={isOutlet ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'} htmlFor="dr-customer" required>
                     <SearchableSelect
                       id="dr-customer"
                       value={customerId === '' ? '' : String(customerId)}
@@ -523,7 +523,7 @@ export function DeliveryReceiptsPage() {
                   rows={lines}
                   columns={[
                     {
-                      key: 'item', label: 'Item',
+                      key: 'item', label: 'Item', required: true,
                       render: (line, i) => (
                         <SearchableSelect
                           value={line.itemId === '' ? '' : String(line.itemId)}
@@ -533,14 +533,14 @@ export function DeliveryReceiptsPage() {
                       ),
                     },
                     {
-                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem',
+                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
                         <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={!!mainWarehouse}
                           short={available => line.quantity.trim() !== '' && Number(line.quantity) > available} />
                       ),
                     },
                     {
-                      key: 'quantity', label: 'Quantity', align: 'right', width: '7rem',
+                      key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', required: true,
                       render: (line, i) => (
                         <Input type="number" step="0.0001" min="0" aria-label={`Line ${i + 1} quantity`} value={line.quantity}
                           onChange={e => updateLine(i, { quantity: e.target.value })} className="text-right" />
@@ -554,7 +554,7 @@ export function DeliveryReceiptsPage() {
                       ),
                     },
                     {
-                      key: 'amount', label: 'Amount', align: 'right', width: '8rem',
+                      key: 'amount', label: 'Amount', align: 'right', width: '8rem', readOnly: true,
                       render: line => (
                         <span className="tabular-nums">{line.itemId !== '' && line.quantity.trim() !== '' ? formatCurrency(lineAmount(line)) : '—'}</span>
                       ),

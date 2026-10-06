@@ -140,7 +140,7 @@ export function InventoryAdjustmentsPage() {
   // An adjustment posts to on-hand quantity only, so that's the balance shown as a guide while creating.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('inventory-adjustments')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('inventory-adjustments')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_INVENTORY_ADJUSTMENT')
@@ -319,7 +319,7 @@ export function InventoryAdjustmentsPage() {
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -402,7 +402,7 @@ export function InventoryAdjustmentsPage() {
                 }>
                   <DocHeader title="Inventory Adjustment" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Adjustment Date" htmlFor="adj-date">
+                      <DocCell label="Adjustment Date" htmlFor="adj-date" required>
                         <Input id="adj-date" type="date" value={adjustmentDate}
                           onChange={e => setAdjustmentDate(e.target.value)} required />
                       </DocCell>
@@ -413,7 +413,7 @@ export function InventoryAdjustmentsPage() {
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Warehouse" htmlFor="adj-warehouse">
+                  <DocCell label="Warehouse" htmlFor="adj-warehouse" required>
                     <SearchableSelect
                       id="adj-warehouse"
                       value={warehouseId === '' ? '' : String(warehouseId)}
@@ -430,7 +430,7 @@ export function InventoryAdjustmentsPage() {
                   rows={lines}
                   columns={[
                     {
-                      key: 'item', label: 'Item',
+                      key: 'item', label: 'Item', required: true,
                       render: (line, i) => (
                         <SearchableSelect
                           value={line.itemId === '' ? '' : String(line.itemId)}
@@ -440,14 +440,14 @@ export function InventoryAdjustmentsPage() {
                       ),
                     },
                     {
-                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem',
+                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
                         <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''}
                           short={available => line.quantity.trim() !== '' && available + Number(line.quantity) < 0} />
                       ),
                     },
                     {
-                      key: 'quantity', label: 'Quantity', align: 'right', width: '9rem',
+                      key: 'quantity', label: 'Quantity', align: 'right', width: '9rem', required: true,
                       render: (line, i) => (
                         <Input type="number" step="0.0001" aria-label={`Line ${i + 1} quantity`} value={line.quantity}
                           onChange={e => updateLine(i, { quantity: e.target.value })} className="text-right" />

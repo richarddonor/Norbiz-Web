@@ -116,7 +116,7 @@ export function SuppliersPage() {
   const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('suppliers')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('suppliers')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -256,7 +256,7 @@ export function SuppliersPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -302,7 +302,7 @@ export function SuppliersPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow>
-                <DocCell label="Supplier Name" htmlFor="supp-name">
+                <DocCell label="Supplier Name" htmlFor="supp-name" required={!ro}>
                   <Input id="supp-name" value={form.name} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
                 </DocCell>

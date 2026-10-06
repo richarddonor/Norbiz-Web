@@ -268,11 +268,11 @@ function ItemFormFields({
             <DocHeader title="Item Record" />
           </DocLetterhead>
           <DocRow>
-            <DocCell label="Item Code" htmlFor="form-code">
-              <Input id="form-code" value={form.itemCode} readOnly={ro || mode === 'edit'} autoFocus={codeAutoFocus}
+            <DocCell label="Item Code" htmlFor="form-code" required={mode === 'create'}>
+              <Input id="form-code" value={form.itemCode} maxLength={100} readOnly={ro || mode === 'edit'} autoFocus={codeAutoFocus}
                 onChange={e => setForm(f => ({ ...f, itemCode: e.target.value }))} required={!ro} />
             </DocCell>
-            <DocCell label="Category" htmlFor="form-category">
+            <DocCell label="Category" htmlFor="form-category" required={!ro}>
               {ro ? (
                 <Input id="form-category" value={categories.find(c => c.id === form.categoryId)?.name ?? '—'} readOnly />
               ) : (
@@ -299,8 +299,8 @@ function ItemFormFields({
             </DocCell>
           </DocRow>
           <DocRow>
-            <DocCell label="Item Name / Description" htmlFor="form-name">
-              <Input id="form-name" value={form.name} readOnly={ro}
+            <DocCell label="Item Name / Description" htmlFor="form-name" required={!ro}>
+              <Input id="form-name" value={form.name} maxLength={255} readOnly={ro}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
             </DocCell>
           </DocRow>
@@ -347,14 +347,14 @@ function ItemFormFields({
           minRows={ro ? 1 : 0}
           columns={[
             {
-              key: 'code', label: 'SKU Code',
+              key: 'code', label: 'SKU Code', required: !ro,
               render: (line, i) => ro ? line.skuCode : (
                 <Input aria-label={`SKU line ${i + 1} code`} value={line.skuCode} maxLength={100}
                   onChange={e => updateSku(i, { skuCode: e.target.value })} />
               ),
             },
             {
-              key: 'unitPrice', label: 'Unit Price', align: 'right', width: '10rem',
+              key: 'unitPrice', label: 'Unit Price', align: 'right', width: '10rem', required: !ro,
               render: (line, i) => ro ? formatCurrency(line.unitPrice || null) : (
                 <Input type="number" step="0.0001" min="0" aria-label={`SKU line ${i + 1} unit price`} value={line.unitPrice}
                   onChange={e => updateSku(i, { unitPrice: e.target.value })} className="text-right" />
@@ -432,7 +432,7 @@ export function ItemsPage() {
   const [loading, setLoading]         = useState(false)
   const [imageVersions, setImageVersions] = useState<Record<number, number>>({})
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('items')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('items')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ITEM')
@@ -629,7 +629,7 @@ export function ItemsPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -711,7 +711,7 @@ export function ItemsPage() {
                 {isVisible('category') && <th className="text-left py-2 px-4 font-medium">Category</th>}
                 {isVisible('group') && <th className="text-left py-2 px-4 font-medium">Item Group</th>}
                 {isVisible('skus') && <th className="text-left py-2 px-4 font-medium">SKUs</th>}
-                {isVisible('unitPrice') && <th className="text-left py-2 px-4 font-medium">Unit Price</th>}
+                {isVisible('unitPrice') && <th className="text-right py-2 px-4 font-medium">Unit Price</th>}
                 {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
                 <th className="py-2 px-4" />
               </tr>
@@ -763,7 +763,7 @@ export function ItemsPage() {
                       </td>
                     )}
                     {isVisible('unitPrice') && (
-                      <td className="py-2 px-4 tabular-nums">
+                      <td className="py-2 px-4 text-right tabular-nums">
                         {formatCurrency(itemUnitPrice(item) || null)}
                       </td>
                     )}

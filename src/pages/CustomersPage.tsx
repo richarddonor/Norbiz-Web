@@ -130,7 +130,7 @@ export function CustomersPage() {
   const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('customers')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('customers')
   const { markClean, guardedClose } = useDirtyGuard()
   const resolveDisplayName = useUserDisplayNames()
 
@@ -274,7 +274,7 @@ export function CustomersPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -320,11 +320,11 @@ export function CustomersPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow cols="3fr 1fr">
-                <DocCell label="Customer Name" htmlFor="cust-name">
+                <DocCell label="Customer Name" htmlFor="cust-name" required={!ro}>
                   <Input id="cust-name" value={form.name} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
                 </DocCell>
-                <DocCell label="Type" htmlFor="cust-type">
+                <DocCell label="Type" htmlFor="cust-type" required={!ro && !activeCustomer?.warehouseId}>
                   {/* An outlet with its own warehouse can't revert to a plain customer (it may hold stock). */}
                   {ro || !!activeCustomer?.warehouseId ? (
                     <Input id="cust-type" value={TYPE_LABELS[form.type]} readOnly />

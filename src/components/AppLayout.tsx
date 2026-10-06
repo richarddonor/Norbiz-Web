@@ -1,10 +1,10 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight, LogOut, CircleUser, Search, KeyRound } from 'lucide-react'
+import { ChevronDown, ChevronRight, LogOut, CircleUser, Search, KeyRound, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { navItems } from '@/lib/nav'
+import { navItems, canAccess, findNavItem } from '@/lib/nav'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { CommandPalette } from '@/components/CommandPalette'
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp'
@@ -34,6 +34,19 @@ export function useContentFocus(): { zone: FocusZone } {
   return { zone: active ? zone : 'inactive' }
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
+
+/** The saved choice, else collapsed on a narrow window (where every column counts). */
+function initialCollapsed(): boolean {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+    if (saved !== null) return saved === 'true'
+  } catch { /* storage blocked: fall through to the default */ }
+  return window.innerWidth < 1280
+}
+
+const SIDEBAR_ICON_BUTTON = 'grid h-8 w-8 shrink-0 place-items-center rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))] transition-colors'
+
 interface SidebarEntry {
   key: string
   type: 'link' | 'group'
@@ -59,6 +72,13 @@ function Workspace() {
   const [zone, setZone] = useState<FocusZone>('content')
   const [rawSidebarIndex, setRawSidebarIndex] = useState(0)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(initialCollapsed)
+
+  function toggleSidebar() {
+    const next = !collapsed
+    setCollapsed(next)
+    try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next)) } catch { /* not persisted */ }
+  }
 
   // Reset to the content zone on every navigation (mouse or keyboard) —
   // adjusted during render rather than an effect, per this project's convention.
@@ -71,6 +91,7 @@ function Workspace() {
   useHotkeys([
     { key: 'k', mod: true, allowInInputs: true, handler: () => setPaletteOpen(true) },
     { key: '?', handler: () => setShortcutsOpen(true) },
+    { key: 'b', mod: true, allowInInputs: true, handler: toggleSidebar },
   ])
 
   const topLevelItems = useMemo(() => navItems.filter(item => !item.group), [])
@@ -79,19 +100,15 @@ function Workspace() {
     for (const item of navItems) {
       if (item.group && !order.includes(item.group)) order.push(item.group)
     }
-    return order.map(group => {
-      const visible = navItems.filter(item => item.group === group && (!item.permission || hasPermission(item.permission)))
-      const directItems = visible.filter(item => !item.subGroup)
-      const subGroupOrder: string[] = []
-      for (const item of visible) {
-        if (item.subGroup && !subGroupOrder.includes(item.subGroup)) subGroupOrder.push(item.subGroup)
-      }
-      const subGroups = subGroupOrder
-        .map(subGroup => ({ subGroup, items: visible.filter(item => item.subGroup === subGroup) }))
-        .filter(sg => sg.items.length > 0)
-      return { group, directItems, subGroups }
-    }).filter(g => g.directItems.length > 0 || g.subGroups.length > 0)
+    // Items with a `parent` (individual reports) are listed on that parent's page, not here.
+    return order.map(group => ({
+      group,
+      items: navItems.filter(item => item.group === group && !item.parent && canAccess(item, hasPermission)),
+    })).filter(g => g.items.length > 0)
   }, [hasPermission])
+
+  // The sidebar link for the current page — its parent's when the page itself isn't listed.
+  const sidebarPath = findNavItem(pathname)?.parent ?? pathname
 
   function isGroupOpen(key: string) {
     return openGroups[key] ?? true
@@ -100,20 +117,11 @@ function Workspace() {
   // Flattened, visible sidebar entries in visual order — used for ↑↓ traversal.
   const sidebarEntries = useMemo(() => {
     const entries: SidebarEntry[] = topLevelItems.map(item => ({ key: item.to, type: 'link', label: item.label, to: item.to }))
-    for (const { group, directItems, subGroups } of groups) {
+    for (const { group, items } of groups) {
       entries.push({ key: `group:${group}`, type: 'group', label: group })
       if (openGroups[group] ?? true) {
-        for (const item of directItems) {
+        for (const item of items) {
           entries.push({ key: item.to, type: 'link', label: item.label, to: item.to })
-        }
-        for (const { subGroup, items } of subGroups) {
-          const subKey = `${group}::${subGroup}`
-          entries.push({ key: `group:${subKey}`, type: 'group', label: subGroup })
-          if (openGroups[subKey] ?? true) {
-            for (const item of items) {
-              entries.push({ key: item.to, type: 'link', label: item.label, to: item.to })
-            }
-          }
         }
       }
     }
@@ -126,7 +134,7 @@ function Workspace() {
     {
       key: 'ArrowLeft',
       handler: () => {
-        const idx = sidebarEntries.findIndex(e => e.type === 'link' && e.to === pathname)
+        const idx = sidebarEntries.findIndex(e => e.type === 'link' && e.to === sidebarPath)
         setRawSidebarIndex(idx >= 0 ? idx : 0)
         setZone('sidebar')
       },
@@ -157,10 +165,19 @@ function Workspace() {
     const focused = zone === 'sidebar' && sidebarEntries[sidebarActiveIndex]?.key === to
     return ({ isActive }: { isActive: boolean }) => cn(
       'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-      isActive
+      isActive || to === sidebarPath
         ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
         : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]',
       focused && 'ring-2 ring-inset ring-[hsl(var(--primary))]'
+    )
+  }
+
+  function railLinkClass(to: string) {
+    return ({ isActive }: { isActive: boolean }) => cn(
+      'grid h-9 w-9 shrink-0 place-items-center rounded-md transition-colors',
+      isActive || to === sidebarPath
+        ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
+        : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]',
     )
   }
 
@@ -174,80 +191,125 @@ function Workspace() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-60 shrink-0 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--card))]">
-        <div className="px-4 py-5 border-b border-[hsl(var(--border))]">
-          <span className="flex items-center gap-2 text-lg font-bold tracking-tight">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm text-[hsl(var(--primary-foreground))]">N</span>
-            Norbiz
-          </span>
-        </div>
-
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {topLevelItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={navLinkClass(to)}>
-              <Icon className="w-5 h-5 shrink-0" />
-              {label}
-            </NavLink>
-          ))}
-
-          {groups.map(({ group, directItems, subGroups }) => (
-            <div key={group} className="pt-2">
+      {/* Sidebar. Collapsed, it's an icon rail; arrow-key focus (←) opens the full panel
+          over the content until focus leaves it, since keyboard users need the labels. */}
+      <aside
+        className={cn(
+          'relative shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] transition-[width] duration-200',
+          collapsed ? 'w-14' : 'w-60',
+        )}
+      >
+        {collapsed && zone !== 'sidebar' ? (
+          <div className="flex h-full flex-col items-center">
+            <div className="flex w-full justify-center py-5 border-b border-[hsl(var(--border))]">
               <button
-                onClick={() => setOpenGroups(prev => ({ ...prev, [group]: !isGroupOpen(group) }))}
-                className={groupHeaderClass(group)}
+                onClick={toggleSidebar}
+                title="Expand sidebar (Ctrl+B)"
+                aria-label="Expand sidebar"
+                className="grid h-7 w-7 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm font-bold text-[hsl(var(--primary-foreground))] hover:opacity-90"
               >
-                <span className="flex-1 text-left">{group}</span>
-                {isGroupOpen(group) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                N
               </button>
+            </div>
 
-              {isGroupOpen(group) && (
-                <div className="mt-1 ml-4 pl-3 space-y-1 border-l border-[hsl(var(--border))]">
-                  {directItems.map(({ to, label, icon: Icon }) => (
-                    <NavLink key={to} to={to} className={navLinkClass(to)}>
-                      <Icon className="w-5 h-5 shrink-0" />
-                      {label}
+            <nav aria-label="Main" className="flex w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2 py-4">
+              {topLevelItems.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} title={label} aria-label={label} className={railLinkClass(to)}>
+                  <Icon className="w-5 h-5" />
+                </NavLink>
+              ))}
+              {groups.map(({ group, items }) => (
+                <div key={group} role="group" aria-label={group} className="flex w-full flex-col items-center gap-1">
+                  <div className="my-1.5 h-px w-6 bg-[hsl(var(--border))]" aria-hidden />
+                  {items.map(({ to, label, icon: Icon }) => (
+                    <NavLink key={to} to={to} title={`${group} › ${label}`} aria-label={label} className={railLinkClass(to)}>
+                      <Icon className="w-5 h-5" />
                     </NavLink>
                   ))}
-
-                  {subGroups.map(({ subGroup, items }) => {
-                    const subKey = `${group}::${subGroup}`
-                    return (
-                      <div key={subKey} className="pt-1">
-                        <button
-                          onClick={() => setOpenGroups(prev => ({ ...prev, [subKey]: !isGroupOpen(subKey) }))}
-                          className={groupHeaderClass(subKey)}
-                        >
-                          <span className="flex-1 text-left">{subGroup}</span>
-                          {isGroupOpen(subKey) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        </button>
-
-                        {isGroupOpen(subKey) && (
-                          <div className="mt-1 ml-4 pl-3 space-y-1 border-l border-[hsl(var(--border))]">
-                            {items.map(({ to, label, icon: Icon }) => (
-                              <NavLink key={to} to={to} className={navLinkClass(to)}>
-                                <Icon className="w-5 h-5 shrink-0" />
-                                {label}
-                              </NavLink>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
                 </div>
-              )}
-            </div>
-          ))}
-        </nav>
+              ))}
+            </nav>
 
-        <div className="px-3 py-4 border-t border-[hsl(var(--border))]">
-          <Button variant="ghost" className="w-full justify-start gap-3" onClick={logout}>
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
-        </div>
+            <div className="flex w-full flex-col items-center gap-1 px-2 py-4 border-t border-[hsl(var(--border))]">
+              <button
+                onClick={toggleSidebar}
+                title="Expand sidebar (Ctrl+B)"
+                aria-label="Expand sidebar"
+                className={SIDEBAR_ICON_BUTTON}
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+              </button>
+              <button onClick={logout} title="Logout" aria-label="Logout" className={SIDEBAR_ICON_BUTTON}>
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'flex h-full flex-col bg-[hsl(var(--card))]',
+              collapsed && 'absolute inset-y-0 left-0 z-40 w-60 border-r border-[hsl(var(--border))] shadow-xl',
+            )}
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-5 border-b border-[hsl(var(--border))]">
+              <span className="flex items-center gap-2 text-lg font-bold tracking-tight">
+                <span className="grid h-7 w-7 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm text-[hsl(var(--primary-foreground))]">N</span>
+                Norbiz
+              </span>
+              {/* Over a collapsed rail (keyboard overlay) the same spot offers to keep it open. */}
+              <button
+                onClick={toggleSidebar}
+                title={collapsed ? 'Keep sidebar open (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+                aria-label={collapsed ? 'Keep sidebar open' : 'Collapse sidebar'}
+                className={SIDEBAR_ICON_BUTTON}
+              >
+                {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+              {topLevelItems.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} className={navLinkClass(to)}>
+                  <Icon className="w-5 h-5 shrink-0" />
+                  {label}
+                </NavLink>
+              ))}
+
+              {groups.map(({ group, items }) => (
+                <div key={group} className="pt-2">
+                  <button
+                    onClick={() => setOpenGroups(prev => ({ ...prev, [group]: !isGroupOpen(group) }))}
+                    className={groupHeaderClass(group)}
+                  >
+                    <span className="flex-1 text-left">{group}</span>
+                    {isGroupOpen(group) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+
+                  {isGroupOpen(group) && (
+                    <div className="mt-1 ml-4 pl-3 space-y-1 border-l border-[hsl(var(--border))]">
+                      {items.map(({ to, label, icon: Icon }) => (
+                        <NavLink key={to} to={to} className={navLinkClass(to)}>
+                          <Icon className="w-5 h-5 shrink-0" />
+                          {label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </nav>
+
+            <div className="px-3 py-4 border-t border-[hsl(var(--border))]">
+              <Button variant="ghost" className="w-full justify-start gap-3" onClick={logout}>
+                <LogOut className="w-4 h-4" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        )}
       </aside>
+      {/* Clicking away from the keyboard overlay closes it. */}
+      {collapsed && zone === 'sidebar' && <div className="fixed inset-0 z-30" onClick={() => setZone('content')} aria-hidden />}
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

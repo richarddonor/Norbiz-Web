@@ -98,7 +98,7 @@ export function ItemSkusPage() {
   const [form, setForm]           = useState<SkuForm>(emptyForm())
   const [loading, setLoading]     = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('item-skus')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('item-skus')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ITEM')
@@ -239,7 +239,7 @@ export function ItemSkusPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -262,7 +262,7 @@ export function ItemSkusPage() {
             <DocSheet>
               <DocRow cols="3fr 2fr">
                 {/* Item — selector on create, read-only display on edit/view */}
-                <DocCell label="Item" htmlFor="sku-item">
+                <DocCell label="Item" htmlFor="sku-item" required={mode === 'create'}>
                   {mode === 'create' ? (
                     <SearchableSelect
                       id="sku-item"
@@ -284,7 +284,7 @@ export function ItemSkusPage() {
                 <DocHeader title="SKU Record" />
               </DocRow>
               <DocRow cols="3fr 2fr">
-                <DocCell label="SKU Code" htmlFor="sku-code">
+                <DocCell label="SKU Code" htmlFor="sku-code" required={!ro}>
                   <Input
                     id="sku-code"
                     value={form.skuCode}
@@ -293,7 +293,7 @@ export function ItemSkusPage() {
                     required={!ro}
                   />
                 </DocCell>
-                <DocCell label="Unit Price" htmlFor="sku-price" align="right">
+                <DocCell label="Unit Price" htmlFor="sku-price" align="right" required={!ro}>
                   {ro ? (
                     <DocText className="tabular-nums">{formatCurrency(form.unitPrice || null)}</DocText>
                   ) : (
@@ -344,7 +344,7 @@ export function ItemSkusPage() {
                 {isVisible('skuCode') && <th className="text-left py-2 px-4 font-medium">SKU Code</th>}
                 {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
                 {isVisible('itemName') && <th className="text-left py-2 px-4 font-medium">Item Name</th>}
-                {isVisible('unitPrice') && <th className="text-left py-2 px-4 font-medium">Unit Price</th>}
+                {isVisible('unitPrice') && <th className="text-right py-2 px-4 font-medium">Unit Price</th>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -374,7 +374,7 @@ export function ItemSkusPage() {
                     {isVisible('skuCode') && <td className="py-2 px-4 font-mono text-xs font-medium">{sku.skuCode}</td>}
                     {isVisible('itemCode') && <td className="py-2 px-4 font-mono text-xs text-[hsl(var(--muted-foreground))]">{sku.itemCode}</td>}
                     {isVisible('itemName') && <td className="py-2 px-4">{sku.itemName}</td>}
-                    {isVisible('unitPrice') && <td className="py-2 px-4 tabular-nums">{formatCurrency(sku.unitPrice)}</td>}
+                    {isVisible('unitPrice') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(sku.unitPrice)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(sku)}>

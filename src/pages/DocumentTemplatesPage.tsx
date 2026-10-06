@@ -122,7 +122,7 @@ export function DocumentTemplatesPage() {
   const [form, setForm]                   = useState<TemplateForm>(emptyForm())
   const [loading, setLoading]             = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('document-templates')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('document-templates')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -237,7 +237,7 @@ export function DocumentTemplatesPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           {canManage && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
@@ -273,7 +273,7 @@ export function DocumentTemplatesPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow cols="3fr 2fr">
-                <DocCell label="Template Name" htmlFor="template-name">
+                <DocCell label="Template Name" htmlFor="template-name" required={!ro}>
                   <Input
                     id="template-name"
                     value={form.name}
@@ -283,7 +283,7 @@ export function DocumentTemplatesPage() {
                     required={!ro}
                   />
                 </DocCell>
-                <DocCell label="Document Type" htmlFor="template-type">
+                <DocCell label="Document Type" htmlFor="template-type" required={mode === 'create'}>
                   <SearchableSelect
                     id="template-type"
                     value={form.documentType}

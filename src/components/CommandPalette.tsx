@@ -1,10 +1,10 @@
 import { useMemo, useState, type KeyboardEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { navItems } from '@/lib/nav'
+import { navItems, canAccess, findNavItem } from '@/lib/nav'
 import { useAuth } from '@/context/AuthContext'
+import { useWorkspace } from '@/context/WorkspaceContext'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function CommandPalette({ open, onOpenChange }: Props) {
-  const navigate = useNavigate()
+  const { openPage } = useWorkspace()
   const { hasPermission } = useAuth()
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -33,7 +33,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
   const results = useMemo(() => {
     const term = query.trim().toLowerCase()
     return navItems
-      .filter(item => !item.permission || hasPermission(item.permission))
+      .filter(item => canAccess(item, hasPermission))
       .filter(item => item.label.toLowerCase().includes(term))
   }, [query, hasPermission])
 
@@ -43,8 +43,9 @@ export function CommandPalette({ open, onOpenChange }: Props) {
     setActiveIndex(0)
   }
 
+  // Each page opens in a workspace tab of its own (or switches to the one already showing it).
   function go(to: string) {
-    navigate(to)
+    openPage(to)
     onOpenChange(false)
   }
 
@@ -98,7 +99,9 @@ export function CommandPalette({ open, onOpenChange }: Props) {
                   <Icon className="w-4 h-4 shrink-0" />
                   {item.label}
                   {item.group && (
-                    <span className="ml-auto text-xs text-[hsl(var(--muted-foreground))]">{item.group}</span>
+                    <span className="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
+                      {item.parent ? `${item.group} › ${findNavItem(item.parent)?.label}` : item.group}
+                    </span>
                   )}
                 </button>
               )

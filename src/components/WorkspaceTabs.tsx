@@ -10,7 +10,8 @@ function tabMeta(tab: WorkspaceTab) {
     const item = findNavItem(tab.location.pathname)
     return { icon: item?.icon ?? Home, title: item?.label ?? 'Home' }
   }
-  return { icon: findRecordBase(tab.location.pathname)?.icon ?? Home, title: tab.title }
+  const { pathname } = tab.location
+  return { icon: (findRecordBase(pathname) ?? findNavItem(pathname))?.icon ?? Home, title: tab.title }
 }
 
 /** Alt+1…9 jumps to a tab (Alt+1 is always the module/list tab), Alt+W closes the
@@ -123,7 +124,11 @@ const FOCUSABLE = 'input:not([readonly]):not([disabled]), select, textarea, butt
 /** One tab's page, kept mounted while hidden so its unsaved form state, scroll position
  * and list filters are all still there when the user switches back. */
 const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
-  const isRecord = tab.key !== MAIN_TAB
+  // A page in its own tab behaves like the list tab (row navigation, no form padding).
+  const isRecord = tab.key !== MAIN_TAB && !!findRecordBase(tab.location.pathname)
+  // A page tab remounts on each new `openPage` request (a drill-down with fresh filters),
+  // since report pages read their filters from the URL only once.
+  const pageRequest = tab.key !== MAIN_TAB && !isRecord ? tab.location.state?.nonce : undefined
   const value = useMemo<TabInstance>(
     () => ({ key: tab.key, isRecord, active, location: tab.location }),
     [tab.key, isRecord, active, tab.location]
@@ -159,7 +164,7 @@ const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; ac
         // the bottom edge — nothing scrolls past it.
         className={cn('absolute inset-0 overflow-y-auto p-6', isRecord && 'pb-0')}
       >
-        <PageRoutes location={tab.location} />
+        <PageRoutes key={pageRequest} location={tab.location} />
       </div>
     </TabInstanceContext.Provider>
   )

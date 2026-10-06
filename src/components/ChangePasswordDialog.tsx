@@ -58,7 +58,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
               <DocHeader title="Change Password" />
             </DocRow>
             <DocRow>
-              <DocCell label="Current Password" htmlFor="current-password">
+              <DocCell label="Current Password" htmlFor="current-password" required>
                 <Input
                   id="current-password"
                   type="password"
@@ -71,7 +71,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
               </DocCell>
             </DocRow>
             <DocRow>
-              <DocCell label="New Password" htmlFor="new-password">
+              <DocCell label="New Password" htmlFor="new-password" required>
                 <Input
                   id="new-password"
                   type="password"
@@ -84,7 +84,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: Props) {
               </DocCell>
             </DocRow>
             <DocRow>
-              <DocCell label="Confirm New Password" htmlFor="confirm-password">
+              <DocCell label="Confirm New Password" htmlFor="confirm-password" required>
                 <Input
                   id="confirm-password"
                   type="password"

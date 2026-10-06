@@ -173,7 +173,7 @@ export function PurchaseReceivesPage() {
   // A receive moves stock from transit into on hand, so both balances are shown as a guide while creating.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('purchase-receives')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('purchase-receives')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_PURCHASE_RECEIVE')
@@ -412,7 +412,7 @@ export function PurchaseReceivesPage() {
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -501,7 +501,7 @@ export function PurchaseReceivesPage() {
                 }>
                   <DocHeader title="Receiving Report" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Receipt Date" htmlFor="prcv-date">
+                      <DocCell label="Receipt Date" htmlFor="prcv-date" required>
                         <Input id="prcv-date" type="date" value={receiptDate}
                           onChange={e => setReceiptDate(e.target.value)} required />
                       </DocCell>
@@ -512,7 +512,7 @@ export function PurchaseReceivesPage() {
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Supplier" htmlFor="prcv-supplier">
+                  <DocCell label="Supplier" htmlFor="prcv-supplier" required>
                     <SearchableSelect
                       id="prcv-supplier"
                       value={supplierId === '' ? '' : String(supplierId)}
@@ -529,7 +529,7 @@ export function PurchaseReceivesPage() {
                   </DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Receive Against" htmlFor="prcv-mode">
+                  <DocCell label="Receive Against" htmlFor="prcv-mode" required>
                     <SearchableSelect
                       id="prcv-mode"
                       value={sourceMode}
@@ -541,7 +541,7 @@ export function PurchaseReceivesPage() {
                       disabled={!companyId}
                     />
                   </DocCell>
-                  <DocCell label={sourceMode === 'PURCHASE_ORDER' ? 'Purchase Order No.' : 'Purchase Invoice No.'} htmlFor="prcv-source">
+                  <DocCell label={sourceMode === 'PURCHASE_ORDER' ? 'Purchase Order No.' : 'Purchase Invoice No.'} htmlFor="prcv-source" required>
                     <SearchableSelect
                       id="prcv-source"
                       value={sourceId === '' ? '' : String(sourceId)}
@@ -562,14 +562,14 @@ export function PurchaseReceivesPage() {
                   rows={lines}
                   rowKey={line => line.itemId}
                   columns={[
-                    { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
-                    { key: 'outstanding', label: 'Outstanding', align: 'right', width: '8rem', render: line => line.outstanding },
+                    { key: 'item', label: 'Item', readOnly: true, render: line => `${line.itemCode} — ${line.itemName}` },
+                    { key: 'outstanding', label: 'Outstanding', align: 'right', width: '8rem', readOnly: true, render: line => line.outstanding },
                     {
-                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem',
+                      key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''} />,
                     },
                     {
-                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem',
+                      key: 'inTransit', label: 'In Transit', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
                         <StockCell stock={stock} field="transitQuantity" itemId={line.itemId} warehouseChosen={warehouseId !== ''}
                           short={available => line.quantity.trim() !== '' && Number(line.quantity) > available} />

@@ -8,6 +8,8 @@ interface Shortcut {
 const globalShortcuts: Shortcut[] = [
   { keys: ['Ctrl', 'K'], description: 'Open command palette (jump to any page)' },
   { keys: ['?'], description: 'Show this shortcuts panel' },
+  { keys: ['Ctrl', 'B'], description: 'Collapse or expand the sidebar' },
+  { keys: ['←'], description: 'Move into the sidebar (opens it over the page when collapsed)' },
   { keys: ['Alt', '1–9'], description: 'Switch to an open tab (Alt+1 is the list)' },
   { keys: ['Alt', 'W'], description: 'Close the current record tab' },
 ]

@@ -137,7 +137,7 @@ export function ItemGroupsPage() {
   const [companyId, setCompanyId]     = useState<number | ''>('')
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('item-groups')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('item-groups')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -288,7 +288,7 @@ export function ItemGroupsPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -344,7 +344,7 @@ export function ItemGroupsPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow>
-                <DocCell label="Name" htmlFor="group-name">
+                <DocCell label="Name" htmlFor="group-name" required={!ro}>
                   <Input
                     id="group-name"
                     value={form.name}
@@ -368,7 +368,7 @@ export function ItemGroupsPage() {
                 </DocCell>
               </DocRow>
               <DocRow>
-                <DocCell label="Commission Rate (%)" htmlFor="group-commission-rate" align="right">
+                <DocCell label="Commission Rate (%)" htmlFor="group-commission-rate" align="right" required={!ro}>
                   {ro ? (
                     <DocText className="tabular-nums">{formatRate(form.commissionRate)}</DocText>
                   ) : (
@@ -377,7 +377,7 @@ export function ItemGroupsPage() {
                       onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))} />
                   )}
                 </DocCell>
-                <DocCell label="Focal Commission Rate (%)" htmlFor="group-focal-commission-rate" align="right">
+                <DocCell label="Focal Commission Rate (%)" htmlFor="group-focal-commission-rate" align="right" required={!ro}>
                   {ro ? (
                     <DocText className="tabular-nums">{formatRate(form.focalCommissionRate)}</DocText>
                   ) : (

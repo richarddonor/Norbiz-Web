@@ -175,7 +175,7 @@ export function TransactionActionsPage() {
   const [candidates, setCandidates]             = useState<ActionDefinition[]>([])
   const [loading, setLoading]                   = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('transaction-actions')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('transaction-actions')
   const { markClean, guardedClose } = useDirtyGuard()
   const resolveDisplayName = useUserDisplayNames()
 
@@ -363,7 +363,7 @@ export function TransactionActionsPage() {
             className="w-52"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -396,7 +396,7 @@ export function TransactionActionsPage() {
               }>
                 <DocHeader title="Transaction Action Record">
                   <DocRow>
-                    <DocCell label="Code" htmlFor="txn-action-code">
+                    <DocCell label="Code" htmlFor="txn-action-code" required={!ro}>
                       <Input
                         id="txn-action-code"
                         value={form.code}
@@ -416,7 +416,7 @@ export function TransactionActionsPage() {
                 </DocHeader>
               </DocLetterhead>
               <DocRow cols="2fr 3fr 1fr">
-                <DocCell label="Transaction Type" htmlFor="txn-action-type">
+                <DocCell label="Transaction Type" htmlFor="txn-action-type" required={mode === 'create'}>
                   {mode === 'create' ? (
                     <SearchableSelect
                       id="txn-action-type"
@@ -433,7 +433,7 @@ export function TransactionActionsPage() {
                     <DocText>{transactionTypeLabel(form.transactionType)}</DocText>
                   )}
                 </DocCell>
-                <DocCell label="Name" htmlFor="txn-action-name">
+                <DocCell label="Name" htmlFor="txn-action-name" required={!ro}>
                   <Input
                     id="txn-action-name"
                     value={form.name}
@@ -443,7 +443,7 @@ export function TransactionActionsPage() {
                     required={!ro}
                   />
                 </DocCell>
-                <DocCell label="Order" htmlFor="txn-action-order">
+                <DocCell label="Order" htmlFor="txn-action-order" required={!ro}>
                   <Input
                     id="txn-action-order"
                     type="number"
@@ -460,7 +460,7 @@ export function TransactionActionsPage() {
 
               <DocSection title="Allowed Roles" />
               <DocRow>
-                <DocCell label="Users holding any of these roles may take this action">
+                <DocCell label="Users holding any of these roles may take this action" required={!ro}>
                   {ro ? (
                     <DocText>{activeDefinition?.allowedRoles.map(roleLabel).join(', ')}</DocText>
                   ) : (

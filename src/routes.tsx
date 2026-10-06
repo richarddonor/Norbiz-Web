@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
-import { navItems } from '@/lib/nav'
+import { navItems, reportCategories, permissionsOf } from '@/lib/nav'
 import type { TabLocation } from '@/context/WorkspaceContext'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { UsersPage } from '@/pages/UsersPage'
@@ -21,8 +21,13 @@ import { PurchaseInvoicesPage } from '@/pages/PurchaseInvoicesPage'
 import { PurchaseReceivesPage } from '@/pages/PurchaseReceivesPage'
 import { DeliveryReceiptsPage } from '@/pages/DeliveryReceiptsPage'
 import { OutletReceivesPage } from '@/pages/OutletReceivesPage'
+import { ReportCategoryPage } from '@/pages/ReportCategoryPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
+import {
+  InventoryAdjustmentDetailedPage, OutletReceiveDetailedPage, PurchaseOrderDetailedPage,
+  PurchaseInvoiceDetailedPage, PurchaseReceiveDetailedPage, DeliveryReceiptDetailedPage,
+} from '@/pages/TransactionDetailedReportPages'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
 import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
 import { TransactionActionsPage } from '@/pages/TransactionActionsPage'
@@ -47,8 +52,15 @@ const pageComponents: Record<string, ComponentType> = {
   '/purchase-receives': PurchaseReceivesPage,
   '/delivery-receipts': DeliveryReceiptsPage,
   '/outlet-receives': OutletReceivesPage,
+  ...Object.fromEntries(reportCategories.map(c => [c.to, ReportCategoryPage])),
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
+  '/reports/inventory-adjustment-detailed': InventoryAdjustmentDetailedPage,
+  '/reports/outlet-receive-detailed': OutletReceiveDetailedPage,
+  '/reports/purchase-order-detailed': PurchaseOrderDetailedPage,
+  '/reports/purchase-invoice-detailed': PurchaseInvoiceDetailedPage,
+  '/reports/purchase-receive-detailed': PurchaseReceiveDetailedPage,
+  '/reports/delivery-receipt-detailed': DeliveryReceiptDetailedPage,
   '/document-templates': DocumentTemplatesPage,
   '/transaction-actions': TransactionActionsPage,
 }
@@ -61,10 +73,11 @@ const pageComponents: Record<string, ComponentType> = {
 export function PageRoutes({ location }: { location: TabLocation }) {
   return (
     <Routes location={{ ...location, hash: '', key: location.pathname }}>
-      {navItems.flatMap(({ to, permission, recordLabel }) => {
+      {navItems.flatMap(item => {
+        const { to, permission, recordLabel } = item
         const Page = pageComponents[to]
         const element = permission
-          ? <ProtectedRoute requiredPermissions={[permission]}><Page /></ProtectedRoute>
+          ? <ProtectedRoute requiredPermissions={permissionsOf(item)}><Page /></ProtectedRoute>
           : <Page />
         const routes = [<Route key={to} path={to} element={element} />]
         if (recordLabel) routes.push(<Route key={`${to}/*`} path={`${to}/*`} element={element} />)

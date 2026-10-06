@@ -162,7 +162,7 @@ export function RolesPage() {
   const [permSearch, setPermSearch]   = useState('')
   const [loading, setLoading]         = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, toggle: toggleColumn } = useColumnVisibility('roles')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('roles')
   const { markClean, guardedClose } = useDirtyGuard()
 
   const canCreate = hasPermission('CREATE_ROLE')
@@ -313,7 +313,7 @@ export function RolesPage() {
             />
           </div>
           <ReloadButton onReload={reload} loading={listLoading} />
-          <ColumnsMenu columns={COLUMNS} isVisible={isVisible} onToggle={toggleColumn} />
+          <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -335,7 +335,7 @@ export function RolesPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <DocSheet>
               <DocRow cols="3fr 2fr">
-                <DocCell label="Role Name" htmlFor="form-name">
+                <DocCell label="Role Name" htmlFor="form-name" required={!ro}>
                   <Input id="form-name" value={form.name} readOnly={ro || mode === 'edit'} autoFocus
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} className="font-semibold" />
                 </DocCell>
