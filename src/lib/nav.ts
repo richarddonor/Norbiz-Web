@@ -2,7 +2,8 @@ import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Boxes, Barcode, Warehouse, Contact,
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
-  PackageOpen, PackagePlus, FileSpreadsheet, HandCoins, Undo2,
+  PackageOpen, PackagePlus, FileSpreadsheet, HandCoins, Undo2, ArrowRightLeft, PackageMinus, PackageX, Hammer,
+  CircleHelp, ListTree,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -43,6 +44,10 @@ const reports: (NavItem & { parent: (typeof reportCategories)[number]['to'] })[]
   { to: '/reports/purchase-receive-detailed', label: 'Purchase Receive - Detailed', icon: FileSpreadsheet, permission: 'VIEW_PURCHASE_RECEIVE_DETAILED_REPORT', parent: '/reports/purchases', description: 'Purchase receives, one row per line item.' },
   { to: '/reports/delivery-receipt-detailed', label: 'Delivery Receipt - Detailed', icon: FileSpreadsheet, permission: 'VIEW_DELIVERY_RECEIPT_DETAILED_REPORT', parent: '/reports/sales', description: 'Delivery receipts, one row per line item.' },
   { to: '/reports/outlet-delivery-receipt-detailed', label: 'Outlet Delivery Receipt - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_DELIVERY_RECEIPT_DETAILED_REPORT', parent: '/reports/sales', description: 'Outlet sales, one row per line item, with the agent.' },
+  { to: '/reports/stock-transfer-detailed', label: 'Stock Transfer - Detailed', icon: FileSpreadsheet, permission: 'VIEW_STOCK_TRANSFER_DETAILED_REPORT', parent: '/reports/sales', description: 'Stock set aside for delivery, one row per line item.' },
+  { to: '/reports/outlet-pull-out-detailed', label: 'Outlet Pull Out - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_PULL_OUT_DETAILED_REPORT', parent: '/reports/sales', description: 'Stock pulled out of outlets, one row per line item.' },
+  { to: '/reports/pull-out-receive-detailed', label: 'Pull Out Receive - Detailed', icon: FileSpreadsheet, permission: 'VIEW_PULL_OUT_RECEIVE_DETAILED_REPORT', parent: '/reports/sales', description: 'Pulled-out stock received at the main warehouse, one row per line item.' },
+  { to: '/reports/assembly-detailed', label: 'Assembly - Detailed', icon: FileSpreadsheet, permission: 'VIEW_ASSEMBLY_DETAILED_REPORT', parent: '/reports/inventory', description: 'Assemblies, one row per output or raw material.' },
   { to: '/reports/outlet-delivery-return-detailed', label: 'Outlet Delivery Return - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_DELIVERY_RETURN_DETAILED_REPORT', parent: '/reports/sales', description: 'Outlet sales returns, one row per line item, with the agent.' },
 ]
 
@@ -74,15 +79,21 @@ export const navItems: NavItem[] = [
   { to: '/item-groups', label: 'Item Groups', icon: Boxes, permission: 'VIEW_ITEM_GROUP', group: 'Catalog', recordLabel: 'Item Group' },
   { to: '/item-skus', label: 'Item SKUs', icon: Barcode, permission: 'VIEW_ITEM', group: 'Catalog', recordLabel: 'Item SKU' },
   { to: '/brands', label: 'Brands', icon: Tag, permission: 'VIEW_BRAND', group: 'Catalog', recordLabel: 'Brand' },
+  { to: '/bills-of-materials', label: 'Bills of Materials', icon: ListTree, permission: 'VIEW_BILL_OF_MATERIAL', group: 'Catalog', recordLabel: 'Bill of Materials' },
   { to: '/warehouses', label: 'Warehouses', icon: Warehouse, permission: 'VIEW_WAREHOUSE', group: 'Catalog', recordLabel: 'Warehouse' },
   { to: '/employees', label: 'Employees', icon: Contact, permission: 'VIEW_EMPLOYEE', group: 'People', recordLabel: 'Employee' },
   { to: '/customers', label: 'Customers', icon: Store, permission: 'VIEW_CUSTOMER', group: 'People', recordLabel: 'Customer' },
   { to: '/suppliers', label: 'Suppliers', icon: Truck, permission: 'VIEW_SUPPLIER', group: 'People', recordLabel: 'Supplier' },
   { to: '/inventory-adjustments', label: 'Inventory Adjustment', icon: ClipboardList, permission: 'VIEW_INVENTORY_ADJUSTMENT', group: 'Inventory', recordLabel: 'Inventory Adjustment' },
   { to: '/outlet-receives', label: 'Outlet Receives', icon: PackagePlus, permission: 'VIEW_OUTLET_RECEIVE', group: 'Inventory', recordLabel: 'Outlet Receive' },
+  { to: '/assemblies', label: 'Assemblies', icon: Hammer, permission: 'VIEW_ASSEMBLY', group: 'Inventory', recordLabel: 'Assembly' },
+  { to: '/stock-transfers', label: 'Stock Transfers', icon: ArrowRightLeft, permission: 'VIEW_STOCK_TRANSFER', group: 'Sales', recordLabel: 'Stock Transfer' },
   { to: '/delivery-receipts', label: 'Delivery Receipts', icon: PackageOpen, permission: 'VIEW_DELIVERY_RECEIPT', group: 'Sales', recordLabel: 'Delivery Receipt' },
   { to: '/outlet-delivery-receipts', label: 'Outlet Delivery Receipts', icon: HandCoins, permission: 'VIEW_OUTLET_DELIVERY_RECEIPT', group: 'Sales', recordLabel: 'Outlet Delivery Receipt' },
   { to: '/outlet-delivery-returns', label: 'Outlet Delivery Returns', icon: Undo2, permission: 'VIEW_OUTLET_DELIVERY_RETURN', group: 'Sales', recordLabel: 'Outlet Delivery Return' },
+  { to: '/outlet-pull-outs', label: 'Outlet Pull Outs', icon: PackageMinus, permission: 'VIEW_OUTLET_PULL_OUT', group: 'Sales', recordLabel: 'Outlet Pull Out' },
+  { to: '/pull-out-receives', label: 'Pull Out Receives', icon: PackageX, permission: 'VIEW_PULL_OUT_RECEIVE', group: 'Sales', recordLabel: 'Pull Out Receive' },
+  { to: '/pull-out-reasons', label: 'Pull Out Reasons', icon: CircleHelp, permission: 'VIEW_PULL_OUT_REASON', group: 'Sales', recordLabel: 'Pull Out Reason' },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, permission: 'VIEW_PURCHASE_ORDER', group: 'Purchases', recordLabel: 'Purchase Order' },
   { to: '/purchase-invoices', label: 'Purchase Invoices', icon: Receipt, permission: 'VIEW_PURCHASE_INVOICE', group: 'Purchases', recordLabel: 'Purchase Invoice' },
   { to: '/purchase-receives', label: 'Purchase Receives', icon: PackageCheck, permission: 'VIEW_PURCHASE_RECEIVE', group: 'Purchases', recordLabel: 'Purchase Receive' },

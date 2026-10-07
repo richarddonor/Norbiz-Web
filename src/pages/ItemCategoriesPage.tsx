@@ -220,9 +220,9 @@ export function ItemCategoriesPage() {
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Item Categories</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input

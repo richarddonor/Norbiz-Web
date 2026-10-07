@@ -11,7 +11,7 @@ import { formatDateTime } from '@/lib/format'
 
 // Mirrors the backend's MasterDataType enum.
 export type MasterDataType = 'BRAND' | 'ITEM_CATEGORY' | 'ITEM_GROUP' | 'ITEM' | 'ITEM_SKU'
-  | 'EMPLOYEE' | 'WAREHOUSE' | 'SUPPLIER' | 'CUSTOMER' | 'USER'
+  | 'EMPLOYEE' | 'WAREHOUSE' | 'SUPPLIER' | 'CUSTOMER' | 'USER' | 'PULL_OUT_REASON' | 'BILL_OF_MATERIAL'
 
 interface FieldChange {
   /** Entity field (`itemCategory`), or `<part>.<field>` for an item's SKUs/prices. */

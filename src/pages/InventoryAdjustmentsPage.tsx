@@ -23,6 +23,8 @@ import { shortItems } from '@/lib/stock'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
+import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
@@ -60,6 +62,7 @@ interface Adjustment {
   reason: string | null
   createdAt: string | null
   createdBy: string | null
+  origin: TransactionOrigin
   voided: boolean
   voidedAt: string | null
   voidedBy: string | null
@@ -81,6 +84,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'warehouse', label: 'Warehouse' },
     { key: 'date', label: 'Adjustment Date', type: 'date' },
     { key: 'reason', label: 'Reason' },
+    ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
   )
   return columns
@@ -268,6 +272,8 @@ export function InventoryAdjustmentsPage() {
       warehouse: a.warehouseName,
       date: formatDate(a.adjustmentDate),
       reason: a.reason ?? '',
+      origin: originLabel(a.origin),
+      voided: a.voided ? 'Yes' : '',
       company: a.companyName,
     }))
     exportToXlsx('inventory-adjustments', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -305,9 +311,9 @@ export function InventoryAdjustmentsPage() {
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Inventory Adjustment</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input
@@ -347,6 +353,7 @@ export function InventoryAdjustmentsPage() {
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-3xl">
           {mode === 'view' && activeAdjustment ? (
             <div className="space-y-4">
+              <OriginNotice origin={activeAdjustment.origin} />
               <DocSheet>
                 {activeAdjustment.voided && <DocStamp text="Voided" />}
                 <DocLetterhead company={<CompanyField id="adj-company" readOnly name={activeAdjustment.companyName} />}>
@@ -510,6 +517,7 @@ export function InventoryAdjustmentsPage() {
                 {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Adjustment Date</th>}
                 {isVisible('reason') && <th className="text-left py-2 px-4 font-medium">Reason</th>}
+                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
                 <th className="py-2 px-4" />
               </tr>
@@ -544,6 +552,7 @@ export function InventoryAdjustmentsPage() {
                     {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.warehouseName}</td>}
                     {isVisible('date') && <td className="py-2 px-4">{formatDate(adjustment.adjustmentDate)}</td>}
                     {isVisible('reason') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{adjustment.reason ?? '—'}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={adjustment.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
                         {adjustment.voided && (

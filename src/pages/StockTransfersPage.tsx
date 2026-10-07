@@ -27,7 +27,7 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -41,7 +41,7 @@ interface CompanyOption {
   name: string
 }
 
-interface DeliveryLine {
+interface TransferLine {
   id: number
   lineNumber: number
   itemId: number
@@ -53,23 +53,22 @@ interface DeliveryLine {
   quantityLoaded: string
 }
 
-interface DeliveryReceipt {
+interface StockTransfer {
   id: number
   companyId: number
   companyName: string
   customerId: number
   customerName: string
   customerType: CustomerType
+  /** the main warehouse the stock is held in */
   warehouseId: number
   warehouseName: string
-  destinationWarehouseId: number | null
-  destinationWarehouseName: string | null
-  /** set when the receipt delivered a Stock Transfer (its lines were copied from it) */
-  stockTransferId: number | null
-  stockTransferReferenceNumber: string | null
+  /** the (non-voided) Delivery Receipt that delivered this transfer, if any */
+  deliveryReceiptId: number | null
+  deliveryReceiptReferenceNumber: string | null
   referenceNumber: string
   sheetNumber: string | null
-  deliveryDate: string
+  transferDate: string
   remarks: string | null
   totalAmount: string
   createdAt: string | null
@@ -79,7 +78,7 @@ interface DeliveryReceipt {
   voidedAt: string | null
   voidedBy: string | null
   loaded: boolean
-  lines: DeliveryLine[]
+  lines: TransferLine[]
 }
 
 interface LineDraft {
@@ -97,9 +96,9 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'referenceNumber', label: 'Reference #' },
     { key: 'sheetNumber', label: 'Sheet #' },
     { key: 'customer', label: 'Customer' },
-    { key: 'warehouse', label: 'From Warehouse' },
-    { key: 'status', label: 'Outlet Receiving' },
-    { key: 'date', label: 'Delivery Date', type: 'date' },
+    { key: 'warehouse', label: 'Held In' },
+    { key: 'status', label: 'Delivery' },
+    { key: 'date', label: 'Transfer Date', type: 'date' },
     { key: 'total', label: 'Total Amount' },
     ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
@@ -112,16 +111,15 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Outlet deliveries sit in transit until an Outlet Receive takes them in; plain-customer deliveries have nothing to receive.
-function receivingStatus(r: DeliveryReceipt): string {
-  if (r.customerType !== 'OUTLET') return '—'
-  if (r.loaded) return 'Received'
-  return r.lines.some(l => Number(l.quantityLoaded) > 0) ? 'Partially received' : 'In transit'
+// A transfer holds its stock in the main warehouse until a Delivery Receipt delivers it (in full).
+function deliveryStatus(t: StockTransfer): string {
+  if (!t.loaded) return 'Open'
+  return t.deliveryReceiptReferenceNumber ? `Delivered (${t.deliveryReceiptReferenceNumber})` : 'Delivered'
 }
 
-function receiptSearchText(r: DeliveryReceipt): string {
-  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.destinationWarehouseName ?? '',
-    receivingStatus(r), r.remarks ?? '', r.companyName, formatDate(r.deliveryDate)].join(' ')
+function transferSearchText(t: StockTransfer): string {
+  return [t.referenceNumber, t.sheetNumber ?? '', t.customerName, t.warehouseName, deliveryStatus(t),
+    t.remarks ?? '', t.companyName, formatDate(t.transferDate)].join(' ')
 }
 
 function lineAmount(line: LineDraft): number {
@@ -130,7 +128,7 @@ function lineAmount(line: LineDraft): number {
   return Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0
 }
 
-export function DeliveryReceiptsPage() {
+export function StockTransfersPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
@@ -144,29 +142,27 @@ export function DeliveryReceiptsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
+  const { items: transfers, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<StockTransfer>('/stock-transfers', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load delivery receipts.', 'error'),
+    onError: () => toast('Failed to load stock transfers.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
-    searchText: receiptSearchText,
+    searchText: transferSearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [mode, setMode]                       = useState<FormMode>('view')
-  const rec = useRecordTab<DeliveryReceipt>({
+  const rec = useRecordTab<StockTransfer>({
     mode,
     onOpen: { view: openView, create: openCreate },
     onRequestClose: requestClose,
-    fetchRecord: id => apiFetch<DeliveryReceipt>(`/delivery-receipts/${id}`),
+    fetchRecord: id => apiFetch<StockTransfer>(`/stock-transfers/${id}`),
   })
-  const [activeReceipt, setActiveReceipt]     = useState<DeliveryReceipt | null>(null)
+  const [activeTransfer, setActiveTransfer]   = useState<StockTransfer | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [customerId, setCustomerId]           = useState<number | ''>('')
-  // Optional source: delivering a Stock Transfer copies its lines (read-only) and releases its hold.
-  const [stockTransferId, setStockTransferId] = useState<number | ''>('')
-  const [deliveryDate, setDeliveryDate]       = useState(todayIso())
+  const [transferDate, setTransferDate]       = useState(todayIso())
   const [remarks, setRemarks]                 = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
   const [lines, setLines]                     = useState<LineDraft[]>([EMPTY_LINE])
@@ -175,34 +171,27 @@ export function DeliveryReceiptsPage() {
   const lookupCompanyId = companyId || activeCompanyId
   const creating = inRecordTab && mode === 'create'
   const customers = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, onError: () => toast('Failed to load customers.', 'error') })
-  // The customer lookup is slim (no type), so outlets are a second, outlet-only lookup.
-  const outlets = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
-  // Stock always leaves the company's main warehouse — there's no warehouse picker.
+  // Stock is always held in the company's main warehouse — there's no warehouse picker.
   const mainWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: creating, params: { mainOnly: 'true' }, onError: () => toast('Failed to load the main warehouse.', 'error') })
   const mainWarehouse = mainWarehouses[0]
   const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
-  const isOutlet = customerId !== '' && outlets.some(o => o.id === customerId)
-  // openOnly (the default) keeps only transfers that are neither voided nor delivered.
-  const openTransfers = useLookup<TransactionLookupOption>('stock-transfers', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load stock transfers.', 'error') })
-  const eligibleTransfers = customerId ? openTransfers.filter(t => t.customerId === customerId) : []
-  const fromTransfer = stockTransferId !== ''
-  // A delivery deducts on-hand stock from the main warehouse, so that's the balance shown as a guide.
+  // Only stock on hand in the main warehouse can be set aside, so that's the balance shown as a guide.
   const stock = useStock(lookupCompanyId, mainWarehouse?.id ?? '', lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
   const shortStock = shortItems(lines, stock, l => Number(l.quantity))
   const draftTotal = lines.reduce((sum, l) => sum + (l.itemId !== '' ? lineAmount(l) : 0), 0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, menu: columnMenu } = useColumnVisibility('delivery-receipts')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('stock-transfers')
   const { markClean, guardedClose } = useDirtyGuard()
 
-  const canCreate = hasPermission('CREATE_DELIVERY_RECEIPT')
+  const canCreate = hasPermission('CREATE_STOCK_TRANSFER')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
-  const canVoid = hasPermission('VOID_DELIVERY_RECEIPT')
+  const canVoid = hasPermission('VOID_STOCK_TRANSFER')
   const [voiding, setVoiding] = useState(false)
-  const activity = useTransactionActivity('DELIVERY_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
+  const activity = useTransactionActivity('STOCK_TRANSFER', inRecordTab && mode === 'view' ? activeTransfer?.id : null, activeTransfer?.referenceNumber, activeTransfer?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
-    items: receipts,
+    items: transfers,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -221,56 +210,36 @@ export function DeliveryReceiptsPage() {
     }
   }, [])
 
-  function openView(receipt: DeliveryReceipt) {
-    if (!rec.isRecordTab) return rec.open('view', receipt)
-    setActiveReceipt(receipt)
+  function openView(transfer: StockTransfer) {
+    if (!rec.isRecordTab) return rec.open('view', transfer)
+    setActiveTransfer(transfer)
     setMode('view')
   }
 
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
-    setActiveReceipt(null)
+    setActiveTransfer(null)
     const nextCompanyId = activeCompanyId ?? ''
     const nextDate = todayIso()
     const nextLines: LineDraft[] = [EMPTY_LINE]
     setCompanyId(nextCompanyId)
     setCustomerId('')
-    setStockTransferId('')
-    setDeliveryDate(nextDate)
+    setTransferDate(nextDate)
     setRemarks('')
     setSheetNumber('')
     setLines(nextLines)
-    markClean({ companyId: nextCompanyId, customerId: '', stockTransferId: '', deliveryDate: nextDate, remarks: '', sheetNumber: '', lines: nextLines })
+    markClean({ companyId: nextCompanyId, customerId: '', transferDate: nextDate, remarks: '', sheetNumber: '', lines: nextLines })
     setMode('create')
   }
 
   function requestClose() {
-    guardedClose({ companyId, customerId, stockTransferId, deliveryDate, remarks, sheetNumber, lines }, () => rec.close())
+    guardedClose({ companyId, customerId, transferDate, remarks, sheetNumber, lines }, () => rec.close())
   }
 
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
     setCustomerId('')
-    setStockTransferId('')
     setLines([EMPTY_LINE])
-  }
-
-  // A transfer belongs to one customer, so changing the customer drops a chosen transfer (and its copied lines).
-  function handleCustomerChange(value: number | '') {
-    setCustomerId(value)
-    if (fromTransfer) {
-      setStockTransferId('')
-      setLines([EMPTY_LINE])
-    }
-  }
-
-  // Delivering a transfer loads it in full: its lines are copied as-is and can't be edited here.
-  function handleTransferChange(id: number | '') {
-    setStockTransferId(id)
-    const source = id ? eligibleTransfers.find(t => t.id === id) : undefined
-    setLines(source
-      ? byLineNumber(source.lines).map(l => ({ itemId: l.itemId, quantity: String(l.quantity), unitPrice: String(l.unitPrice ?? 0) }))
-      : [EMPTY_LINE])
   }
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
@@ -284,7 +253,6 @@ export function DeliveryReceiptsPage() {
   }
 
   function addLine() {
-    if (fromTransfer) return
     setLines(prev => [...prev, EMPTY_LINE])
   }
 
@@ -323,30 +291,27 @@ export function DeliveryReceiptsPage() {
       toast('Not enough stock on hand for the highlighted line(s) — stock cannot go below zero. Reduce the quantity or restock first.', 'error')
       return
     }
-    if (!window.confirm('Post this delivery receipt? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this stock transfer? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
         companyId,
         customerId,
-        deliveryDate,
+        transferDate,
         remarks: remarks || null,
         sheetNumber: sheetNumber || null,
-        // A transfer's lines are copied server-side, so they're omitted from the request.
-        ...(fromTransfer ? { stockTransferId } : {
-          lines: validLines.map(l => ({
-            itemId: l.itemId,
-            quantity: Number(l.quantity),
-            unitPrice: l.unitPrice.trim() !== '' ? Number(l.unitPrice) : null,
-          })),
-        }),
+        lines: validLines.map(l => ({
+          itemId: l.itemId,
+          quantity: Number(l.quantity),
+          unitPrice: l.unitPrice.trim() !== '' ? Number(l.unitPrice) : null,
+        })),
       }
-      await apiFetch<DeliveryReceipt>('/delivery-receipts', { method: 'POST', body: JSON.stringify(body) })
-      toast('Delivery receipt posted successfully.', 'success')
+      await apiFetch<StockTransfer>('/stock-transfers', { method: 'POST', body: JSON.stringify(body) })
+      toast('Stock transfer posted successfully.', 'success')
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to post delivery receipt.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to post stock transfer.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -354,58 +319,57 @@ export function DeliveryReceiptsPage() {
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<DeliveryReceipt>(qs ? `/delivery-receipts?${qs}` : '/delivery-receipts', 100000)
+    const all = await fetchAllContent<StockTransfer>(qs ? `/stock-transfers?${qs}` : '/stock-transfers', 100000)
     const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(r => receiptSearchText(r).toLowerCase().includes(term)) : all
+    const matching = term ? all.filter(r => transferSearchText(r).toLowerCase().includes(term)) : all
     const rows = matching.map(r => ({
       referenceNumber: r.referenceNumber,
       sheetNumber: r.sheetNumber ?? '',
       customer: r.customerName,
       warehouse: r.warehouseName,
-      status: receivingStatus(r),
-      date: formatDate(r.deliveryDate),
+      status: deliveryStatus(r),
+      date: formatDate(r.transferDate),
       total: formatCurrency(r.totalAmount),
       voided: r.voided ? 'Yes' : '',
       origin: originLabel(r.origin),
       company: r.companyName,
     }))
-    exportToXlsx('delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('stock-transfers', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   function printFailed() {
-    if (!activeReceipt) return
+    if (!activeTransfer) return
     toast(
-      `No active print template configured for Delivery Receipts under ${activeReceipt.companyName}. Create one under Document Templates while ${activeReceipt.companyName} is your active company.`,
+      `No active print template configured for Stock Transfers under ${activeTransfer.companyName}. Create one under Document Templates while ${activeTransfer.companyName} is your active company.`,
       'error'
     )
   }
 
   async function handleVoid() {
-    if (!activeReceipt) return
-    if (!window.confirm(`Void delivery receipt "${activeReceipt.referenceNumber}"? This returns the stock to ${activeReceipt.warehouseName} and cannot be undone.`)) return
+    if (!activeTransfer) return
+    if (!window.confirm(`Void stock transfer "${activeTransfer.referenceNumber}"? This releases the stock held in ${activeTransfer.warehouseName} and cannot be undone.`)) return
     setVoiding(true)
     try {
-      const voided = await apiFetch<DeliveryReceipt>(`/delivery-receipts/${activeReceipt.id}/void`, { method: 'POST' })
-      setActiveReceipt(voided)
-      toast('Delivery receipt voided.', 'success')
+      const voided = await apiFetch<StockTransfer>(`/stock-transfers/${activeTransfer.id}/void`, { method: 'POST' })
+      setActiveTransfer(voided)
+      toast('Stock transfer voided.', 'success')
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to void delivery receipt.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to void stock transfer.'), 'error')
     } finally {
       setVoiding(false)
     }
   }
 
-  const recordName = activeReceipt?.referenceNumber ?? ''
-  const tabTitle = mode === 'create' ? 'New Delivery Receipt' : recordName || 'Delivery Receipt'
-  // Received (even partly) by an outlet: the backend blocks voiding until those receives are voided.
-  const receivedByOutlet = !!activeReceipt && activeReceipt.lines.some(l => Number(l.quantityLoaded) > 0)
+  const recordName = activeTransfer?.referenceNumber ?? ''
+  const tabTitle = mode === 'create' ? 'New Stock Transfer' : recordName || 'Stock Transfer'
+  // Delivered: the backend blocks voiding until that Delivery Receipt is voided.
 
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold">Delivery Receipts</h1>
+        <h1 className="text-2xl font-bold">Stock Transfers</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
@@ -413,7 +377,7 @@ export function DeliveryReceiptsPage() {
               ref={searchInputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search delivery receipts… (/)"
+              placeholder="Search stock transfers… (/)"
               className="pl-8 w-56"
             />
           </div>
@@ -444,66 +408,55 @@ export function DeliveryReceiptsPage() {
 
       {inRecordTab && (
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-4xl">
-          {mode === 'view' && activeReceipt ? (
+          {mode === 'view' && activeTransfer ? (
             <div className="space-y-4">
-              <OriginNotice origin={activeReceipt.origin} />
+              <OriginNotice origin={activeTransfer.origin} />
               <DocSheet>
-                {activeReceipt.voided && <DocStamp text="Voided" />}
-                <DocLetterhead company={<CompanyField id="dr-company" readOnly name={activeReceipt.companyName} />}>
-                  <DocHeader title="Delivery Receipt" number={activeReceipt.referenceNumber}>
+                {activeTransfer.voided && <DocStamp text="Voided" />}
+                <DocLetterhead company={<CompanyField id="stf-company" readOnly name={activeTransfer.companyName} />}>
+                  <DocHeader title="Stock Transfer" number={activeTransfer.referenceNumber}>
                     <DocRow>
-                      <DocCell label="Delivery Date"><DocText>{formatDate(activeReceipt.deliveryDate)}</DocText></DocCell>
-                      <DocCell label="Sheet #"><DocText>{activeReceipt.sheetNumber}</DocText></DocCell>
+                      <DocCell label="Transfer Date"><DocText>{formatDate(activeTransfer.transferDate)}</DocText></DocCell>
+                      <DocCell label="Sheet #"><DocText>{activeTransfer.sheetNumber}</DocText></DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={activeReceipt.customerType === 'OUTLET' ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'}>
-                    <DocText>{activeReceipt.customerName}</DocText>
+                  <DocCell label={activeTransfer.customerType === 'OUTLET' ? 'Transfer To (Outlet)' : 'Transfer To (Customer)'}>
+                    <DocText>{activeTransfer.customerName}</DocText>
                   </DocCell>
-                  <DocCell label="Deliver From (Warehouse)"><DocText>{activeReceipt.warehouseName}</DocText></DocCell>
-                  {activeReceipt.stockTransferReferenceNumber && (
-                    <DocCell label="Stock Transfer No."><DocText>{activeReceipt.stockTransferReferenceNumber}</DocText></DocCell>
-                  )}
+                  <DocCell label="Held In (Main Warehouse)"><DocText>{activeTransfer.warehouseName}</DocText></DocCell>
+                  <DocCell label="Delivery"><DocText>{deliveryStatus(activeTransfer)}</DocText></DocCell>
                 </DocRow>
-                {activeReceipt.customerType === 'OUTLET' && (
-                  <DocRow>
-                    <DocCell label="In Transit To (Outlet Warehouse)"><DocText>{activeReceipt.destinationWarehouseName}</DocText></DocCell>
-                    <DocCell label="Outlet Receiving"><DocText>{receivingStatus(activeReceipt)}</DocText></DocCell>
-                  </DocRow>
-                )}
                 <DocLines
-                  rows={byLineNumber(activeReceipt.lines)}
+                  rows={byLineNumber(activeTransfer.lines)}
                   rowKey={line => line.id}
                   lineNumber={line => line.lineNumber}
                   minRows={5}
                   columns={[
                     { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
                     { key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', render: line => line.quantity },
-                    activeReceipt.customerType === 'OUTLET' && {
-                      key: 'received', label: 'Received', align: 'right', width: '7rem', render: line => line.quantityLoaded,
-                    },
                     { key: 'unitPrice', label: 'Unit Price', align: 'right', width: '8rem', render: line => formatCurrency(line.unitPrice) },
                     { key: 'amount', label: 'Amount', align: 'right', width: '9rem', render: line => formatCurrency(line.amount) },
                   ]}
                 />
                 <DocRow cols="3fr 2fr">
-                  <DocCell label="Remarks"><DocText>{activeReceipt.remarks}</DocText></DocCell>
-                  <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(activeReceipt.totalAmount), grand: true }]} />
+                  <DocCell label="Remarks"><DocText>{activeTransfer.remarks}</DocText></DocCell>
+                  <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(activeTransfer.totalAmount), grand: true }]} />
                 </DocRow>
-                <TransactionHistory activity={activity} record={activeReceipt} />
+                <TransactionHistory activity={activity} record={activeTransfer} />
               </DocSheet>
 
               <div className={RECORD_ACTIONS}>
-                <TransactionActionsMenu activity={activity} voided={activeReceipt.voided} />
-                {canVoid && !activeReceipt.voided && (
+                <TransactionActionsMenu activity={activity} voided={activeTransfer.voided} />
+                {canVoid && !activeTransfer.voided && (
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleVoid}
                     loading={voiding}
-                    disabled={receivedByOutlet}
-                    title={receivedByOutlet ? 'Already received by the outlet — void its Outlet Receive(s) first.' : undefined}
+                    disabled={activeTransfer.loaded}
+                    title={activeTransfer.loaded ? 'Already delivered — void its Delivery Receipt first.' : undefined}
                   >
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -511,9 +464,9 @@ export function DeliveryReceiptsPage() {
                 )}
                 {canPrint && (
                   <PrintButton
-                    companyId={activeReceipt.companyId}
-                    documentType="DELIVERY_RECEIPT"
-                    data={activeReceipt as unknown as Record<string, unknown>}
+                    companyId={activeTransfer.companyId}
+                    documentType="STOCK_TRANSFER"
+                    data={activeTransfer as unknown as Record<string, unknown>}
                     onError={printFailed}
                   />
                 )}
@@ -525,7 +478,7 @@ export function DeliveryReceiptsPage() {
               <DocSheet>
                 <DocLetterhead company={
                     <CompanyField
-                      id="dr-company"
+                      id="stf-company"
                       readOnly={!showCompanyColumn}
                       name={companyOptions.find(c => c.id === companyId)?.name}
                       companies={companyOptions}
@@ -534,60 +487,36 @@ export function DeliveryReceiptsPage() {
                       autoFocus={showCompanyColumn}
                     />
                 }>
-                  <DocHeader title="Delivery Receipt" number={<PendingNumber />}>
+                  <DocHeader title="Stock Transfer" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Delivery Date" htmlFor="dr-date" required>
-                        <Input id="dr-date" type="date" value={deliveryDate}
-                          onChange={e => setDeliveryDate(e.target.value)} required />
+                      <DocCell label="Transfer Date" htmlFor="stf-date" required>
+                        <Input id="stf-date" type="date" value={transferDate}
+                          onChange={e => setTransferDate(e.target.value)} required />
                       </DocCell>
-                      <DocCell label="Sheet #" htmlFor="dr-sheet">
-                        <Input id="dr-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      <DocCell label="Sheet #" htmlFor="stf-sheet">
+                        <Input id="stf-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
                       </DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={isOutlet ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'} htmlFor="dr-customer" required>
+                  <DocCell label="Transfer To (Customer)" htmlFor="stf-customer" required>
                     <SearchableSelect
-                      id="dr-customer"
+                      id="stf-customer"
                       value={customerId === '' ? '' : String(customerId)}
-                      onChange={v => handleCustomerChange(v ? Number(v) : '')}
-                      options={customers.map(c => ({ value: String(c.id), label: outlets.some(o => o.id === c.id) ? `${c.name} (Outlet)` : c.name }))}
+                      onChange={v => setCustomerId(v ? Number(v) : '')}
+                      options={customers.map(c => ({ value: String(c.id), label: c.name }))}
                       disabled={!companyId}
                       autoFocus={!showCompanyColumn}
                     />
-                    {isOutlet && (
-                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        Posts as in transit to this outlet's warehouse until an Outlet Receive takes it in.
-                      </p>
-                    )}
+                    <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
+                      Holds the stock in the main warehouse until a Delivery Receipt delivers this transfer.
+                    </p>
                   </DocCell>
-                  <DocCell label="Deliver From (Main Warehouse)">
+                  <DocCell label="Held In (Main Warehouse)">
                     <DocText className={cn(!mainWarehouse && 'italic text-[hsl(var(--destructive))]')}>
                       {mainWarehouse?.name ?? (lookupCompanyId ? 'No main warehouse set — mark one on the Warehouses page' : '')}
                     </DocText>
-                  </DocCell>
-                </DocRow>
-                <DocRow>
-                  <DocCell label="Stock Transfer No." htmlFor="dr-transfer">
-                    <SearchableSelect
-                      id="dr-transfer"
-                      value={stockTransferId === '' ? '' : String(stockTransferId)}
-                      onChange={v => handleTransferChange(v ? Number(v) : '')}
-                      options={eligibleTransfers.map(t => ({ value: String(t.id), label: `${t.referenceNumber} — ${formatDate(t.transactionDate)}` }))}
-                      placeholder={customerId ? undefined : 'Select a customer first…'}
-                      disabled={!customerId}
-                    />
-                    {customerId && eligibleTransfers.length === 0 && (
-                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        No open stock transfers for this customer — enter the lines below.
-                      </p>
-                    )}
-                    {fromTransfer && (
-                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        Delivers this transfer in full — its lines are copied as-is and its hold on the main warehouse is released.
-                      </p>
-                    )}
                   </DocCell>
                 </DocRow>
                 <DocLines
@@ -600,7 +529,6 @@ export function DeliveryReceiptsPage() {
                           value={line.itemId === '' ? '' : String(line.itemId)}
                           onChange={v => handleLineItemChange(i, v ? Number(v) : '')}
                           options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
-                          disabled={fromTransfer}
                         />
                       ),
                     },
@@ -615,14 +543,14 @@ export function DeliveryReceiptsPage() {
                       key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', required: true,
                       render: (line, i) => (
                         <Input type="number" step="0.0001" min="0" aria-label={`Line ${i + 1} quantity`} value={line.quantity}
-                          onChange={e => updateLine(i, { quantity: e.target.value })} readOnly={fromTransfer} className="text-right" />
+                          onChange={e => updateLine(i, { quantity: e.target.value })} className="text-right" />
                       ),
                     },
                     {
                       key: 'unitPrice', label: 'Unit Price', align: 'right', width: '8rem',
                       render: (line, i) => (
                         <Input type="number" step="0.01" min="0" aria-label={`Line ${i + 1} unit price`} value={line.unitPrice}
-                          onChange={e => updateLine(i, { unitPrice: e.target.value })} readOnly={fromTransfer} className="text-right" />
+                          onChange={e => updateLine(i, { unitPrice: e.target.value })} className="text-right" />
                       ),
                     },
                     {
@@ -635,7 +563,7 @@ export function DeliveryReceiptsPage() {
                       key: 'remove', label: '', align: 'center', width: '2.75rem',
                       render: (_, i) => (
                         <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label={`Remove line ${i + 1}`}
-                          onClick={() => removeLine(i)} disabled={lines.length === 1 || fromTransfer}>
+                          onClick={() => removeLine(i)} disabled={lines.length === 1}>
                           <X className="w-4 h-4" />
                         </Button>
                       ),
@@ -643,22 +571,22 @@ export function DeliveryReceiptsPage() {
                   ]}
                   footer={
                     <div className="flex items-center justify-between gap-2">
-                      <Button type="button" variant="ghost" size="sm" onClick={addLine} disabled={fromTransfer}>
+                      <Button type="button" variant="ghost" size="sm" onClick={addLine}>
                         <Plus className="w-3.5 h-3.5" />
                         Add Line
                         <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
                       </Button>
                       {formInventoryItems.length === 0 && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                          No items are tagged Inventory — tag an item on the Items page before posting a delivery receipt.
+                          No items are tagged Inventory — tag an item on the Items page before posting a stock transfer.
                         </span>
                       )}
                     </div>
                   }
                 />
                 <DocRow cols="3fr 2fr">
-                  <DocCell label="Remarks" htmlFor="dr-remarks">
-                    <Input id="dr-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  <DocCell label="Remarks" htmlFor="stf-remarks">
+                    <Input id="stf-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
                   </DocCell>
                   <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(draftTotal), grand: true }]} />
                 </DocRow>
@@ -667,7 +595,7 @@ export function DeliveryReceiptsPage() {
 
               <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Delivery Receipt</Button>
+                <Button type="submit" loading={loading}>Post Stock Transfer</Button>
               </div>
             </form>
           )}
@@ -685,9 +613,9 @@ export function DeliveryReceiptsPage() {
                 {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
                 {isVisible('customer') && <th className="text-left py-2 px-4 font-medium">Customer</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">From Warehouse</th>}
-                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Outlet Receiving</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Delivery Date</th>}
+                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Held In</th>}
+                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Delivery</th>}
+                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Transfer Date</th>}
                 {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
                 {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
@@ -702,39 +630,39 @@ export function DeliveryReceiptsPage() {
               />
             </thead>
             <tbody>
-              {receipts.length === 0 ? (
+              {transfers.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No delivery receipts match your search/filters.' : 'No delivery receipts to display.'}
+                    {isFiltering ? 'No stock transfers match your search/filters.' : 'No stock transfers to display.'}
                   </td>
                 </tr>
               ) : (
-                receipts.map((receipt, i) => (
+                transfers.map((transfer, i) => (
                   <tr
-                    key={receipt.id}
-                    onClick={() => { setActiveIndex(i); openView(receipt) }}
+                    key={transfer.id}
+                    onClick={() => { setActiveIndex(i); openView(transfer) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.companyName}</td>}
-                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receipt.referenceNumber}</td>}
-                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.sheetNumber ?? '—'}</td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{transfer.companyName}</td>}
+                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{transfer.referenceNumber}</td>}
+                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{transfer.sheetNumber ?? '—'}</td>}
                     {isVisible('customer') && (
                       <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
-                        {receipt.customerName}
-                        {receipt.customerType === 'OUTLET' && <span className="ml-1.5 text-xs">(Outlet)</span>}
+                        {transfer.customerName}
+                        {transfer.customerType === 'OUTLET' && <span className="ml-1.5 text-xs">(Outlet)</span>}
                       </td>
                     )}
-                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.warehouseName}</td>}
-                    {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receivingStatus(receipt)}</td>}
-                    {isVisible('date') && <td className="py-2 px-4">{formatDate(receipt.deliveryDate)}</td>}
-                    {isVisible('total') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(receipt.totalAmount)}</td>}
-                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receipt.origin} /></td>}
+                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{transfer.warehouseName}</td>}
+                    {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{deliveryStatus(transfer)}</td>}
+                    {isVisible('date') && <td className="py-2 px-4">{formatDate(transfer.transferDate)}</td>}
+                    {isVisible('total') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(transfer.totalAmount)}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={transfer.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
-                        {receipt.voided && (
+                        {transfer.voided && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
                             Voided
                           </span>
@@ -742,7 +670,7 @@ export function DeliveryReceiptsPage() {
                       </td>
                     )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => openView(receipt)}>
+                      <Button variant="ghost" size="sm" onClick={() => openView(transfer)}>
                         <Eye className="w-4 h-4" />
                       </Button>
                     </td>

@@ -20,6 +20,8 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
+import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
@@ -68,6 +70,7 @@ interface OutletDeliveryReceipt {
   totalAmount: string
   createdAt: string | null
   createdBy: string | null
+  origin: TransactionOrigin
   voided: boolean
   voidedAt: string | null
   voidedBy: string | null
@@ -94,6 +97,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'status', label: 'Returns' },
     { key: 'date', label: 'Delivery Date', type: 'date' },
     { key: 'total', label: 'Total Amount' },
+    ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
   )
   return columns
@@ -336,6 +340,7 @@ export function OutletDeliveryReceiptsPage() {
       date: formatDate(r.deliveryDate),
       total: formatCurrency(r.totalAmount),
       voided: r.voided ? 'Yes' : '',
+      origin: originLabel(r.origin),
       company: r.companyName,
     }))
     exportToXlsx('outlet-delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -373,9 +378,9 @@ export function OutletDeliveryReceiptsPage() {
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Outlet Delivery Receipts</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input
@@ -422,6 +427,7 @@ export function OutletDeliveryReceiptsPage() {
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-4xl">
           {mode === 'view' && activeReceipt ? (
             <div className="space-y-4">
+              <OriginNotice origin={activeReceipt.origin} />
               <DocSheet>
                 {activeReceipt.voided && <DocStamp text="Voided" />}
                 <DocLetterhead company={<CompanyField id="odr-company" readOnly name={activeReceipt.companyName} />}>
@@ -643,6 +649,7 @@ export function OutletDeliveryReceiptsPage() {
                 {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Returns</th>}
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Delivery Date</th>}
                 {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
+                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
                 <th className="py-2 px-4" />
               </tr>
@@ -679,6 +686,7 @@ export function OutletDeliveryReceiptsPage() {
                     {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{returnStatus(receipt)}</td>}
                     {isVisible('date') && <td className="py-2 px-4">{formatDate(receipt.deliveryDate)}</td>}
                     {isVisible('total') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(receipt.totalAmount)}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receipt.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
                         {receipt.voided && (

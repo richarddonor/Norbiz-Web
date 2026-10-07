@@ -27,21 +27,20 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type CustomerLookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
 
 type FormMode = 'view' | 'create'
-type CustomerType = 'CUSTOMER' | 'OUTLET'
 
 interface CompanyOption {
   id: number
   name: string
 }
 
-interface DeliveryLine {
+interface PullOutLine {
   id: number
   lineNumber: number
   itemId: number
@@ -53,23 +52,24 @@ interface DeliveryLine {
   quantityLoaded: string
 }
 
-interface DeliveryReceipt {
+interface OutletPullOut {
   id: number
   companyId: number
   companyName: string
   customerId: number
   customerName: string
-  customerType: CustomerType
+  /** source: the outlet's own warehouse */
   warehouseId: number
   warehouseName: string
-  destinationWarehouseId: number | null
-  destinationWarehouseName: string | null
-  /** set when the receipt delivered a Stock Transfer (its lines were copied from it) */
-  stockTransferId: number | null
-  stockTransferReferenceNumber: string | null
+  /** destination: the main warehouse holding the pull out in transit */
+  destinationWarehouseId: number
+  destinationWarehouseName: string
+  /** null only on migrated legacy pull outs that had none */
+  pullOutReasonId: number | null
+  pullOutReasonName: string | null
   referenceNumber: string
   sheetNumber: string | null
-  deliveryDate: string
+  pullOutDate: string
   remarks: string | null
   totalAmount: string
   createdAt: string | null
@@ -79,7 +79,7 @@ interface DeliveryReceipt {
   voidedAt: string | null
   voidedBy: string | null
   loaded: boolean
-  lines: DeliveryLine[]
+  lines: PullOutLine[]
 }
 
 interface LineDraft {
@@ -96,10 +96,10 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   columns.push(
     { key: 'referenceNumber', label: 'Reference #' },
     { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'customer', label: 'Customer' },
-    { key: 'warehouse', label: 'From Warehouse' },
-    { key: 'status', label: 'Outlet Receiving' },
-    { key: 'date', label: 'Delivery Date', type: 'date' },
+    { key: 'outlet', label: 'Outlet' },
+    { key: 'reason', label: 'Reason' },
+    { key: 'status', label: 'Receiving' },
+    { key: 'date', label: 'Pull Out Date', type: 'date' },
     { key: 'total', label: 'Total Amount' },
     ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
@@ -112,16 +112,15 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Outlet deliveries sit in transit until an Outlet Receive takes them in; plain-customer deliveries have nothing to receive.
-function receivingStatus(r: DeliveryReceipt): string {
-  if (r.customerType !== 'OUTLET') return '—'
+// A pull out sits in transit at the main warehouse until Pull Out Receive(s) take it in.
+function receivingStatus(r: OutletPullOut): string {
   if (r.loaded) return 'Received'
   return r.lines.some(l => Number(l.quantityLoaded) > 0) ? 'Partially received' : 'In transit'
 }
 
-function receiptSearchText(r: DeliveryReceipt): string {
-  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.destinationWarehouseName ?? '',
-    receivingStatus(r), r.remarks ?? '', r.companyName, formatDate(r.deliveryDate)].join(' ')
+function pullOutSearchText(r: OutletPullOut): string {
+  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.pullOutReasonName ?? '',
+    receivingStatus(r), r.remarks ?? '', r.companyName, formatDate(r.pullOutDate)].join(' ')
 }
 
 function lineAmount(line: LineDraft): number {
@@ -130,7 +129,7 @@ function lineAmount(line: LineDraft): number {
   return Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0
 }
 
-export function DeliveryReceiptsPage() {
+export function OutletPullOutsPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
@@ -144,29 +143,28 @@ export function DeliveryReceiptsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
+  const { items: pullOuts, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<OutletPullOut>('/outlet-pull-outs', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load delivery receipts.', 'error'),
+    onError: () => toast('Failed to load outlet pull outs.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
-    searchText: receiptSearchText,
+    searchText: pullOutSearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [mode, setMode]                       = useState<FormMode>('view')
-  const rec = useRecordTab<DeliveryReceipt>({
+  const rec = useRecordTab<OutletPullOut>({
     mode,
     onOpen: { view: openView, create: openCreate },
     onRequestClose: requestClose,
-    fetchRecord: id => apiFetch<DeliveryReceipt>(`/delivery-receipts/${id}`),
+    fetchRecord: id => apiFetch<OutletPullOut>(`/outlet-pull-outs/${id}`),
   })
-  const [activeReceipt, setActiveReceipt]     = useState<DeliveryReceipt | null>(null)
+  const [activePullOut, setActivePullOut]     = useState<OutletPullOut | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [customerId, setCustomerId]           = useState<number | ''>('')
-  // Optional source: delivering a Stock Transfer copies its lines (read-only) and releases its hold.
-  const [stockTransferId, setStockTransferId] = useState<number | ''>('')
-  const [deliveryDate, setDeliveryDate]       = useState(todayIso())
+  const [reasonId, setReasonId]               = useState<number | ''>('')
+  const [pullOutDate, setPullOutDate]         = useState(todayIso())
   const [remarks, setRemarks]                 = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
   const [lines, setLines]                     = useState<LineDraft[]>([EMPTY_LINE])
@@ -174,35 +172,28 @@ export function DeliveryReceiptsPage() {
   // Dropdowns are scoped to the form's company (the active company on the list tab).
   const lookupCompanyId = companyId || activeCompanyId
   const creating = inRecordTab && mode === 'create'
-  const customers = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, onError: () => toast('Failed to load customers.', 'error') })
-  // The customer lookup is slim (no type), so outlets are a second, outlet-only lookup.
-  const outlets = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
-  // Stock always leaves the company's main warehouse — there's no warehouse picker.
-  const mainWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: creating, params: { mainOnly: 'true' }, onError: () => toast('Failed to load the main warehouse.', 'error') })
-  const mainWarehouse = mainWarehouses[0]
+  const outlets = useLookup<CustomerLookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
+  const reasons = useLookup<LookupOption>('pull-out-reasons', lookupCompanyId, { enabled: !inRecordTab || creating, onError: () => toast('Failed to load pull out reasons.', 'error') })
   const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
-  const isOutlet = customerId !== '' && outlets.some(o => o.id === customerId)
-  // openOnly (the default) keeps only transfers that are neither voided nor delivered.
-  const openTransfers = useLookup<TransactionLookupOption>('stock-transfers', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load stock transfers.', 'error') })
-  const eligibleTransfers = customerId ? openTransfers.filter(t => t.customerId === customerId) : []
-  const fromTransfer = stockTransferId !== ''
-  // A delivery deducts on-hand stock from the main warehouse, so that's the balance shown as a guide.
-  const stock = useStock(lookupCompanyId, mainWarehouse?.id ?? '', lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
+  const selectedOutlet = customerId === '' ? undefined : outlets.find(o => o.id === customerId)
+  const outletWarehouseId = selectedOutlet?.warehouseId ?? ''
+  // A pull out deducts on-hand stock from the outlet's own warehouse, so that's the balance shown as a guide.
+  const stock = useStock(lookupCompanyId, outletWarehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
   const shortStock = shortItems(lines, stock, l => Number(l.quantity))
   const draftTotal = lines.reduce((sum, l) => sum + (l.itemId !== '' ? lineAmount(l) : 0), 0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { isVisible, menu: columnMenu } = useColumnVisibility('delivery-receipts')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('outlet-pull-outs')
   const { markClean, guardedClose } = useDirtyGuard()
 
-  const canCreate = hasPermission('CREATE_DELIVERY_RECEIPT')
+  const canCreate = hasPermission('CREATE_OUTLET_PULL_OUT')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
-  const canVoid = hasPermission('VOID_DELIVERY_RECEIPT')
+  const canVoid = hasPermission('VOID_OUTLET_PULL_OUT')
   const [voiding, setVoiding] = useState(false)
-  const activity = useTransactionActivity('DELIVERY_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
+  const activity = useTransactionActivity('OUTLET_PULL_OUT', inRecordTab && mode === 'view' ? activePullOut?.id : null, activePullOut?.referenceNumber, activePullOut?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
-    items: receipts,
+    items: pullOuts,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -221,56 +212,38 @@ export function DeliveryReceiptsPage() {
     }
   }, [])
 
-  function openView(receipt: DeliveryReceipt) {
-    if (!rec.isRecordTab) return rec.open('view', receipt)
-    setActiveReceipt(receipt)
+  function openView(pullOut: OutletPullOut) {
+    if (!rec.isRecordTab) return rec.open('view', pullOut)
+    setActivePullOut(pullOut)
     setMode('view')
   }
 
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
-    setActiveReceipt(null)
+    setActivePullOut(null)
     const nextCompanyId = activeCompanyId ?? ''
     const nextDate = todayIso()
     const nextLines: LineDraft[] = [EMPTY_LINE]
     setCompanyId(nextCompanyId)
     setCustomerId('')
-    setStockTransferId('')
-    setDeliveryDate(nextDate)
+    setReasonId('')
+    setPullOutDate(nextDate)
     setRemarks('')
     setSheetNumber('')
     setLines(nextLines)
-    markClean({ companyId: nextCompanyId, customerId: '', stockTransferId: '', deliveryDate: nextDate, remarks: '', sheetNumber: '', lines: nextLines })
+    markClean({ companyId: nextCompanyId, customerId: '', reasonId: '', pullOutDate: nextDate, remarks: '', sheetNumber: '', lines: nextLines })
     setMode('create')
   }
 
   function requestClose() {
-    guardedClose({ companyId, customerId, stockTransferId, deliveryDate, remarks, sheetNumber, lines }, () => rec.close())
+    guardedClose({ companyId, customerId, reasonId, pullOutDate, remarks, sheetNumber, lines }, () => rec.close())
   }
 
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
     setCustomerId('')
-    setStockTransferId('')
+    setReasonId('')
     setLines([EMPTY_LINE])
-  }
-
-  // A transfer belongs to one customer, so changing the customer drops a chosen transfer (and its copied lines).
-  function handleCustomerChange(value: number | '') {
-    setCustomerId(value)
-    if (fromTransfer) {
-      setStockTransferId('')
-      setLines([EMPTY_LINE])
-    }
-  }
-
-  // Delivering a transfer loads it in full: its lines are copied as-is and can't be edited here.
-  function handleTransferChange(id: number | '') {
-    setStockTransferId(id)
-    const source = id ? eligibleTransfers.find(t => t.id === id) : undefined
-    setLines(source
-      ? byLineNumber(source.lines).map(l => ({ itemId: l.itemId, quantity: String(l.quantity), unitPrice: String(l.unitPrice ?? 0) }))
-      : [EMPTY_LINE])
   }
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
@@ -284,7 +257,6 @@ export function DeliveryReceiptsPage() {
   }
 
   function addLine() {
-    if (fromTransfer) return
     setLines(prev => [...prev, EMPTY_LINE])
   }
 
@@ -298,12 +270,16 @@ export function DeliveryReceiptsPage() {
       toast('Select a company.', 'error')
       return
     }
-    if (!mainWarehouse) {
-      toast('No main warehouse is set for this company. Mark one as Main on the Warehouses page first.', 'error')
+    if (!customerId) {
+      toast('Select an outlet.', 'error')
       return
     }
-    if (!customerId) {
-      toast('Select a customer.', 'error')
+    if (selectedOutlet && selectedOutlet.warehouseId == null) {
+      toast(`${selectedOutlet.name} has no warehouse to pull out from.`, 'error')
+      return
+    }
+    if (!reasonId) {
+      toast('Select a pull out reason.', 'error')
       return
     }
     const validLines = lines.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
@@ -323,30 +299,28 @@ export function DeliveryReceiptsPage() {
       toast('Not enough stock on hand for the highlighted line(s) — stock cannot go below zero. Reduce the quantity or restock first.', 'error')
       return
     }
-    if (!window.confirm('Post this delivery receipt? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this outlet pull out? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
         companyId,
         customerId,
-        deliveryDate,
+        pullOutReasonId: reasonId,
+        pullOutDate,
         remarks: remarks || null,
         sheetNumber: sheetNumber || null,
-        // A transfer's lines are copied server-side, so they're omitted from the request.
-        ...(fromTransfer ? { stockTransferId } : {
-          lines: validLines.map(l => ({
-            itemId: l.itemId,
-            quantity: Number(l.quantity),
-            unitPrice: l.unitPrice.trim() !== '' ? Number(l.unitPrice) : null,
-          })),
-        }),
+        lines: validLines.map(l => ({
+          itemId: l.itemId,
+          quantity: Number(l.quantity),
+          unitPrice: l.unitPrice.trim() !== '' ? Number(l.unitPrice) : null,
+        })),
       }
-      await apiFetch<DeliveryReceipt>('/delivery-receipts', { method: 'POST', body: JSON.stringify(body) })
-      toast('Delivery receipt posted successfully.', 'success')
+      await apiFetch<OutletPullOut>('/outlet-pull-outs', { method: 'POST', body: JSON.stringify(body) })
+      toast('Outlet pull out posted successfully.', 'success')
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to post delivery receipt.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to post outlet pull out.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -354,58 +328,58 @@ export function DeliveryReceiptsPage() {
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<DeliveryReceipt>(qs ? `/delivery-receipts?${qs}` : '/delivery-receipts', 100000)
+    const all = await fetchAllContent<OutletPullOut>(qs ? `/outlet-pull-outs?${qs}` : '/outlet-pull-outs', 100000)
     const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(r => receiptSearchText(r).toLowerCase().includes(term)) : all
+    const matching = term ? all.filter(r => pullOutSearchText(r).toLowerCase().includes(term)) : all
     const rows = matching.map(r => ({
       referenceNumber: r.referenceNumber,
       sheetNumber: r.sheetNumber ?? '',
-      customer: r.customerName,
-      warehouse: r.warehouseName,
+      outlet: r.customerName,
+      reason: r.pullOutReasonName ?? '',
       status: receivingStatus(r),
-      date: formatDate(r.deliveryDate),
+      date: formatDate(r.pullOutDate),
       total: formatCurrency(r.totalAmount),
       voided: r.voided ? 'Yes' : '',
       origin: originLabel(r.origin),
       company: r.companyName,
     }))
-    exportToXlsx('delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('outlet-pull-outs', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   function printFailed() {
-    if (!activeReceipt) return
+    if (!activePullOut) return
     toast(
-      `No active print template configured for Delivery Receipts under ${activeReceipt.companyName}. Create one under Document Templates while ${activeReceipt.companyName} is your active company.`,
+      `No active print template configured for Outlet Pull Outs under ${activePullOut.companyName}. Create one under Document Templates while ${activePullOut.companyName} is your active company.`,
       'error'
     )
   }
 
   async function handleVoid() {
-    if (!activeReceipt) return
-    if (!window.confirm(`Void delivery receipt "${activeReceipt.referenceNumber}"? This returns the stock to ${activeReceipt.warehouseName} and cannot be undone.`)) return
+    if (!activePullOut) return
+    if (!window.confirm(`Void outlet pull out "${activePullOut.referenceNumber}"? This returns the stock to ${activePullOut.warehouseName} and cannot be undone.`)) return
     setVoiding(true)
     try {
-      const voided = await apiFetch<DeliveryReceipt>(`/delivery-receipts/${activeReceipt.id}/void`, { method: 'POST' })
-      setActiveReceipt(voided)
-      toast('Delivery receipt voided.', 'success')
+      const voided = await apiFetch<OutletPullOut>(`/outlet-pull-outs/${activePullOut.id}/void`, { method: 'POST' })
+      setActivePullOut(voided)
+      toast('Outlet pull out voided.', 'success')
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to void delivery receipt.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to void outlet pull out.'), 'error')
     } finally {
       setVoiding(false)
     }
   }
 
-  const recordName = activeReceipt?.referenceNumber ?? ''
-  const tabTitle = mode === 'create' ? 'New Delivery Receipt' : recordName || 'Delivery Receipt'
-  // Received (even partly) by an outlet: the backend blocks voiding until those receives are voided.
-  const receivedByOutlet = !!activeReceipt && activeReceipt.lines.some(l => Number(l.quantityLoaded) > 0)
+  const recordName = activePullOut?.referenceNumber ?? ''
+  const tabTitle = mode === 'create' ? 'New Outlet Pull Out' : recordName || 'Outlet Pull Out'
+  // Received (even partly) at the main warehouse: the backend blocks voiding until those receives are voided.
+  const hasReceipts = !!activePullOut && activePullOut.lines.some(l => Number(l.quantityLoaded) > 0)
 
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold">Delivery Receipts</h1>
+        <h1 className="text-2xl font-bold">Outlet Pull Outs</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
@@ -413,15 +387,22 @@ export function DeliveryReceiptsPage() {
               ref={searchInputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search delivery receipts… (/)"
-              className="pl-8 w-56"
+              placeholder="Search outlet pull outs… (/)"
+              className="pl-8 w-64"
             />
           </div>
           <SearchableSelect
             value={filters.customerId ?? ''}
             onChange={v => setFilters(prev => ({ ...prev, customerId: v }))}
-            options={customers.map(c => ({ value: String(c.id), label: c.name }))}
-            placeholder="All customers"
+            options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
+            placeholder="All outlets"
+            className="w-44"
+          />
+          <SearchableSelect
+            value={filters.pullOutReasonId ?? ''}
+            onChange={v => setFilters(prev => ({ ...prev, pullOutReasonId: v }))}
+            options={reasons.map(r => ({ value: String(r.id), label: r.name }))}
+            placeholder="All reasons"
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
@@ -444,66 +425,58 @@ export function DeliveryReceiptsPage() {
 
       {inRecordTab && (
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-4xl">
-          {mode === 'view' && activeReceipt ? (
+          {mode === 'view' && activePullOut ? (
             <div className="space-y-4">
-              <OriginNotice origin={activeReceipt.origin} />
+              <OriginNotice origin={activePullOut.origin} />
               <DocSheet>
-                {activeReceipt.voided && <DocStamp text="Voided" />}
-                <DocLetterhead company={<CompanyField id="dr-company" readOnly name={activeReceipt.companyName} />}>
-                  <DocHeader title="Delivery Receipt" number={activeReceipt.referenceNumber}>
+                {activePullOut.voided && <DocStamp text="Voided" />}
+                <DocLetterhead company={<CompanyField id="opo-company" readOnly name={activePullOut.companyName} />}>
+                  <DocHeader title="Outlet Pull Out" number={activePullOut.referenceNumber}>
                     <DocRow>
-                      <DocCell label="Delivery Date"><DocText>{formatDate(activeReceipt.deliveryDate)}</DocText></DocCell>
-                      <DocCell label="Sheet #"><DocText>{activeReceipt.sheetNumber}</DocText></DocCell>
+                      <DocCell label="Pull Out Date"><DocText>{formatDate(activePullOut.pullOutDate)}</DocText></DocCell>
+                      <DocCell label="Sheet #"><DocText>{activePullOut.sheetNumber}</DocText></DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={activeReceipt.customerType === 'OUTLET' ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'}>
-                    <DocText>{activeReceipt.customerName}</DocText>
-                  </DocCell>
-                  <DocCell label="Deliver From (Warehouse)"><DocText>{activeReceipt.warehouseName}</DocText></DocCell>
-                  {activeReceipt.stockTransferReferenceNumber && (
-                    <DocCell label="Stock Transfer No."><DocText>{activeReceipt.stockTransferReferenceNumber}</DocText></DocCell>
-                  )}
+                  <DocCell label="Outlet"><DocText>{activePullOut.customerName}</DocText></DocCell>
+                  <DocCell label="Reason"><DocText>{activePullOut.pullOutReasonName}</DocText></DocCell>
                 </DocRow>
-                {activeReceipt.customerType === 'OUTLET' && (
-                  <DocRow>
-                    <DocCell label="In Transit To (Outlet Warehouse)"><DocText>{activeReceipt.destinationWarehouseName}</DocText></DocCell>
-                    <DocCell label="Outlet Receiving"><DocText>{receivingStatus(activeReceipt)}</DocText></DocCell>
-                  </DocRow>
-                )}
+                <DocRow>
+                  <DocCell label="From (Outlet Warehouse)"><DocText>{activePullOut.warehouseName}</DocText></DocCell>
+                  <DocCell label="To (In Transit)"><DocText>{activePullOut.destinationWarehouseName}</DocText></DocCell>
+                  <DocCell label="Receiving"><DocText>{receivingStatus(activePullOut)}</DocText></DocCell>
+                </DocRow>
                 <DocLines
-                  rows={byLineNumber(activeReceipt.lines)}
+                  rows={byLineNumber(activePullOut.lines)}
                   rowKey={line => line.id}
                   lineNumber={line => line.lineNumber}
                   minRows={5}
                   columns={[
                     { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
                     { key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', render: line => line.quantity },
-                    activeReceipt.customerType === 'OUTLET' && {
-                      key: 'received', label: 'Received', align: 'right', width: '7rem', render: line => line.quantityLoaded,
-                    },
+                    { key: 'received', label: 'Received', align: 'right', width: '7rem', render: line => line.quantityLoaded },
                     { key: 'unitPrice', label: 'Unit Price', align: 'right', width: '8rem', render: line => formatCurrency(line.unitPrice) },
                     { key: 'amount', label: 'Amount', align: 'right', width: '9rem', render: line => formatCurrency(line.amount) },
                   ]}
                 />
                 <DocRow cols="3fr 2fr">
-                  <DocCell label="Remarks"><DocText>{activeReceipt.remarks}</DocText></DocCell>
-                  <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(activeReceipt.totalAmount), grand: true }]} />
+                  <DocCell label="Remarks"><DocText>{activePullOut.remarks}</DocText></DocCell>
+                  <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(activePullOut.totalAmount), grand: true }]} />
                 </DocRow>
-                <TransactionHistory activity={activity} record={activeReceipt} />
+                <TransactionHistory activity={activity} record={activePullOut} />
               </DocSheet>
 
               <div className={RECORD_ACTIONS}>
-                <TransactionActionsMenu activity={activity} voided={activeReceipt.voided} />
-                {canVoid && !activeReceipt.voided && (
+                <TransactionActionsMenu activity={activity} voided={activePullOut.voided} />
+                {canVoid && !activePullOut.voided && (
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleVoid}
                     loading={voiding}
-                    disabled={receivedByOutlet}
-                    title={receivedByOutlet ? 'Already received by the outlet — void its Outlet Receive(s) first.' : undefined}
+                    disabled={hasReceipts}
+                    title={hasReceipts ? 'Received at the main warehouse — void its Pull Out Receive(s) first.' : undefined}
                   >
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -511,9 +484,9 @@ export function DeliveryReceiptsPage() {
                 )}
                 {canPrint && (
                   <PrintButton
-                    companyId={activeReceipt.companyId}
-                    documentType="DELIVERY_RECEIPT"
-                    data={activeReceipt as unknown as Record<string, unknown>}
+                    companyId={activePullOut.companyId}
+                    documentType="OUTLET_PULL_OUT"
+                    data={activePullOut as unknown as Record<string, unknown>}
                     onError={printFailed}
                   />
                 )}
@@ -525,7 +498,7 @@ export function DeliveryReceiptsPage() {
               <DocSheet>
                 <DocLetterhead company={
                     <CompanyField
-                      id="dr-company"
+                      id="opo-company"
                       readOnly={!showCompanyColumn}
                       name={companyOptions.find(c => c.id === companyId)?.name}
                       companies={companyOptions}
@@ -534,60 +507,52 @@ export function DeliveryReceiptsPage() {
                       autoFocus={showCompanyColumn}
                     />
                 }>
-                  <DocHeader title="Delivery Receipt" number={<PendingNumber />}>
+                  <DocHeader title="Outlet Pull Out" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Delivery Date" htmlFor="dr-date" required>
-                        <Input id="dr-date" type="date" value={deliveryDate}
-                          onChange={e => setDeliveryDate(e.target.value)} required />
+                      <DocCell label="Pull Out Date" htmlFor="opo-date" required>
+                        <Input id="opo-date" type="date" value={pullOutDate}
+                          onChange={e => setPullOutDate(e.target.value)} required />
                       </DocCell>
-                      <DocCell label="Sheet #" htmlFor="dr-sheet">
-                        <Input id="dr-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      <DocCell label="Sheet #" htmlFor="opo-sheet">
+                        <Input id="opo-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
                       </DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label={isOutlet ? 'Deliver To (Outlet)' : 'Deliver To (Customer)'} htmlFor="dr-customer" required>
+                  <DocCell label="Outlet" htmlFor="opo-outlet" required>
                     <SearchableSelect
-                      id="dr-customer"
+                      id="opo-outlet"
                       value={customerId === '' ? '' : String(customerId)}
-                      onChange={v => handleCustomerChange(v ? Number(v) : '')}
-                      options={customers.map(c => ({ value: String(c.id), label: outlets.some(o => o.id === c.id) ? `${c.name} (Outlet)` : c.name }))}
+                      onChange={v => setCustomerId(v ? Number(v) : '')}
+                      options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
                       disabled={!companyId}
                       autoFocus={!showCompanyColumn}
                     />
-                    {isOutlet && (
-                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        Posts as in transit to this outlet's warehouse until an Outlet Receive takes it in.
-                      </p>
-                    )}
                   </DocCell>
-                  <DocCell label="Deliver From (Main Warehouse)">
-                    <DocText className={cn(!mainWarehouse && 'italic text-[hsl(var(--destructive))]')}>
-                      {mainWarehouse?.name ?? (lookupCompanyId ? 'No main warehouse set — mark one on the Warehouses page' : '')}
+                  <DocCell label="From (Outlet Warehouse)">
+                    <DocText className={cn(!selectedOutlet?.warehouseName && 'italic text-[hsl(var(--muted-foreground))]')}>
+                      {selectedOutlet?.warehouseName ?? 'The outlet\'s own warehouse'}
                     </DocText>
                   </DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Stock Transfer No." htmlFor="dr-transfer">
+                  <DocCell label="Reason" htmlFor="opo-reason" required>
                     <SearchableSelect
-                      id="dr-transfer"
-                      value={stockTransferId === '' ? '' : String(stockTransferId)}
-                      onChange={v => handleTransferChange(v ? Number(v) : '')}
-                      options={eligibleTransfers.map(t => ({ value: String(t.id), label: `${t.referenceNumber} — ${formatDate(t.transactionDate)}` }))}
-                      placeholder={customerId ? undefined : 'Select a customer first…'}
-                      disabled={!customerId}
+                      id="opo-reason"
+                      value={reasonId === '' ? '' : String(reasonId)}
+                      onChange={v => setReasonId(v ? Number(v) : '')}
+                      options={reasons.map(r => ({ value: String(r.id), label: r.name }))}
+                      disabled={!companyId}
                     />
-                    {customerId && eligibleTransfers.length === 0 && (
+                    {companyId && reasons.length === 0 && (
                       <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        No open stock transfers for this customer — enter the lines below.
+                        No active pull out reasons — add one on the Pull Out Reasons page first.
                       </p>
                     )}
-                    {fromTransfer && (
-                      <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        Delivers this transfer in full — its lines are copied as-is and its hold on the main warehouse is released.
-                      </p>
-                    )}
+                  </DocCell>
+                  <DocCell label="To (In Transit)">
+                    <DocText className="italic text-[hsl(var(--muted-foreground))]">The company's main warehouse</DocText>
                   </DocCell>
                 </DocRow>
                 <DocLines
@@ -600,14 +565,13 @@ export function DeliveryReceiptsPage() {
                           value={line.itemId === '' ? '' : String(line.itemId)}
                           onChange={v => handleLineItemChange(i, v ? Number(v) : '')}
                           options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
-                          disabled={fromTransfer}
                         />
                       ),
                     },
                     {
                       key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
-                        <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={!!mainWarehouse}
+                        <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={outletWarehouseId !== ''}
                           short={() => line.itemId !== '' && shortStock.has(line.itemId)} />
                       ),
                     },
@@ -615,14 +579,14 @@ export function DeliveryReceiptsPage() {
                       key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', required: true,
                       render: (line, i) => (
                         <Input type="number" step="0.0001" min="0" aria-label={`Line ${i + 1} quantity`} value={line.quantity}
-                          onChange={e => updateLine(i, { quantity: e.target.value })} readOnly={fromTransfer} className="text-right" />
+                          onChange={e => updateLine(i, { quantity: e.target.value })} className="text-right" />
                       ),
                     },
                     {
                       key: 'unitPrice', label: 'Unit Price', align: 'right', width: '8rem',
                       render: (line, i) => (
                         <Input type="number" step="0.01" min="0" aria-label={`Line ${i + 1} unit price`} value={line.unitPrice}
-                          onChange={e => updateLine(i, { unitPrice: e.target.value })} readOnly={fromTransfer} className="text-right" />
+                          onChange={e => updateLine(i, { unitPrice: e.target.value })} className="text-right" />
                       ),
                     },
                     {
@@ -635,7 +599,7 @@ export function DeliveryReceiptsPage() {
                       key: 'remove', label: '', align: 'center', width: '2.75rem',
                       render: (_, i) => (
                         <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label={`Remove line ${i + 1}`}
-                          onClick={() => removeLine(i)} disabled={lines.length === 1 || fromTransfer}>
+                          onClick={() => removeLine(i)} disabled={lines.length === 1}>
                           <X className="w-4 h-4" />
                         </Button>
                       ),
@@ -643,22 +607,22 @@ export function DeliveryReceiptsPage() {
                   ]}
                   footer={
                     <div className="flex items-center justify-between gap-2">
-                      <Button type="button" variant="ghost" size="sm" onClick={addLine} disabled={fromTransfer}>
+                      <Button type="button" variant="ghost" size="sm" onClick={addLine}>
                         <Plus className="w-3.5 h-3.5" />
                         Add Line
                         <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
                       </Button>
                       {formInventoryItems.length === 0 && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                          No items are tagged Inventory — tag an item on the Items page before posting a delivery receipt.
+                          No items are tagged Inventory — tag an item on the Items page before posting an outlet pull out.
                         </span>
                       )}
                     </div>
                   }
                 />
                 <DocRow cols="3fr 2fr">
-                  <DocCell label="Remarks" htmlFor="dr-remarks">
-                    <Input id="dr-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  <DocCell label="Remarks" htmlFor="opo-remarks">
+                    <Input id="opo-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
                   </DocCell>
                   <DocTotals entries={[{ label: 'Total Amount', value: formatCurrency(draftTotal), grand: true }]} />
                 </DocRow>
@@ -667,7 +631,7 @@ export function DeliveryReceiptsPage() {
 
               <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Delivery Receipt</Button>
+                <Button type="submit" loading={loading}>Post Outlet Pull Out</Button>
               </div>
             </form>
           )}
@@ -684,10 +648,10 @@ export function DeliveryReceiptsPage() {
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
-                {isVisible('customer') && <th className="text-left py-2 px-4 font-medium">Customer</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">From Warehouse</th>}
-                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Outlet Receiving</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Delivery Date</th>}
+                {isVisible('outlet') && <th className="text-left py-2 px-4 font-medium">Outlet</th>}
+                {isVisible('reason') && <th className="text-left py-2 px-4 font-medium">Reason</th>}
+                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Receiving</th>}
+                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Pull Out Date</th>}
                 {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
                 {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
@@ -698,43 +662,38 @@ export function DeliveryReceiptsPage() {
                 isVisible={isVisible}
                 values={filters}
                 onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-                filterable={key => key !== 'customer' && key !== 'warehouse' && key !== 'company' && key !== 'status' && key !== 'total' && key !== 'voided'}
+                filterable={key => key !== 'outlet' && key !== 'reason' && key !== 'company' && key !== 'status' && key !== 'total' && key !== 'voided'}
               />
             </thead>
             <tbody>
-              {receipts.length === 0 ? (
+              {pullOuts.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No delivery receipts match your search/filters.' : 'No delivery receipts to display.'}
+                    {isFiltering ? 'No outlet pull outs match your search/filters.' : 'No outlet pull outs to display.'}
                   </td>
                 </tr>
               ) : (
-                receipts.map((receipt, i) => (
+                pullOuts.map((pullOut, i) => (
                   <tr
-                    key={receipt.id}
-                    onClick={() => { setActiveIndex(i); openView(receipt) }}
+                    key={pullOut.id}
+                    onClick={() => { setActiveIndex(i); openView(pullOut) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.companyName}</td>}
-                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receipt.referenceNumber}</td>}
-                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.sheetNumber ?? '—'}</td>}
-                    {isVisible('customer') && (
-                      <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">
-                        {receipt.customerName}
-                        {receipt.customerType === 'OUTLET' && <span className="ml-1.5 text-xs">(Outlet)</span>}
-                      </td>
-                    )}
-                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.warehouseName}</td>}
-                    {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receivingStatus(receipt)}</td>}
-                    {isVisible('date') && <td className="py-2 px-4">{formatDate(receipt.deliveryDate)}</td>}
-                    {isVisible('total') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(receipt.totalAmount)}</td>}
-                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receipt.origin} /></td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{pullOut.companyName}</td>}
+                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{pullOut.referenceNumber}</td>}
+                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{pullOut.sheetNumber ?? '—'}</td>}
+                    {isVisible('outlet') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{pullOut.customerName}</td>}
+                    {isVisible('reason') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{pullOut.pullOutReasonName ?? '—'}</td>}
+                    {isVisible('status') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receivingStatus(pullOut)}</td>}
+                    {isVisible('date') && <td className="py-2 px-4">{formatDate(pullOut.pullOutDate)}</td>}
+                    {isVisible('total') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(pullOut.totalAmount)}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={pullOut.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
-                        {receipt.voided && (
+                        {pullOut.voided && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
                             Voided
                           </span>
@@ -742,7 +701,7 @@ export function DeliveryReceiptsPage() {
                       </td>
                     )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => openView(receipt)}>
+                      <Button variant="ghost" size="sm" onClick={() => openView(pullOut)}>
                         <Eye className="w-4 h-4" />
                       </Button>
                     </td>

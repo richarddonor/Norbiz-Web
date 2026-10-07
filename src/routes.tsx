@@ -23,13 +23,20 @@ import { DeliveryReceiptsPage } from '@/pages/DeliveryReceiptsPage'
 import { OutletReceivesPage } from '@/pages/OutletReceivesPage'
 import { OutletDeliveryReceiptsPage } from '@/pages/OutletDeliveryReceiptsPage'
 import { OutletDeliveryReturnsPage } from '@/pages/OutletDeliveryReturnsPage'
+import { StockTransfersPage } from '@/pages/StockTransfersPage'
+import { OutletPullOutsPage } from '@/pages/OutletPullOutsPage'
+import { PullOutReceivesPage } from '@/pages/PullOutReceivesPage'
+import { PullOutReasonsPage } from '@/pages/PullOutReasonsPage'
+import { AssembliesPage } from '@/pages/AssembliesPage'
+import { BillsOfMaterialsPage } from '@/pages/BillsOfMaterialsPage'
 import { ReportCategoryPage } from '@/pages/ReportCategoryPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
 import {
   InventoryAdjustmentDetailedPage, OutletReceiveDetailedPage, PurchaseOrderDetailedPage,
   PurchaseInvoiceDetailedPage, PurchaseReceiveDetailedPage, DeliveryReceiptDetailedPage,
-  OutletDeliveryReceiptDetailedPage, OutletDeliveryReturnDetailedPage,
+  OutletDeliveryReceiptDetailedPage, OutletDeliveryReturnDetailedPage, StockTransferDetailedPage,
+  OutletPullOutDetailedPage, PullOutReceiveDetailedPage, AssemblyDetailedPage,
 } from '@/pages/TransactionDetailedReportPages'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
 import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
@@ -57,6 +64,12 @@ const pageComponents: Record<string, ComponentType> = {
   '/outlet-receives': OutletReceivesPage,
   '/outlet-delivery-receipts': OutletDeliveryReceiptsPage,
   '/outlet-delivery-returns': OutletDeliveryReturnsPage,
+  '/stock-transfers': StockTransfersPage,
+  '/outlet-pull-outs': OutletPullOutsPage,
+  '/pull-out-receives': PullOutReceivesPage,
+  '/pull-out-reasons': PullOutReasonsPage,
+  '/assemblies': AssembliesPage,
+  '/bills-of-materials': BillsOfMaterialsPage,
   ...Object.fromEntries(reportCategories.map(c => [c.to, ReportCategoryPage])),
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
@@ -68,6 +81,10 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/delivery-receipt-detailed': DeliveryReceiptDetailedPage,
   '/reports/outlet-delivery-receipt-detailed': OutletDeliveryReceiptDetailedPage,
   '/reports/outlet-delivery-return-detailed': OutletDeliveryReturnDetailedPage,
+  '/reports/stock-transfer-detailed': StockTransferDetailedPage,
+  '/reports/outlet-pull-out-detailed': OutletPullOutDetailedPage,
+  '/reports/pull-out-receive-detailed': PullOutReceiveDetailedPage,
+  '/reports/assembly-detailed': AssemblyDetailedPage,
   '/document-templates': DocumentTemplatesPage,
   '/transaction-actions': TransactionActionsPage,
 }

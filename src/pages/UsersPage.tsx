@@ -346,7 +346,7 @@ export function UsersPage() {
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Users</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">

@@ -14,8 +14,11 @@ export interface ColumnDef {
   key: string
   label: string
   /** 'date' renders a from/to range filter (with quick presets); 'boolean' renders
-   * a True/False/(blank) select — both replace the default plain text filter */
-  type?: 'text' | 'date' | 'boolean'
+   * a True/False/(blank) select; 'select' renders a (blank)/`options` select — all
+   * replace the default plain text filter */
+  type?: 'text' | 'date' | 'boolean' | 'select'
+  /** The choices for a `type: 'select'` filter; `value` is sent to the backend as-is. */
+  options?: { value: string; label: string }[]
 }
 
 interface Props {

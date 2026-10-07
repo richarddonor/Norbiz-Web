@@ -17,6 +17,7 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useLookup, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
@@ -50,6 +51,8 @@ interface DetailedReportRow {
   sourceReferenceNumber: string | null
   remarks: string | null
   voided: boolean
+  /** NATIVE, or MIGRATED / RECONSTRUCTED for transactions written by the legacy migration */
+  origin: TransactionOrigin
   voidedAt: string | null
   voidedBy: string | null
   createdAt: string | null
@@ -107,6 +110,7 @@ function buildColumns(config: DetailedReportConfig, showCompanyColumn: boolean):
   if (config.discount) columns.push({ key: 'discountPercentage', label: 'Discount %' })
   if (config.priceLabel) columns.push({ key: 'amount', label: 'Amount' })
   columns.push(
+    ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
     { key: 'createdBy', label: 'Posted By' },
   )
@@ -114,7 +118,7 @@ function buildColumns(config: DetailedReportConfig, showCompanyColumn: boolean):
 }
 
 /** Column keys whose filter is sent to the backend (text = contains; date/boolean per type). */
-const FILTERABLE = new Set(['referenceNumber', 'sheetNumber', 'date', 'warehouse', 'counterparty', 'sourceReferenceNumber', 'remarks', 'itemCode', 'itemName', 'voided'])
+const FILTERABLE = new Set(['referenceNumber', 'sheetNumber', 'date', 'warehouse', 'counterparty', 'sourceReferenceNumber', 'remarks', 'itemCode', 'itemName', 'origin', 'voided'])
 
 const NUMERIC = new Set(['lineNumber', 'quantity', 'quantityLoaded', 'price', 'discountPercentage', 'amount'])
 /** Stays at the left edge while the table scrolls sideways. */
@@ -195,6 +199,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
       case 'agent': return r.agentName ?? ''
       case 'sourceReferenceNumber': return r.sourceReferenceNumber ?? ''
       case 'remarks': return r.remarks ?? ''
+      case 'origin': return r.origin === 'NATIVE' ? '' : originLabel(r.origin)
       case 'lineNumber': return String(r.lineNumber)
       case 'itemCode': return r.itemCode
       case 'itemName': return r.itemName
@@ -220,7 +225,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
 
   return (
     <div className="flex h-full flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">{config.title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -366,7 +371,24 @@ const PURCHASE_RECEIVE: DetailedReportConfig = {
 }
 const DELIVERY_RECEIPT: DetailedReportConfig = {
   title: 'Delivery Receipt - Detailed', endpoint: '/reports/detailed/delivery-receipts', transactionType: 'DELIVERY_RECEIPT', key: 'delivery-receipt-detailed',
-  counterparty: CUSTOMER, loadedLabel: 'Qty Received', priceLabel: 'Unit Price',
+  counterparty: CUSTOMER, sourceLabel: 'STF #', loadedLabel: 'Qty Received', priceLabel: 'Unit Price',
+}
+const STOCK_TRANSFER: DetailedReportConfig = {
+  title: 'Stock Transfer - Detailed', endpoint: '/reports/detailed/stock-transfers', transactionType: 'STOCK_TRANSFER', key: 'stock-transfer-detailed',
+  counterparty: CUSTOMER, loadedLabel: 'Qty Delivered', priceLabel: 'Unit Price',
+}
+const OUTLET_PULL_OUT: DetailedReportConfig = {
+  title: 'Outlet Pull Out - Detailed', endpoint: '/reports/detailed/outlet-pull-outs', transactionType: 'OUTLET_PULL_OUT', key: 'outlet-pull-out-detailed',
+  counterparty: { ...CUSTOMER, label: 'Outlet' }, loadedLabel: 'Qty Received', priceLabel: 'Unit Price',
+}
+const PULL_OUT_RECEIVE: DetailedReportConfig = {
+  title: 'Pull Out Receive - Detailed', endpoint: '/reports/detailed/pull-out-receives', transactionType: 'PULL_OUT_RECEIVE', key: 'pull-out-receive-detailed',
+  counterparty: { ...CUSTOMER, label: 'Outlet' }, sourceLabel: 'Pull Out #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price',
+}
+// Rows are both outputs and raw materials; materials carry a negative quantity (their effect on stock).
+const ASSEMBLY: DetailedReportConfig = {
+  title: 'Assembly - Detailed', endpoint: '/reports/detailed/assemblies', transactionType: 'ASSEMBLY', key: 'assembly-detailed',
+  loadedLabel: 'Qty Loaded',
 }
 
 const OUTLET_DELIVERY_RECEIPT: DetailedReportConfig = {
@@ -386,3 +408,7 @@ export const PurchaseReceiveDetailedPage = () => <TransactionDetailedReport conf
 export const DeliveryReceiptDetailedPage = () => <TransactionDetailedReport config={DELIVERY_RECEIPT} />
 export const OutletDeliveryReceiptDetailedPage = () => <TransactionDetailedReport config={OUTLET_DELIVERY_RECEIPT} />
 export const OutletDeliveryReturnDetailedPage = () => <TransactionDetailedReport config={OUTLET_DELIVERY_RETURN} />
+export const StockTransferDetailedPage = () => <TransactionDetailedReport config={STOCK_TRANSFER} />
+export const OutletPullOutDetailedPage = () => <TransactionDetailedReport config={OUTLET_PULL_OUT} />
+export const PullOutReceiveDetailedPage = () => <TransactionDetailedReport config={PULL_OUT_RECEIVE} />
+export const AssemblyDetailedPage = () => <TransactionDetailedReport config={ASSEMBLY} />

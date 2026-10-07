@@ -20,7 +20,8 @@ interface Props {
 
 /** A floating filter row rendered under the table header — one small text
  * input (or, for `type: 'date'` columns, a from/to range picker with quick
- * presets; or for `type: 'boolean'` columns, a True/False/(blank) select)
+ * presets; for `type: 'boolean'` columns, a True/False/(blank) select; for
+ * `type: 'select'` columns, a (blank)/options select)
  * per currently-visible column, combined (AND) with the global search box. */
 export function ColumnFilterRow({ columns, isVisible, values, onChange, filterable, disabled, pinnedKey, actions = true }: Props) {
   return (
@@ -51,6 +52,15 @@ export function ColumnFilterRow({ columns, isVisible, values, onChange, filterab
                 value={values[col.key] ?? ''}
                 onChange={v => onChange(col.key, v)}
                 options={[{ value: 'true', label: 'True' }, { value: 'false', label: 'False' }]}
+                placeholder="All"
+                disabled={disabled}
+                className="h-7 px-1 text-xs"
+              />
+            ) : col.type === 'select' ? (
+              <SearchableSelect
+                value={values[col.key] ?? ''}
+                onChange={v => onChange(col.key, v)}
+                options={col.options ?? []}
                 placeholder="All"
                 disabled={disabled}
                 className="h-7 px-1 text-xs"

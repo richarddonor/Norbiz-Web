@@ -74,6 +74,19 @@ export interface TransactionLookupOption {
   lines: SourceLine[]
 }
 
+/** `/lookups/bills-of-materials` option: the components to prefill an Assembly's raw materials with. */
+export interface BillOfMaterialLookupOption {
+  id: number
+  companyId: number
+  code: string
+  itemId: number
+  itemCode: string
+  itemName: string
+  active: boolean
+  /** quantity is per unit of the output item */
+  components: { itemId: number; itemCode: string; itemName: string; quantity: number }[]
+}
+
 /**
  * Loads every option of a `/lookups/<path>` dropdown for one company, refetching
  * when the company changes (e.g. the form's CompanyField). Returns `[]` until a

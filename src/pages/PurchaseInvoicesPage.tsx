@@ -20,6 +20,8 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
+import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
+import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
@@ -87,6 +89,7 @@ interface PurchaseInvoice {
   paymentStatus: PaymentStatus
   createdAt: string | null
   createdBy: string | null
+  origin: TransactionOrigin
   voided: boolean
   voidedAt: string | null
   voidedBy: string | null
@@ -120,7 +123,7 @@ function buildColumns(showCompanyColumn: boolean, canViewCostPrice: boolean): re
     { key: 'paymentStatus', label: 'Payment Status' },
   )
   if (canViewCostPrice) columns.push({ key: 'netPayable', label: 'Net Payable' })
-  columns.push({ key: 'voided', label: 'Voided', type: 'boolean' })
+  columns.push(ORIGIN_COLUMN, { key: 'voided', label: 'Voided', type: 'boolean' })
   return columns
 }
 
@@ -403,6 +406,7 @@ export function PurchaseInvoicesPage() {
       paymentStatus: PAYMENT_STATUS_LABELS[i.paymentStatus],
       netPayable: i.netPayable !== null ? formatCurrency(i.netPayable) : '',
       voided: i.voided ? 'Yes' : '',
+      origin: originLabel(i.origin),
       company: i.companyName,
     }))
     exportToXlsx('purchase-invoices', COLUMNS.filter(c => isVisible(c.key)), rows)
@@ -438,9 +442,9 @@ export function PurchaseInvoicesPage() {
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Purchase Invoices</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input
@@ -480,6 +484,7 @@ export function PurchaseInvoicesPage() {
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-4xl">
           {mode === 'view' && activeInvoice ? (
             <div className="space-y-4">
+              <OriginNotice origin={activeInvoice.origin} />
               <DocSheet>
                 {activeInvoice.voided && <DocStamp text="Voided" />}
                 <DocLetterhead company={<CompanyField id="pinv-company" readOnly name={activeInvoice.companyName} />}>
@@ -798,6 +803,7 @@ export function PurchaseInvoicesPage() {
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Invoice Date</th>}
                 {isVisible('paymentStatus') && <th className="text-left py-2 px-4 font-medium">Payment Status</th>}
                 {canViewCostPrice && isVisible('netPayable') && <th className="text-right py-2 px-4 font-medium">Net Payable</th>}
+                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
                 <th className="py-2 px-4" />
               </tr>
@@ -835,6 +841,7 @@ export function PurchaseInvoicesPage() {
                     {isVisible('date') && <td className="py-2 px-4">{formatDate(invoice.invoiceDate)}</td>}
                     {isVisible('paymentStatus') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{PAYMENT_STATUS_LABELS[invoice.paymentStatus]}</td>}
                     {canViewCostPrice && isVisible('netPayable') && <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(invoice.netPayable)}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={invoice.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
                         {invoice.voided && (

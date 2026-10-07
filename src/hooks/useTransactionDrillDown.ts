@@ -16,6 +16,10 @@ const TRANSACTION_PATHS: Record<TransactionType, string> = {
   OUTLET_RECEIVE: '/outlet-receives',
   OUTLET_DELIVERY_RECEIPT: '/outlet-delivery-receipts',
   OUTLET_DELIVERY_RETURN: '/outlet-delivery-returns',
+  STOCK_TRANSFER: '/stock-transfers',
+  OUTLET_PULL_OUT: '/outlet-pull-outs',
+  PULL_OUT_RECEIVE: '/pull-out-receives',
+  ASSEMBLY: '/assemblies',
 }
 
 /** The transaction type an inventory movement's `sourceType` refers to — a void posts

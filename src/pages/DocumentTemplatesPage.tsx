@@ -40,6 +40,10 @@ const DOCUMENT_TYPES = [
   { value: 'OUTLET_RECEIVE', label: 'Outlet Receive' },
   { value: 'OUTLET_DELIVERY_RECEIPT', label: 'Outlet Delivery Receipt' },
   { value: 'OUTLET_DELIVERY_RETURN', label: 'Outlet Delivery Return' },
+  { value: 'STOCK_TRANSFER', label: 'Stock Transfer' },
+  { value: 'OUTLET_PULL_OUT', label: 'Outlet Pull Out' },
+  { value: 'PULL_OUT_RECEIVE', label: 'Pull Out Receive' },
+  { value: 'ASSEMBLY', label: 'Assembly' },
 ]
 
 interface DocumentTemplate {
@@ -225,9 +229,9 @@ export function DocumentTemplatesPage() {
   return (
     <div className="space-y-6">
       {!inRecordTab && (<>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Document Templates</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
             <Input
