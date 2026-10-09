@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, ImageOff, Eye, Search, FileDown, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, ImageOff, Eye, FileDown, X } from 'lucide-react'
 import { apiFetch, apiUpload, deleteErrorMessage, ApiError } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -19,10 +19,12 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { TagCheckboxes } from '@/components/TagCheckboxes'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
@@ -74,6 +76,8 @@ interface PriceEntry {
 interface SkuLine {
   skuCode: string
   unitPrice: string
+  /** Display only — a SKU's brand is edited on the Item SKUs page, never sent on save. */
+  brandName: string | null
 }
 
 interface Item {
@@ -90,7 +94,7 @@ interface Item {
   active: boolean
   skus: string[]
   /** Absent on list responses cached before the field existed — the form then leaves SKUs alone. */
-  skuLines?: { id: number; skuCode: string; unitPrice: string | number }[] | null
+  skuLines?: { id: number; skuCode: string; unitPrice: string | number; brandName?: string | null }[] | null
   prices: PriceEntry[]
   tags: string[]
 }
@@ -137,7 +141,7 @@ function itemToForm(item: Item): ItemForm {
     name: item.name,
     categoryId: item.itemCategoryId,
     groupId: item.itemGroupId ?? '',
-    skus: item.skuLines ? item.skuLines.map(l => ({ skuCode: l.skuCode, unitPrice: String(l.unitPrice) })) : null,
+    skus: item.skuLines ? item.skuLines.map(l => ({ skuCode: l.skuCode, unitPrice: String(l.unitPrice), brandName: l.brandName ?? null })) : null,
     prices,
     tags: new Set(item.tags),
   }
@@ -354,6 +358,10 @@ function ItemFormFields({
               ),
             },
             {
+              key: 'brand', label: 'Brand', width: '12rem',
+              render: line => <span className="text-[hsl(var(--muted-foreground))]">{line.brandName ?? '—'}</span>,
+            },
+            {
               key: 'unitPrice', label: 'Unit Price', align: 'right', width: '10rem', required: !ro,
               render: (line, i) => ro ? formatCurrency(line.unitPrice || null) : (
                 <Input type="number" step="0.0001" min="0" aria-label={`SKU line ${i + 1} unit price`} value={line.unitPrice}
@@ -401,7 +409,7 @@ export function ItemsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<Item>('/items', {
+  const { items, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Item>('/items', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load items.', 'error'),
     search: debouncedSearch,
@@ -431,7 +439,6 @@ export function ItemsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imageVersions, setImageVersions] = useState<Record<number, number>>({})
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('items')
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -451,7 +458,6 @@ export function ItemsPage() {
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], !inRecordTab && zone === 'content')
 
@@ -498,7 +504,7 @@ export function ItemsPage() {
   // New SKUs default to the item's unit price — usually what a variant sells for.
   function addSkuLine() {
     if (form.skus === null) return
-    setForm(f => ({ ...f, skus: [...(f.skus ?? []), { skuCode: '', unitPrice: f.prices.UNIT_PRICE }] }))
+    setForm(f => ({ ...f, skus: [...(f.skus ?? []), { skuCode: '', unitPrice: f.prices.UNIT_PRICE, brandName: null }] }))
   }
 
   function requestClose() {
@@ -570,7 +576,7 @@ export function ItemsPage() {
       rec.close()
       reload()
     } catch (err) {
-      // 4xx messages are user-facing (e.g. "SKU code already exists: X").
+      // 4xx messages are user-facing (e.g. "Duplicate SKU code: X").
       const status = err instanceof ApiError ? err.status : 0
       toast(status >= 400 && status < 500 && err instanceof Error && err.message
         ? err.message
@@ -613,21 +619,11 @@ export function ItemsPage() {
   const tabTitle = mode === 'create' ? 'New Item' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Item'
 
   return (
-    <div className="space-y-6">
+    <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Items</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search items… (/)"
-              className="pl-8 w-56"
-            />
-          </div>
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
@@ -641,6 +637,7 @@ export function ItemsPage() {
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
 
@@ -699,9 +696,9 @@ export function ItemsPage() {
 
       {!inRecordTab && (<>
 
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
@@ -793,7 +790,7 @@ export function ItemsPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>

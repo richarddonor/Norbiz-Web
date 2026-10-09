@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
+import { useState, useEffect, useMemo, type FormEvent } from 'react'
+import { Plus, Pencil, Trash2, Eye, FileDown } from 'lucide-react'
 import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -20,9 +20,11 @@ import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { TRANSACTION_TYPES, transactionTypeLabel, type TransactionType } from '@/hooks/useTransactionActivity'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatDateTime } from '@/lib/format'
@@ -155,7 +157,7 @@ export function TransactionActionsPage() {
   // Roles are system-wide; MANAGE_TRANSACTION_ACTIONS unlocks the role lookup (no VIEW_ROLE needed).
   const roleOptions = useLookup<LookupOption>('roles', null, { global: true, enabled: inRecordTab, onError: () => toast('Failed to load roles.', 'error') })
   const roles = useMemo<RoleOption[]>(() => roleOptions.map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })), [roleOptions])
-  const { items: definitions, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<ActionDefinition>('/transaction-action-definitions', {
+  const { items: definitions, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ActionDefinition>('/transaction-action-definitions', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load transaction actions.', 'error'),
     search: debouncedSearch,
@@ -174,7 +176,6 @@ export function TransactionActionsPage() {
   const [form, setForm]                         = useState<DefinitionForm>(emptyForm(''))
   const [candidates, setCandidates]             = useState<ActionDefinition[]>([])
   const [loading, setLoading]                   = useState(false)
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('transaction-actions')
   const { markClean, guardedClose } = useDirtyGuard()
   const resolveDisplayName = useUserDisplayNames()
@@ -193,7 +194,6 @@ export function TransactionActionsPage() {
 
   useHotkeys([
     { key: 'n', handler: () => canManage && openCreate() },
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], !inRecordTab && zone === 'content')
 
@@ -340,21 +340,11 @@ export function TransactionActionsPage() {
   const sortedRoles = [...roles].sort((a, b) => (a.displayName || a.name).localeCompare(b.displayName || b.name))
 
   return (
-    <div className="space-y-6">
+    <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Transaction Actions</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search actions… (/)"
-              className="pl-8 w-56"
-            />
-          </div>
           <SearchableSelect
             value={filters.transactionType ?? ''}
             onChange={v => setFilters(prev => ({ ...prev, transactionType: v }))}
@@ -375,6 +365,7 @@ export function TransactionActionsPage() {
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
       </>)}
@@ -538,9 +529,9 @@ export function TransactionActionsPage() {
       )}
 
       {!inRecordTab && (<>
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
@@ -620,7 +611,7 @@ export function TransactionActionsPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>

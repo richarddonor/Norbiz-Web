@@ -15,7 +15,6 @@ const globalShortcuts: Shortcut[] = [
 ]
 
 const listPageShortcuts: Shortcut[] = [
-  { keys: ['/'], description: 'Focus the search box' },
   { keys: ['N'], description: 'Create a new record' },
   { keys: ['R'], description: 'Reload the list from the server (keeps page & filters)' },
   { keys: ['↑', '↓'], description: 'Move between rows' },

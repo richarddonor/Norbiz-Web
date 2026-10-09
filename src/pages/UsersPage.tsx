@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, Eye, Search, FileDown, KeyRound } from 'lucide-react'
+import { useState, useEffect, useMemo, type FormEvent } from 'react'
+import { Plus, Pencil, Trash2, Eye, FileDown, KeyRound } from 'lucide-react'
 import { apiFetch, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -20,8 +20,10 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { cn } from '@/lib/utils'
@@ -165,7 +167,7 @@ export function UsersPage() {
   const allRoles = useMemo<Role[]>(
     () => roleOptions.filter(r => r.code !== 'SUPER_ADMIN').map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })),
     [roleOptions])
-  const { items: users, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<User>('/users', {
+  const { items: users, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<User>('/users', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load users.', 'error'),
     search: debouncedSearch,
@@ -186,7 +188,6 @@ export function UsersPage() {
   const [roleIds, setRoleIds]         = useState<Set<number>>(new Set())
   const [companyIds, setCompanyIds]   = useState<Set<number>>(new Set())
   const [loading, setLoading]         = useState(false)
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('users')
   const { markClean, guardedClose } = useDirtyGuard()
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
@@ -208,7 +209,6 @@ export function UsersPage() {
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], !inRecordTab && zone === 'content')
 
@@ -344,21 +344,11 @@ export function UsersPage() {
   const tabTitle = mode === 'create' ? 'New User' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'User'
 
   return (
-    <div className="space-y-6">
+    <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Users</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search users… (/)"
-              className="pl-8 w-56"
-            />
-          </div>
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
@@ -372,6 +362,7 @@ export function UsersPage() {
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
 
@@ -477,13 +468,13 @@ export function UsersPage() {
 
       {!inRecordTab && (<>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
           {/* Scroll wide tables inside the card, with the actions column pinned right, so
               Edit/Delete stay reachable on narrow windows (a multi-company session adds the
               Companies column, which is what pushes this table past ~1140px). */}
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
@@ -555,7 +546,7 @@ export function UsersPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           </div>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>

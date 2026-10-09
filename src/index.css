@@ -85,3 +85,128 @@
     left: 0;
   }
 }
+
+/* ---- Dashboard widgets: chart tokens (categorical/sequential steps validated per mode) ---- */
+:root {
+  --viz-1: #2a78d6;          /* blue: primary series */
+  --viz-2: #eb6834;          /* orange: second series (returns) */
+  --viz-glow: 42 120 214;    /* rgb of --viz-1, for glows */
+  --viz-seq-1: #86b6ef;      /* ordinal ramp (aging), near → far */
+  --viz-seq-2: #5598e7;
+  --viz-seq-3: #2a78d6;
+  --viz-seq-4: #1c5cab;
+  --viz-seq-5: #104281;
+  --viz-grid: hsl(220 14% 90%);
+  --viz-critical: #d03b3b;
+  /* Categorical identity, fixed order (never cycled); slot 9+ folds into "Others" (--viz-other). */
+  --viz-cat-1: #2a78d6;
+  --viz-cat-2: #eb6834;
+  --viz-cat-3: #1baf7a;
+  --viz-cat-4: #eda100;
+  --viz-cat-5: #e87ba4;
+  --viz-cat-6: #008300;
+  --viz-cat-7: #4a3aa7;
+  --viz-cat-8: #e34948;
+  --viz-other: #a3a29c;
+  /* Status (never used for series; always paired with an icon or label). */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-empty: hsl(220 14% 93%);
+}
+.dark {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-glow: 57 135 229;
+  --viz-seq-1: #184f95;
+  --viz-seq-2: #256abf;
+  --viz-seq-3: #3987e5;
+  --viz-seq-4: #6da7ec;
+  --viz-seq-5: #9ec5f4;
+  --viz-grid: hsl(222 18% 19%);
+  --viz-critical: #e66767;
+  --viz-cat-1: #3987e5;
+  --viz-cat-2: #d95926;
+  --viz-cat-3: #199e70;
+  --viz-cat-4: #c98500;
+  --viz-cat-5: #d55181;
+  --viz-cat-6: #008300;
+  --viz-cat-7: #9085e9;
+  --viz-cat-8: #e66767;
+  --viz-other: #6b6a65;
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-empty: hsl(222 18% 15%);
+}
+
+/* A widget panel: glassy card with a faint dot grid and a lit top edge. */
+.dash-panel {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid hsl(var(--border));
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgb(var(--viz-glow) / 0.07), transparent 60%),
+    hsl(var(--card));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(var(--viz-glow) / 0.25);
+  isolation: isolate;
+}
+.dash-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: radial-gradient(hsl(var(--foreground) / 0.06) 1px, transparent 1px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(to bottom, black, transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+.dash-panel::after {
+  content: '';
+  position: absolute;
+  left: 1.5rem;
+  right: 1.5rem;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--viz-glow) / 0.9), transparent);
+  pointer-events: none;
+}
+.dash-readout {
+  font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.dash-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--viz-1);
+  box-shadow: 0 0 0 0 rgb(var(--viz-glow) / 0.6);
+  animation: dash-pulse 2s infinite;
+}
+@keyframes dash-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(var(--viz-glow) / 0.55); }
+  70% { box-shadow: 0 0 0 7px rgb(var(--viz-glow) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--viz-glow) / 0); }
+}
+.dash-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: dash-draw 1.1s ease-out forwards;
+}
+@keyframes dash-draw { to { stroke-dashoffset: 0; } }
+.dash-grow {
+  transform-origin: left center;
+  animation: dash-grow 0.7s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes dash-grow { from { transform: scaleX(0); } }
+.dash-rise {
+  transform-origin: bottom center;
+  transform-box: fill-box;
+  animation: dash-rise 0.7s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes dash-rise { from { transform: scaleY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .dash-draw, .dash-grow, .dash-rise, .dash-live-dot { animation: none; stroke-dashoffset: 0; }
+}

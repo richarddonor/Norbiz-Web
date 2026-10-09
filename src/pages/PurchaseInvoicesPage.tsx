@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Eye, Search, FileDown, Ban, X } from 'lucide-react'
+import { useState, useEffect, useMemo, type FormEvent } from 'react'
+import { Plus, Eye, FileDown, Ban, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -23,8 +23,10 @@ import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable } from '@/components/ScrollTable'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, useStock, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
@@ -151,7 +153,7 @@ export function PurchaseInvoicesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: invoices, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<PurchaseInvoice>('/purchase-invoices', {
+  const { items: invoices, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseInvoice>('/purchase-invoices', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load purchase invoices.', 'error'),
     search: debouncedSearch,
@@ -194,7 +196,6 @@ export function PurchaseInvoicesPage() {
   // A Direct invoice posts to transit quantity, so that's the balance shown as a guide while creating.
   // A PO-based one posts nothing (the PO already did), so it shows no stock column at all.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating && invoiceMode === 'DIRECT', onError: () => toast('Failed to load stock balances.', 'error') })
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('purchase-invoices')
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -212,7 +213,6 @@ export function PurchaseInvoicesPage() {
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], !inRecordTab && zone === 'content')
 
@@ -440,21 +440,11 @@ export function PurchaseInvoicesPage() {
   const tabTitle = mode === 'create' ? 'New Purchase Invoice' : recordName || 'Purchase Invoice'
 
   return (
-    <div className="space-y-6">
+    <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Purchase Invoices</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search purchase invoices… (/)"
-              className="pl-8 w-56"
-            />
-          </div>
           <SearchableSelect
             value={filters.warehouseId ?? ''}
             onChange={v => setFilters(prev => ({ ...prev, warehouseId: v }))}
@@ -475,6 +465,7 @@ export function PurchaseInvoicesPage() {
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
 
@@ -789,9 +780,9 @@ export function PurchaseInvoicesPage() {
 
       {!inRecordTab && (<>
 
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
@@ -860,7 +851,7 @@ export function PurchaseInvoicesPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>

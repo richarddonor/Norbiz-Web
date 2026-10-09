@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Eye, Search, FileDown, Ban, X } from 'lucide-react'
+import { useState, useEffect, useMemo, type FormEvent } from 'react'
+import { Plus, Eye, FileDown, Ban, X } from 'lucide-react'
 import { apiFetch, mutationErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -23,8 +23,10 @@ import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable } from '@/components/ScrollTable'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, useStock, type LookupOption, type CustomerLookupOption, type ItemLookupOption } from '@/lib/lookups'
@@ -142,7 +144,7 @@ export function OutletDeliveryReceiptsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<OutletDeliveryReceipt>('/outlet-delivery-receipts', {
+  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletDeliveryReceipt>('/outlet-delivery-receipts', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load outlet delivery receipts.', 'error'),
     search: debouncedSearch,
@@ -182,7 +184,6 @@ export function OutletDeliveryReceiptsPage() {
   // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
   const shortStock = shortItems(lines, stock, l => Number(l.quantity))
   const draftTotal = lines.reduce((sum, l) => sum + (l.itemId !== '' ? lineAmount(l) : 0), 0)
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('outlet-delivery-receipts')
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -200,7 +201,6 @@ export function OutletDeliveryReceiptsPage() {
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], !inRecordTab && zone === 'content')
 
@@ -376,21 +376,11 @@ export function OutletDeliveryReceiptsPage() {
   const hasReturns = !!activeReceipt && activeReceipt.lines.some(l => Number(l.quantityLoaded) > 0)
 
   return (
-    <div className="space-y-6">
+    <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Outlet Delivery Receipts</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search outlet delivery receipts… (/)"
-              className="pl-8 w-64"
-            />
-          </div>
           <SearchableSelect
             value={filters.customerId ?? ''}
             onChange={v => setFilters(prev => ({ ...prev, customerId: v }))}
@@ -418,6 +408,7 @@ export function OutletDeliveryReceiptsPage() {
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
 
@@ -636,9 +627,9 @@ export function OutletDeliveryReceiptsPage() {
 
       {!inRecordTab && (<>
 
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
@@ -705,7 +696,7 @@ export function OutletDeliveryReceiptsPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>

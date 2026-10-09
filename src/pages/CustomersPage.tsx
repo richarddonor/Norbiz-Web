@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, Eye, Search, FileDown } from 'lucide-react'
+import { useState, useEffect, useMemo, type FormEvent } from 'react'
+import { Plus, Pencil, Trash2, Eye, FileDown } from 'lucide-react'
 import { apiFetch, ApiError, deleteErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -20,9 +20,11 @@ import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/use
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
+import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -110,7 +112,7 @@ export function CustomersPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: customers, page, setPage, totalPages, totalElements, reload, loading: listLoading } = usePagedList<Customer>('/customers', {
+  const { items: customers, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Customer>('/customers', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load customers.', 'error'),
     search: debouncedSearch,
@@ -129,7 +131,6 @@ export function CustomersPage() {
   const [form, setForm]                   = useState<CustomerForm>(emptyForm())
   const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility('customers')
   const { markClean, guardedClose } = useDirtyGuard()
   const resolveDisplayName = useUserDisplayNames()
@@ -150,7 +151,6 @@ export function CustomersPage() {
 
   useHotkeys([
     { key: 'n', handler: () => canCreate && openCreate() },
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], !inRecordTab && zone === 'content')
 
@@ -258,21 +258,11 @@ export function CustomersPage() {
   const ro = mode === 'view'
 
   return (
-    <div className="space-y-6">
+    <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">Customers</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search customers… (/)"
-              className="pl-8 w-56"
-            />
-          </div>
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <Button variant="outline" onClick={handleExport}>
@@ -286,6 +276,7 @@ export function CustomersPage() {
               <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">N</kbd>
             </Button>
           )}
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
 
@@ -397,9 +388,9 @@ export function CustomersPage() {
 
       {!inRecordTab && (<>
 
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
+      <Card className="flex min-h-0 flex-col">
+        <CardContent className="flex min-h-0 flex-col pt-6">
+          <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
@@ -474,7 +465,7 @@ export function CustomersPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </ScrollTable>
           <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
         </CardContent>
       </Card>

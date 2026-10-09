@@ -19,6 +19,9 @@ interface Props {
   disabled?: boolean
   autoFocus?: boolean
   className?: string
+  /** Called with the search text as the user types (and '' when the dropdown closes) — for
+   * callers that fetch matching options from the server instead of passing every record. */
+  onQueryChange?: (query: string) => void
 }
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -63,7 +66,7 @@ function clippingRect(el: HTMLElement): { top: number; bottom: number } {
  * confirms and advances focus to the next field in the form, whether or not anything changed. */
 export function SearchableSelect({
   id, value, onChange, options, placeholder = 'Select…', searchPlaceholder = 'Type to search…',
-  emptyText = 'No matches.', disabled, autoFocus, className,
+  emptyText = 'No matches.', disabled, autoFocus, className, onQueryChange,
 }: Props) {
   const inCell = useInDocCell()
   const [open, setOpen] = useState(false)
@@ -76,6 +79,12 @@ export function SearchableSelect({
   const panelRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find(o => o.value === value) ?? null
+
+  useEffect(() => {
+    onQueryChange?.(query)
+    // onQueryChange is intentionally not a dependency — callers pass inline lambdas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query])
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()

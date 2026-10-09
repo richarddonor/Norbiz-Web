@@ -1,12 +1,12 @@
-import { useState, useRef, useMemo } from 'react'
-import { Search, FileDown } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { FileDown } from 'lucide-react'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { useContentFocus } from '@/components/AppLayout'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ItemFilterSelect } from '@/components/ItemFilterSelect'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -14,11 +14,12 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTransactionDrillDown } from '@/hooks/useTransactionDrillDown'
 import type { TransactionType } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
-import { useLookup, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { useLookup, type LookupOption } from '@/lib/lookups'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { ScrollTable, PINNED_TH, PINNED_TD } from '@/components/ScrollTable'
@@ -149,7 +150,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   if (config.counterparty) combinedFilters[config.counterparty.param] = counterpartyId
   if (config.agent) combinedFilters.agentId = agentId
 
-  const { items: rows, page, setPage, totalPages, totalElements, loading: listLoading, reload } = usePagedList<DetailedReportRow>(config.endpoint, {
+  const { items: rows, page, setPage, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<DetailedReportRow>(config.endpoint, {
     onError: () => toast(`Failed to load ${config.title}.`, 'error'),
     search: debouncedSearch,
     filters: combinedFilters,
@@ -159,7 +160,6 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   // past transactions may reference them.
   const lookupParams = { activeOnly: 'false' }
   const warehouses = useLookup<LookupOption>('warehouses', activeCompanyId, { params: lookupParams, onError: () => toast('Failed to load warehouses.', 'error') })
-  const items = useLookup<ItemLookupOption>('items', activeCompanyId, { params: lookupParams, onError: () => toast('Failed to load items.', 'error') })
   const counterparties = useLookup<LookupOption>(config.counterparty?.lookup ?? 'suppliers', activeCompanyId, {
     params: lookupParams,
     enabled: !!config.counterparty,
@@ -170,7 +170,6 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
     enabled: !!config.agent,
     onError: () => toast('Failed to load agents.', 'error'),
   })
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const { isVisible, menu: columnMenu } = useColumnVisibility(config.key)
   const resolveDisplayName = useUserDisplayNames()
   const drillDown = useTransactionDrillDown()
@@ -184,7 +183,6 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   })
 
   useHotkeys([
-    { key: '/', handler: () => searchInputRef.current?.focus() },
     { key: 'r', handler: () => reload() },
   ], zone === 'content')
 
@@ -228,16 +226,6 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">{config.title}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search report… (/)"
-              className="pl-8 w-56"
-            />
-          </div>
           <SearchableSelect
             value={warehouseId}
             onChange={setWarehouseId}
@@ -263,10 +251,12 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
               className="w-44"
             />
           )}
-          <SearchableSelect
+          <ItemFilterSelect
             value={itemId}
             onChange={setItemId}
-            options={items.map(i => ({ value: String(i.id), label: `${i.code} — ${i.name}` }))}
+            companyId={activeCompanyId}
+            params={lookupParams}
+            onError={() => toast('Failed to load items.', 'error')}
             placeholder="All items"
             className="w-52"
           />
@@ -276,6 +266,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
             <FileDown className="w-4 h-4" />
             Export
           </Button>
+          <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
       </div>
 
