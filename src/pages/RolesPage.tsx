@@ -72,6 +72,7 @@ function PermissionsField({
   allPermissions,
   selected,
   onToggle,
+  onSetMany,
   readOnly,
   search,
   onSearchChange,
@@ -79,6 +80,7 @@ function PermissionsField({
   allPermissions: Permission[]
   selected: Set<string>
   onToggle: (name: string) => void
+  onSetMany: (names: string[], checked: boolean) => void
   readOnly: boolean
   search: string
   onSearchChange: (v: string) => void
@@ -102,6 +104,21 @@ function PermissionsField({
           value={search}
           onChange={e => onSearchChange(e.target.value)}
         />
+      )}
+      {!readOnly && (
+        <div className="flex items-center gap-2 py-1">
+          <Button type="button" variant="outline" size="sm" disabled={filtered.length === 0}
+            onClick={() => onSetMany(filtered.map(p => p.name), true)}>
+            Check all
+          </Button>
+          <Button type="button" variant="outline" size="sm" disabled={filtered.length === 0}
+            onClick={() => onSetMany(filtered.map(p => p.name), false)}>
+            Uncheck all
+          </Button>
+          {term && (
+            <span className="text-xs text-[hsl(var(--muted-foreground))]">Applies to the {filtered.length} filtered permission{filtered.length === 1 ? '' : 's'}</span>
+          )}
+        </div>
       )}
       <div className="max-h-56 overflow-y-auto border-t border-[hsl(var(--rule))] py-1 sm:columns-2">
         {readOnly ? (
@@ -237,6 +254,14 @@ export function RolesPage() {
     })
   }
 
+  function setPermissions(names: string[], checked: boolean) {
+    setForm(prev => {
+      const next = new Set(prev.selectedPermissions)
+      names.forEach(n => checked ? next.add(n) : next.delete(n))
+      return { ...prev, selectedPermissions: next }
+    })
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!window.confirm(mode === 'create' ? `Create role "${form.displayName || form.name}"?` : `Save changes to role "${form.displayName || form.name}"?`)) return
@@ -346,6 +371,7 @@ export function RolesPage() {
                       allPermissions={allPermissions}
                       selected={form.selectedPermissions}
                       onToggle={togglePermission}
+                      onSetMany={setPermissions}
                       readOnly={ro}
                       search={permSearch}
                       onSearchChange={setPermSearch}
