@@ -95,7 +95,7 @@ export function DashboardPage() {
 
       {catalog && catalog.length === 0 && (
         <div className="dash-panel p-10 text-center text-sm text-[hsl(var(--muted-foreground))]">
-          No dashboard widgets are available to you yet. Ask an administrator for a <span className="font-mono">VIEW_DASHBOARD_*</span> permission.
+          No dashboard widgets are available to you yet.
         </div>
       )}
 
