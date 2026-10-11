@@ -3,9 +3,9 @@ import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/context/ToastContext'
 
-// Rows per page on list/report pages is one user preference (`/me/preferences/list.pageSize`),
-// shared by every list, so it follows the user across pages and browsers. A per-user
-// localStorage copy lets lists fetch the right size before the preference request answers.
+// Rows per page is a user preference kept separately for each list/report page
+// (`/me/preferences/list.pageSize:<listKey>`), so it follows the user across browsers.
+// A per-user localStorage copy lets lists fetch the right size before the preference request answers.
 
 /** Choices offered by the "Rows" selector. Capped well below the backend's 1000
  * `max-page-size`: tables don't virtualize rows, and "everything" is what Export and
@@ -14,7 +14,7 @@ export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
 export const DEFAULT_PAGE_SIZE = 50
 export const MAX_VIEW_PAGE_SIZE = 200
 
-const PREFERENCE_KEY = 'list.pageSize'
+const PREFERENCE_PREFIX = 'list.pageSize'
 
 interface UserPreference {
   key: string
@@ -26,32 +26,36 @@ function normalize(value: unknown): number {
   return (PAGE_SIZE_OPTIONS as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE
 }
 
-function cacheKey(username: string | null) {
-  return `${PREFERENCE_KEY}:${username ?? ''}`
+function preferenceKey(listKey: string) {
+  return `${PREFERENCE_PREFIX}:${listKey}`
 }
 
-function readCache(username: string | null): number {
+function storeKey(username: string | null, listKey: string) {
+  return `${preferenceKey(listKey)}:${username ?? ''}`
+}
+
+function readCache(key: string): number {
   try {
-    return normalize(localStorage.getItem(cacheKey(username)))
+    return normalize(localStorage.getItem(key))
   } catch {
     return DEFAULT_PAGE_SIZE
   }
 }
 
-function writeCache(username: string | null, size: number) {
+function writeCache(key: string, size: number) {
   try {
-    localStorage.setItem(cacheKey(username), String(size))
+    localStorage.setItem(key, String(size))
   } catch { /* not cached */ }
 }
 
-// One store for every mounted list, so changing the size on one page updates the others
-// (e.g. the list tab behind a record tab) and the preference is fetched once per user.
-let current: { username: string | null; size: number } | null = null
-let loadedFor: string | null | undefined
+// One store shared by every mounted list, keyed by user + list, so two instances of the same
+// list (e.g. the list tab behind a record tab) stay in sync and each preference is fetched once.
+const current = new Map<string, number>()
+const loaded = new Set<string>()
 const listeners = new Set<() => void>()
 
-function setCurrent(username: string | null, size: number) {
-  current = { username, size }
+function setCurrent(key: string, size: number) {
+  current.set(key, size)
   listeners.forEach(l => l())
 }
 
@@ -60,34 +64,36 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener) }
 }
 
-/** The user's rows-per-page for list/report pages, and a setter that saves it as their preference. */
-export function usePageSize(): [number, (size: number) => void] {
+/** The user's rows-per-page for one list/report page (`listKey`, letters/digits/`.`/`-`/`_`),
+ * and a setter that saves it as their preference for that page only. */
+export function usePageSize(listKey: string): [number, (size: number) => void] {
   const { username } = useAuth()
   const { toast } = useToast()
-  const size = useSyncExternalStore(subscribe, () => (current?.username === username ? current.size : readCache(username)))
+  const key = storeKey(username, listKey)
+  const size = useSyncExternalStore(subscribe, () => current.get(key) ?? readCache(key))
 
   useEffect(() => {
-    if (loadedFor === username) return
-    loadedFor = username
-    apiFetch<UserPreference | null>(`/me/preferences/${encodeURIComponent(PREFERENCE_KEY)}`)
+    if (loaded.has(key)) return
+    loaded.add(key)
+    apiFetch<UserPreference | null>(`/me/preferences/${encodeURIComponent(preferenceKey(listKey))}`)
       .then(pref => {
         if (!pref) return
         const next = normalize(JSON.parse(pref.value))
-        writeCache(username, next)
-        setCurrent(username, next)
+        writeCache(key, next)
+        setCurrent(key, next)
       })
-      .catch(() => { loadedFor = undefined })
-  }, [username])
+      .catch(() => { loaded.delete(key) })
+  }, [key, listKey])
 
   const update = useCallback((next: number) => {
     const value = normalize(next)
-    setCurrent(username, value)
-    writeCache(username, value)
-    apiFetch<UserPreference>(`/me/preferences/${encodeURIComponent(PREFERENCE_KEY)}`, {
+    setCurrent(key, value)
+    writeCache(key, value)
+    apiFetch<UserPreference>(`/me/preferences/${encodeURIComponent(preferenceKey(listKey))}`, {
       method: 'PUT',
       body: JSON.stringify({ value: JSON.stringify(value) }),
     }).catch(() => toast('Failed to save your rows-per-page setting.', 'error'))
-  }, [username, toast])
+  }, [key, listKey, toast])
 
   return [size, update]
 }

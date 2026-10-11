@@ -12,8 +12,11 @@ export interface PageResponse<T> {
 }
 
 interface Options<T> {
-  /** fixed rows per page; omit to use the user's rows-per-page preference (`usePageSize`) */
+  /** fixed rows per page; omit to use the user's rows-per-page preference for this list (`usePageSize`) */
   pageSize?: number
+  /** identifies the list for its rows-per-page preference; defaults to the endpoint path
+   * (`/reports/detailed/x` → `reports.detailed.x`). Set it when two pages share an endpoint. */
+  pageSizeKey?: string
   /** Global Filter ("Search all") term. When non-empty the hook fetches EVERY row
    * matching the column `filters` (up to `SEARCH_ALL_LIMIT`), narrows them
    * client-side via `searchText`, and re-paginates the result — so pages and
@@ -53,6 +56,11 @@ const listChanges = new EventTarget()
 
 function endpointBase(endpoint: string) {
   return endpoint.split('?')[0]
+}
+
+/** `/reports/detailed/x` → `reports.detailed.x` — a valid user-preference key segment. */
+function listKeyFor(endpoint: string) {
+  return endpointBase(endpoint).replace(/^\/+|\/+$/g, '').replace(/[^A-Za-z0-9._-]+/g, '.')
 }
 
 /** Serializes non-empty column filters into a query string — reused by
@@ -97,7 +105,7 @@ export async function fetchAllContent<T>(endpoint: string, size = MAX_PAGE_SIZE)
 }
 
 /** Fetches one page at a time from a paginated backend endpoint (1-indexed,
- * size = the user's rows-per-page preference, default 50, capped at
+ * size = the user's rows-per-page preference for this list, default 50, capped at
  * `MAX_VIEW_PAGE_SIZE`; `setPageSize` changes and saves it). Call `reload()` after create/update/delete instead of
  * patching the local array — the affected record may now sort onto a
  * different page. `reload()` refreshes every mounted list of the same endpoint
@@ -110,7 +118,7 @@ export async function fetchAllContent<T>(endpoint: string, size = MAX_PAGE_SIZE)
  * `searchText`, and paginated client-side, so `items`/`totalPages`/
  * `totalElements` describe the searched set. */
 export function usePagedList<T>(endpoint: string, options?: Options<T>) {
-  const [preferredPageSize, setPageSize] = usePageSize()
+  const [preferredPageSize, setPageSize] = usePageSize(options?.pageSizeKey ?? listKeyFor(endpoint))
   const pageSize = Math.min(options?.pageSize ?? preferredPageSize, MAX_VIEW_PAGE_SIZE)
   const search = options?.search ?? ''
   const filters = options?.filters ?? EMPTY_FILTERS
