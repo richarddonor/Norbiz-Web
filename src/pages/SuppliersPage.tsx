@@ -98,7 +98,7 @@ export function SuppliersPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: suppliers, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Supplier>('/suppliers', {
+  const { items: suppliers, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Supplier>('/suppliers', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load suppliers.', 'error'),
     search: debouncedSearch,
@@ -419,7 +419,7 @@ export function SuppliersPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

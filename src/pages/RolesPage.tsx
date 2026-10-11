@@ -160,7 +160,7 @@ export function RolesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: roles, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Role>('/roles', {
+  const { items: roles, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Role>('/roles', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load roles.', 'error'),
     search: debouncedSearch,
@@ -467,7 +467,7 @@ export function RolesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

@@ -112,7 +112,7 @@ export function CustomersPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: customers, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Customer>('/customers', {
+  const { items: customers, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Customer>('/customers', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load customers.', 'error'),
     search: debouncedSearch,
@@ -466,7 +466,7 @@ export function CustomersPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

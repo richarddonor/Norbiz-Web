@@ -78,7 +78,7 @@ export function BrandsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: brands, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Brand>('/brands', {
+  const { items: brands, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Brand>('/brands', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load brands.', 'error'),
     search: debouncedSearch,
@@ -367,7 +367,7 @@ export function BrandsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

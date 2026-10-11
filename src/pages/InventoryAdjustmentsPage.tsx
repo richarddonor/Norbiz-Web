@@ -34,6 +34,7 @@ import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 type FormMode = 'view' | 'create'
 
@@ -109,13 +110,13 @@ export function InventoryAdjustmentsPage() {
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [filters, setFilters] = useState<Record<string, string>>(() => defaultDateFilter())
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: adjustments, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Adjustment>('/inventory-adjustments', {
+  const { items: adjustments, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Adjustment>('/inventory-adjustments', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load inventory adjustments.', 'error'),
     search: debouncedSearch,
@@ -563,7 +564,7 @@ export function InventoryAdjustmentsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

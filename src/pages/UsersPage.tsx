@@ -167,7 +167,7 @@ export function UsersPage() {
   const allRoles = useMemo<Role[]>(
     () => roleOptions.filter(r => r.code !== 'SUPER_ADMIN').map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })),
     [roleOptions])
-  const { items: users, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<User>('/users', {
+  const { items: users, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<User>('/users', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load users.', 'error'),
     search: debouncedSearch,
@@ -548,7 +548,7 @@ export function UsersPage() {
             </tbody>
           </ScrollTable>
           </div>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

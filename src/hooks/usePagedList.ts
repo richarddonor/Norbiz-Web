@@ -1,5 +1,6 @@
 import { useMemo, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api'
+import { usePageSize, MAX_VIEW_PAGE_SIZE } from '@/hooks/usePageSize'
 
 export interface PageResponse<T> {
   content: T[]
@@ -11,6 +12,7 @@ export interface PageResponse<T> {
 }
 
 interface Options<T> {
+  /** fixed rows per page; omit to use the user's rows-per-page preference (`usePageSize`) */
   pageSize?: number
   /** Global Filter ("Search all") term. When non-empty the hook fetches EVERY row
    * matching the column `filters` (up to `SEARCH_ALL_LIMIT`), narrows them
@@ -95,7 +97,8 @@ export async function fetchAllContent<T>(endpoint: string, size = MAX_PAGE_SIZE)
 }
 
 /** Fetches one page at a time from a paginated backend endpoint (1-indexed,
- * default size 50). Call `reload()` after create/update/delete instead of
+ * size = the user's rows-per-page preference, default 50, capped at
+ * `MAX_VIEW_PAGE_SIZE`; `setPageSize` changes and saves it). Call `reload()` after create/update/delete instead of
  * patching the local array — the affected record may now sort onto a
  * different page. `reload()` refreshes every mounted list of the same endpoint
  * (so calling it from a record tab refreshes the list tab too).
@@ -107,7 +110,8 @@ export async function fetchAllContent<T>(endpoint: string, size = MAX_PAGE_SIZE)
  * `searchText`, and paginated client-side, so `items`/`totalPages`/
  * `totalElements` describe the searched set. */
 export function usePagedList<T>(endpoint: string, options?: Options<T>) {
-  const pageSize = options?.pageSize ?? 50
+  const [preferredPageSize, setPageSize] = usePageSize()
+  const pageSize = Math.min(options?.pageSize ?? preferredPageSize, MAX_VIEW_PAGE_SIZE)
   const search = options?.search ?? ''
   const filters = options?.filters ?? EMPTY_FILTERS
   const filtersKey = JSON.stringify(filters)
@@ -130,6 +134,14 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
     listChanges.addEventListener('change', onChange)
     return () => listChanges.removeEventListener('change', onChange)
   }, [base])
+
+  // When the page size changes, move to the page that still shows the first row
+  // that was on screen — adjusted during render, like the filter reset below.
+  const [prevPageSize, setPrevPageSize] = useState(pageSize)
+  if (pageSize !== prevPageSize) {
+    setPrevPageSize(pageSize)
+    setPage(Math.floor(((page - 1) * prevPageSize) / pageSize) + 1)
+  }
 
   // Reset to page 1 whenever the filters or the search term change — adjusted
   // during render (this hook's established pattern) instead of an effect.
@@ -200,6 +212,8 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
     items,
     page,
     setPage,
+    pageSize,
+    setPageSize,
     totalPages: searching ? Math.max(1, Math.ceil((matches?.length ?? 0) / pageSize)) : pagedResult?.totalPages ?? 1,
     totalElements: searching ? matches?.length ?? 0 : pagedResult?.totalElements ?? 0,
     loading,

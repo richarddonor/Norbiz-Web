@@ -81,7 +81,7 @@ export function PullOutReasonsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: reasons, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PullOutReason>('/pull-out-reasons', {
+  const { items: reasons, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PullOutReason>('/pull-out-reasons', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load pull out reasons.', 'error'),
     search: debouncedSearch,
@@ -391,7 +391,7 @@ export function PullOutReasonsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

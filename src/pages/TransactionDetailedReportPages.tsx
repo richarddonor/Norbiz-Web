@@ -26,6 +26,7 @@ import { ScrollTable, PINNED_TH, PINNED_TD } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatCurrency, formatDate, formatQuantity } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 // "<Transaction> - Detailed" reports: one row per line item, flattened with its transaction's
 // header. Every transaction type has one, each behind its own VIEW_<TYPE>_DETAILED_REPORT
@@ -141,7 +142,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   const [counterpartyId, setCounterpartyId] = useState('')
   const [itemId, setItemId] = useState('')
   const [agentId, setAgentId] = useState('')
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [filters, setFilters] = useState<Record<string, string>>(() => defaultDateFilter())
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || !!warehouseId || !!counterpartyId || !!itemId || !!agentId || Object.values(debouncedFilters).some(v => v.trim())
@@ -150,7 +151,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   if (config.counterparty) combinedFilters[config.counterparty.param] = counterpartyId
   if (config.agent) combinedFilters.agentId = agentId
 
-  const { items: rows, page, setPage, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<DetailedReportRow>(config.endpoint, {
+  const { items: rows, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<DetailedReportRow>(config.endpoint, {
     onError: () => toast(`Failed to load ${config.title}.`, 'error'),
     search: debouncedSearch,
     filters: combinedFilters,
@@ -329,7 +330,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
     </div>

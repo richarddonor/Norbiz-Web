@@ -120,7 +120,7 @@ export function EmployeesPage() {
   const isFiltering = !!debouncedSearch.trim()
 
   const inRecordTab = useIsRecordTab()
-  const { items: employees, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Employee>('/employees', {
+  const { items: employees, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Employee>('/employees', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load employees.', 'error'),
     search: debouncedSearch,
@@ -484,7 +484,7 @@ export function EmployeesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

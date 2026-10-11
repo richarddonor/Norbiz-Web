@@ -33,6 +33,7 @@ import { useLookup, useStock, type LookupOption, type ItemLookupOption, type Tra
 import { StockCell } from '@/components/StockCell'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 type FormMode = 'view' | 'create'
 type InvoiceMode = 'DIRECT' | 'PO_BASED'
@@ -147,13 +148,13 @@ export function PurchaseInvoicesPage() {
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn, canViewCostPrice), [showCompanyColumn, canViewCostPrice])
 
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [filters, setFilters] = useState<Record<string, string>>(() => defaultDateFilter())
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: invoices, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseInvoice>('/purchase-invoices', {
+  const { items: invoices, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseInvoice>('/purchase-invoices', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load purchase invoices.', 'error'),
     search: debouncedSearch,
@@ -852,7 +853,7 @@ export function PurchaseInvoicesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

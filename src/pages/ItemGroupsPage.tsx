@@ -119,7 +119,7 @@ export function ItemGroupsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: groups, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemGroup>('/item-groups', {
+  const { items: groups, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemGroup>('/item-groups', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load item groups.', 'error'),
     search: debouncedSearch,
@@ -495,7 +495,7 @@ export function ItemGroupsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

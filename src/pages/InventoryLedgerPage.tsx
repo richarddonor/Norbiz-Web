@@ -25,6 +25,7 @@ import { ScrollTable, PINNED_TH, PINNED_TD } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 interface Movement {
   id: number
@@ -71,9 +72,11 @@ function movementSearchText(m: Movement): string {
 }
 
 /** Filters a drill-down hands over in the URL (`?warehouseId=&itemId=&dateFrom=&dateTo=`),
- * e.g. from an Inventory Balance row. Only read on mount; a drill-down tab keeps them locked. */
+ * e.g. from an Inventory Balance row. Only read on mount; a drill-down tab keeps them locked.
+ * Without any, the ledger opens limited to Last 30 Days. */
 function initialFilters(search: string) {
   const params = new URLSearchParams(search)
+  if (params.size === 0) return { warehouseId: '', itemId: '', date: defaultDateFilter() }
   const date: Record<string, string> = {}
   for (const key of ['dateFrom', 'dateTo']) {
     const value = params.get(key)
@@ -101,7 +104,7 @@ export function InventoryLedgerPage() {
 
   const combinedFilters = { ...debouncedFilters, warehouseId, itemId }
 
-  const { items: movements, page, setPage, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<Movement>('/inventory-movements', {
+  const { items: movements, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<Movement>('/inventory-movements', {
     onError: () => toast('Failed to load inventory ledger.', 'error'),
     search: debouncedSearch,
     filters: combinedFilters,
@@ -243,7 +246,7 @@ export function InventoryLedgerPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
     </div>

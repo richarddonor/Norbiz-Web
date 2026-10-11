@@ -34,6 +34,7 @@ import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 type FormMode = 'view' | 'create'
 type CustomerType = 'CUSTOMER' | 'OUTLET'
@@ -140,13 +141,13 @@ export function DeliveryReceiptsPage() {
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [filters, setFilters] = useState<Record<string, string>>(() => defaultDateFilter())
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receipts, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
+  const { items: receipts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load delivery receipts.', 'error'),
     search: debouncedSearch,
@@ -742,7 +743,7 @@ export function DeliveryReceiptsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

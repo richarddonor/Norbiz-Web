@@ -77,7 +77,7 @@ export function ItemCategoriesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: categories, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemCategory>('/item-categories', {
+  const { items: categories, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemCategory>('/item-categories', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load item categories.', 'error'),
     search: debouncedSearch,
@@ -366,7 +366,7 @@ export function ItemCategoriesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

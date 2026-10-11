@@ -36,6 +36,19 @@ function addMonths(d: Date, months: number): Date {
   return new Date(d.getFullYear(), d.getMonth() + months, d.getDate())
 }
 
+function last30Days(): DateRange {
+  const t = new Date()
+  return { from: ymd(addDays(t, -29)), to: ymd(t) }
+}
+
+/** Default column filter for transaction list and report pages: the `key` date column
+ * limited to Last 30 Days, keyed as `ColumnFilterRow` sends it (`${key}From`/`${key}To`).
+ * Users can still change or clear it. */
+export function defaultDateFilter(key = 'date'): Record<string, string> {
+  const { from, to } = last30Days()
+  return { [`${key}From`]: from, [`${key}To`]: to }
+}
+
 export interface DateRangePreset {
   label: string
   range: () => DateRange
@@ -46,7 +59,7 @@ export const DATE_RANGE_PRESETS: readonly DateRangePreset[] = [
   { label: 'Today', range: () => { const t = new Date(); return { from: ymd(t), to: ymd(t) } } },
   { label: 'Current Week', range: () => { const t = new Date(); return { from: ymd(startOfWeek(t)), to: ymd(t) } } },
   { label: 'Current Month', range: () => { const t = new Date(); return { from: ymd(startOfMonth(t)), to: ymd(t) } } },
-  { label: 'Last 30 Days', range: () => { const t = new Date(); return { from: ymd(addDays(t, -29)), to: ymd(t) } } },
+  { label: 'Last 30 Days', range: last30Days },
   { label: 'Last 3 Months', range: () => { const t = new Date(); return { from: ymd(addMonths(t, -3)), to: ymd(t) } } },
   { label: 'Current Year', range: () => { const t = new Date(); return { from: ymd(startOfYear(t)), to: ymd(t) } } },
 ]

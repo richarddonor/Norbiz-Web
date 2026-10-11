@@ -33,6 +33,7 @@ import { useLookup, useStock, type LookupOption, type TransactionLookupOption } 
 import { StockCell } from '@/components/StockCell'
 import { formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 type FormMode = 'view' | 'create'
 type SourceMode = 'PURCHASE_ORDER' | 'PURCHASE_INVOICE'
@@ -127,13 +128,13 @@ export function PurchaseReceivesPage() {
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [filters, setFilters] = useState<Record<string, string>>(() => defaultDateFilter())
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receives, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseReceive>('/purchase-receives', {
+  const { items: receives, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseReceive>('/purchase-receives', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load purchase receives.', 'error'),
     search: debouncedSearch,
@@ -681,7 +682,7 @@ export function PurchaseReceivesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

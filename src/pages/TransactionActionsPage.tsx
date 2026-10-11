@@ -157,7 +157,7 @@ export function TransactionActionsPage() {
   // Roles are system-wide; MANAGE_TRANSACTION_ACTIONS unlocks the role lookup (no VIEW_ROLE needed).
   const roleOptions = useLookup<LookupOption>('roles', null, { global: true, enabled: inRecordTab, onError: () => toast('Failed to load roles.', 'error') })
   const roles = useMemo<RoleOption[]>(() => roleOptions.map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })), [roleOptions])
-  const { items: definitions, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ActionDefinition>('/transaction-action-definitions', {
+  const { items: definitions, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ActionDefinition>('/transaction-action-definitions', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load transaction actions.', 'error'),
     search: debouncedSearch,
@@ -612,7 +612,7 @@ export function TransactionActionsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

@@ -34,6 +34,7 @@ import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
+import { defaultDateFilter } from '@/lib/dateRanges'
 
 type FormMode = 'view' | 'create'
 
@@ -139,13 +140,13 @@ export function OutletPullOutsPage() {
   const COLUMNS = useMemo(() => buildColumns(showCompanyColumn), [showCompanyColumn])
 
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [filters, setFilters] = useState<Record<string, string>>(() => defaultDateFilter())
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: pullOuts, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletPullOut>('/outlet-pull-outs', {
+  const { items: pullOuts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletPullOut>('/outlet-pull-outs', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load outlet pull outs.', 'error'),
     search: debouncedSearch,
@@ -701,7 +702,7 @@ export function OutletPullOutsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

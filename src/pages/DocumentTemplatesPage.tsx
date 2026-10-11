@@ -111,7 +111,7 @@ export function DocumentTemplatesPage() {
     [t.name, documentTypeLabel(t.documentType), t.companyName, t.active ? 'active' : 'inactive'].join(' ')
 
   const inRecordTab = useIsRecordTab()
-  const { items: templates, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DocumentTemplate>('/document-templates', {
+  const { items: templates, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DocumentTemplate>('/document-templates', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load document templates.', 'error'),
     search: debouncedSearch,
@@ -418,7 +418,7 @@ export function DocumentTemplatesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

@@ -81,7 +81,7 @@ export function ItemSkusPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: skus, page, setPage, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemSku>('/item-skus', {
+  const { items: skus, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemSku>('/item-skus', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load SKUs.', 'error'),
     search: debouncedSearch,
@@ -388,7 +388,7 @@ export function ItemSkusPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

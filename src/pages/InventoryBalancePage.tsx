@@ -137,7 +137,7 @@ export function InventoryBalancePage() {
     return base
   }, [warehouseId, itemId, mode, asOfDate, startDate, endDate])
 
-  const { items: balances, page, setPage, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<Balance>('/inventory-balances', {
+  const { items: balances, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<Balance>('/inventory-balances', {
     onError: () => toast('Failed to load inventory balances.', 'error'),
     search: debouncedSearch,
     filters,
@@ -335,7 +335,7 @@ export function InventoryBalancePage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={50} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
     </div>
