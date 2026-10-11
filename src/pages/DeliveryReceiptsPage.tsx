@@ -9,6 +9,7 @@ import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocTotals, Doc
 import { Card, CardContent } from '@/components/ui/card'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ItemSelect } from '@/components/ItemSelect'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -29,7 +30,7 @@ import { Pagination } from '@/components/Pagination'
 import { ScrollTable } from '@/components/ScrollTable'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
+import { useLookup, useLookupExists, useStock, type LookupOption, type ItemLookupOption, type TransactionLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -183,7 +184,7 @@ export function DeliveryReceiptsPage() {
   // Stock always leaves the company's main warehouse — there's no warehouse picker.
   const mainWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: creating, params: { mainOnly: 'true' }, onError: () => toast('Failed to load the main warehouse.', 'error') })
   const mainWarehouse = mainWarehouses[0]
-  const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
+  const hasInventoryItems = useLookupExists('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' } })
   const isOutlet = customerId !== '' && outlets.some(o => o.id === customerId)
   // openOnly (the default) keeps only transfers that are neither voided nor delivered.
   const openTransfers = useLookup<TransactionLookupOption>('stock-transfers', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load stock transfers.', 'error') })
@@ -279,8 +280,8 @@ export function DeliveryReceiptsPage() {
   }
 
   // Preloads the item's selling price; the user can still override it per line.
-  function handleLineItemChange(index: number, itemId: number | '') {
-    const item = itemId === '' ? undefined : formInventoryItems.find(i => i.id === itemId)
+  function handleLineItemChange(index: number, item: ItemLookupOption | null) {
+    const itemId = item ? item.id : ''
     updateLine(index, { itemId, unitPrice: item?.unitPrice != null ? String(item.unitPrice) : '' })
   }
 
@@ -588,10 +589,12 @@ export function DeliveryReceiptsPage() {
                     {
                       key: 'item', label: 'Item', required: true,
                       render: (line, i) => (
-                        <SearchableSelect
+                        <ItemSelect
+                          companyId={lookupCompanyId}
+                          params={{ tag: 'INVENTORY' }}
                           value={line.itemId === '' ? '' : String(line.itemId)}
-                          onChange={v => handleLineItemChange(i, v ? Number(v) : '')}
-                          options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
+                          onChange={(_, item) => handleLineItemChange(i, item)}
+                          onError={() => toast('Failed to load items.', 'error')}
                           disabled={fromTransfer}
                         />
                       ),
@@ -640,7 +643,7 @@ export function DeliveryReceiptsPage() {
                         Add Line
                         <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
                       </Button>
-                      {formInventoryItems.length === 0 && (
+                      {hasInventoryItems === false && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
                           No items are tagged Inventory — tag an item on the Items page before posting a delivery receipt.
                         </span>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTabInstance } from '@/context/WorkspaceContext'
-import { fetchAllContent } from '@/hooks/usePagedList'
+import { fetchAllContent, type PageResponse } from '@/hooks/usePagedList'
 import { apiFetch } from '@/lib/api'
 
 // Dropdown data comes from the backend's slim `/lookups/*` endpoints (see
@@ -139,6 +139,36 @@ export function useLookup<T>(
 }
 
 const EMPTY: never[] = []
+
+/**
+ * Whether a `/lookups/<path>` dropdown has any option at all (one-row fetch) — for "nothing to
+ * pick" hints next to a type-ahead `LookupSelect`, which never loads the full list. `null` while
+ * unknown (loading, disabled, or no company yet).
+ */
+export function useLookupExists(
+  path: string,
+  companyId: number | '' | null | undefined,
+  options?: { params?: Record<string, string>; enabled?: boolean },
+): boolean | null {
+  const enabled = options?.enabled ?? true
+  const params = new URLSearchParams(options?.params)
+  if (companyId) params.set('companyId', String(companyId))
+  params.set('page', '1')
+  params.set('size', '1')
+  const url = enabled && companyId ? `/lookups/${path}?${params}` : null
+  const [state, setState] = useState<{ url: string | null; exists: boolean | null }>({ url: null, exists: null })
+
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    apiFetch<PageResponse<unknown>>(url)
+      .then(res => { if (!cancelled) setState({ url, exists: res.totalElements > 0 }) })
+      .catch(() => { /* a hint only — the dropdown itself reports load errors */ })
+    return () => { cancelled = true }
+  }, [url])
+
+  return url && state.url === url ? state.exists : null
+}
 
 /** Live balance of one item in one warehouse (`/lookups/stock`). */
 export interface StockRow {

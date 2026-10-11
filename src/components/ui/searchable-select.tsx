@@ -22,6 +22,10 @@ interface Props {
   /** Called with the search text as the user types (and '' when the dropdown closes) — for
    * callers that fetch matching options from the server instead of passing every record. */
   onQueryChange?: (query: string) => void
+  /** Called when the dropdown opens/closes — lets server-backed callers fetch only while it's open. */
+  onOpenChange?: (open: boolean) => void
+  /** Server results are still loading: shown instead of `emptyText` when nothing matches yet. */
+  loading?: boolean
 }
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -66,7 +70,7 @@ function clippingRect(el: HTMLElement): { top: number; bottom: number } {
  * confirms and advances focus to the next field in the form, whether or not anything changed. */
 export function SearchableSelect({
   id, value, onChange, options, placeholder = 'Select…', searchPlaceholder = 'Type to search…',
-  emptyText = 'No matches.', disabled, autoFocus, className, onQueryChange,
+  emptyText = 'No matches.', disabled, autoFocus, className, onQueryChange, onOpenChange, loading,
 }: Props) {
   const inCell = useInDocCell()
   const [open, setOpen] = useState(false)
@@ -85,6 +89,14 @@ export function SearchableSelect({
     // onQueryChange is intentionally not a dependency — callers pass inline lambdas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query])
+
+  const didMount = useRef(false)
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; return }
+    onOpenChange?.(open)
+    // onOpenChange is intentionally not a dependency — callers pass inline lambdas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -129,11 +141,17 @@ export function SearchableSelect({
     const clip = clippingRect(rootRef.current)
     const below = clip.bottom - trigger.bottom
     const above = trigger.top - clip.top
-    const dropUp = below < panel.offsetHeight + 4 && above > below
+    // Server-backed lists (onOpenChange) fill in after opening, so reserve their full height.
+    const list = listRef.current
+    const height = onOpenChange && list
+      ? Math.max(panel.offsetHeight, panel.offsetHeight - list.offsetHeight + parseFloat(getComputedStyle(list).maxHeight))
+      : panel.offsetHeight
+    const dropUp = below < height + 4 && above > below
     panel.style.top = dropUp ? 'auto' : '100%'
     panel.style.bottom = dropUp ? '100%' : 'auto'
     panel.style.marginTop = dropUp ? '0' : '0.25rem'
     panel.style.marginBottom = dropUp ? '0.25rem' : '0'
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // `focusInput` is only set true from a mouse click on the trigger — a single discrete
@@ -289,7 +307,7 @@ export function SearchableSelect({
           />
           <ul ref={listRef} className="relative max-h-56 overflow-y-auto py-1 text-sm">
             {filtered.length === 0 ? (
-              <li className="px-3 py-1.5 text-[hsl(var(--muted-foreground))]">{emptyText}</li>
+              <li className="px-3 py-1.5 text-[hsl(var(--muted-foreground))]">{loading ? 'Searching…' : emptyText}</li>
             ) : (
               filtered.map((opt, i) => (
                 <li

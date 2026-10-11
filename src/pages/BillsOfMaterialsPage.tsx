@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocText, DocLines, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ItemSelect } from '@/components/ItemSelect'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -26,7 +26,6 @@ import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { Pagination } from '@/components/Pagination'
 import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, type ItemLookupOption } from '@/lib/lookups'
 import { formatDateTime } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
 
@@ -147,10 +146,12 @@ export function BillsOfMaterialsPage() {
   const [form, setForm]               = useState<FormState>(emptyForm())
   const [companyId, setCompanyId]     = useState<number | ''>('')
   const [loading, setLoading]         = useState(false)
-  const editing = inRecordTab && mode !== 'view'
   const lookupCompanyId = (mode === 'create' ? companyId : activeBom?.companyId) || activeCompanyId
-  const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: editing, params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
-  const itemOptions = formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))
+  const itemSelectProps = {
+    companyId: lookupCompanyId,
+    params: { tag: 'INVENTORY' },
+    onError: () => toast('Failed to load items.', 'error'),
+  }
   const { isVisible, menu: columnMenu } = useColumnVisibility('bills-of-materials')
   const resolveDisplayName = useUserDisplayNames()
   const { markClean, guardedClose } = useDirtyGuard()
@@ -381,11 +382,11 @@ export function BillsOfMaterialsPage() {
                   {ro ? (
                     <DocText>{activeBom ? `${activeBom.itemCode} — ${activeBom.itemName}` : ''}</DocText>
                   ) : (
-                    <SearchableSelect
+                    <ItemSelect
+                      {...itemSelectProps}
                       id="bom-item"
                       value={form.itemId === '' ? '' : String(form.itemId)}
                       onChange={v => setForm(f => ({ ...f, itemId: v ? Number(v) : '' }))}
-                      options={itemOptions}
                       disabled={mode === 'create' && !companyId}
                     />
                   )}
@@ -409,10 +410,10 @@ export function BillsOfMaterialsPage() {
                     {
                       key: 'item', label: 'Component', required: true,
                       render: (c, i) => (
-                        <SearchableSelect
+                        <ItemSelect
+                          {...itemSelectProps}
                           value={c.itemId === '' ? '' : String(c.itemId)}
                           onChange={v => updateComponent(i, { itemId: v ? Number(v) : '' })}
-                          options={itemOptions}
                         />
                       ),
                     },

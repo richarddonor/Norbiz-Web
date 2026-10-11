@@ -9,6 +9,7 @@ import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocStamp, Pend
 import { Card, CardContent } from '@/components/ui/card'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ItemSelect } from '@/components/ItemSelect'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -29,7 +30,7 @@ import { Pagination } from '@/components/Pagination'
 import { ScrollTable } from '@/components/ScrollTable'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { useLookup, useLookupExists, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { byLineNumber, cn } from '@/lib/utils'
@@ -150,7 +151,7 @@ export function PurchaseOrdersPage() {
   const lookupCompanyId = companyId || activeCompanyId
   const formWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
   const formSuppliers = useLookup<LookupOption>('suppliers', lookupCompanyId, { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load suppliers.', 'error') })
-  const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
+  const hasInventoryItems = useLookupExists('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' } })
   // A PO posts to transit quantity only, so that's the balance shown as a guide while creating.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load stock balances.', 'error') })
   const { isVisible, menu: columnMenu } = useColumnVisibility('purchase-orders')
@@ -219,13 +220,9 @@ export function PurchaseOrdersPage() {
     setLines(prev => prev.map((line, i) => i === index ? { ...line, ...patch } : line))
   }
 
-  function handleLineItemChange(index: number, itemId: number | '') {
-    let costPrice = ''
-    if (itemId !== '' && canViewCostPrice) {
-      const item = formInventoryItems.find(i => i.id === itemId)
-      costPrice = item?.costPrice != null ? String(item.costPrice) : ''
-    }
-    updateLine(index, { itemId, costPrice })
+  function handleLineItemChange(index: number, item: ItemLookupOption | null) {
+    const costPrice = item && canViewCostPrice && item.costPrice != null ? String(item.costPrice) : ''
+    updateLine(index, { itemId: item ? item.id : '', costPrice })
   }
 
   function addLine() {
@@ -465,10 +462,12 @@ export function PurchaseOrdersPage() {
                     {
                       key: 'item', label: 'Item', required: true,
                       render: (line, i) => (
-                        <SearchableSelect
+                        <ItemSelect
+                          companyId={lookupCompanyId}
+                          params={{ tag: 'INVENTORY' }}
                           value={line.itemId === '' ? '' : String(line.itemId)}
-                          onChange={v => handleLineItemChange(i, v ? Number(v) : '')}
-                          options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
+                          onChange={(_, item) => handleLineItemChange(i, item)}
+                          onError={() => toast('Failed to load items.', 'error')}
                         />
                       ),
                     },
@@ -507,7 +506,7 @@ export function PurchaseOrdersPage() {
                         Add Line
                         <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
                       </Button>
-                      {formInventoryItems.length === 0 && (
+                      {hasInventoryItems === false && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
                           No items are tagged Inventory — tag an item on the Items page before posting a purchase order.
                         </span>

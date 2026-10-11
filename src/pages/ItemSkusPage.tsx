@@ -9,7 +9,7 @@ import { DocSheet, DocRow, DocCell, DocHeader, DocText } from '@/components/ui/d
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ItemSelect } from '@/components/ItemSelect'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -24,7 +24,6 @@ import { ColumnFilterRow } from '@/components/ColumnFilterRow'
 import { Pagination } from '@/components/Pagination'
 import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, type ItemLookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -219,8 +218,6 @@ export function ItemSkusPage() {
   const tabTitle = mode === 'create' ? 'New Item SKU' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Item SKU'
   const ro = mode === 'view'
   // Item dropdown for the session's active company (an SKU belongs to its item's company).
-  const items = useLookup<ItemLookupOption>('items', activeCompanyId, { enabled: inRecordTab && mode !== 'view', onError: () => toast('Failed to load items.', 'error') })
-  const selectedItem = items.find(i => i.id === form.itemId)
 
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
@@ -255,18 +252,19 @@ export function ItemSkusPage() {
                 {/* Item — selector on create, read-only display on edit/view */}
                 <DocCell label="Item" htmlFor="sku-item" required={mode === 'create'}>
                   {mode === 'create' ? (
-                    <SearchableSelect
+                    <ItemSelect
                       id="sku-item"
                       autoFocus
+                      companyId={activeCompanyId}
                       value={form.itemId === '' ? '' : String(form.itemId)}
                       onChange={v => setForm(f => ({ ...f, itemId: v ? Number(v) : '' }))}
-                      options={items.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
+                      onError={() => toast('Failed to load items.', 'error')}
                     />
                   ) : (
                     <Input
                       id="sku-item"
                       autoFocus
-                      value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : `${activeSku?.itemCode} — ${activeSku?.itemName}`}
+                      value={`${activeSku?.itemCode} — ${activeSku?.itemName}`}
                       readOnly
                       className="font-semibold"
                     />

@@ -9,6 +9,7 @@ import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocStamp, Pend
 import { Card, CardContent } from '@/components/ui/card'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ItemSelect } from '@/components/ItemSelect'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -17,7 +18,7 @@ import { useContentFocus } from '@/components/AppLayout'
 import { TransactionActionsMenu, TransactionHistory } from '@/components/TransactionActivity'
 import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption } from '@/lib/lookups'
+import { useLookup, useLookupExists, useStock, type LookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
@@ -144,7 +145,7 @@ export function InventoryAdjustmentsPage() {
   // Dropdowns are scoped to the form's company (the active company on the list tab).
   const lookupCompanyId = companyId || activeCompanyId
   const formWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { onError: () => toast('Failed to load warehouses.', 'error') })
-  const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
+  const hasInventoryItems = useLookupExists('items', lookupCompanyId, { enabled: inRecordTab && mode === 'create', params: { tag: 'INVENTORY' } })
   // An adjustment posts to on-hand quantity only, so that's the balance shown as a guide while creating.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: inRecordTab && mode === 'create', onError: () => toast('Failed to load stock balances.', 'error') })
   // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
@@ -438,10 +439,12 @@ export function InventoryAdjustmentsPage() {
                     {
                       key: 'item', label: 'Item', required: true,
                       render: (line, i) => (
-                        <SearchableSelect
+                        <ItemSelect
+                          companyId={lookupCompanyId}
+                          params={{ tag: 'INVENTORY' }}
                           value={line.itemId === '' ? '' : String(line.itemId)}
                           onChange={v => updateLine(i, { itemId: v ? Number(v) : '' })}
-                          options={formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))}
+                          onError={() => toast('Failed to load items.', 'error')}
                         />
                       ),
                     },
@@ -476,7 +479,7 @@ export function InventoryAdjustmentsPage() {
                         Add Line
                         <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Ctrl+Enter</kbd>
                       </Button>
-                      {formInventoryItems.length === 0 && (
+                      {hasInventoryItems === false && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
                           No items are tagged Inventory — tag an item on the Items page before posting an adjustment.
                         </span>
