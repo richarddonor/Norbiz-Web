@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, type CompanyInfo } from '@/context/AuthContext'
 import { useToast } from '@/context/ToastContext'
+import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,8 +33,9 @@ export function LoginPage() {
       } else {
         navigate('/dashboard', { replace: true })
       }
-    } catch {
-      toast('Invalid username or password.', 'error')
+    } catch (err) {
+      // 403 = valid credentials but the account isn't assigned to any company; show the backend's reason.
+      toast(err instanceof ApiError && err.status === 403 && err.message ? err.message : 'Invalid username or password.', 'error')
     } finally {
       setLoading(false)
     }

@@ -108,14 +108,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(data.token)
     setAwaitingCompanySelection(data.requiresCompanySelection)
 
-    // Auto-select the company if only one (or none — platform admin)
+    // Auto-select the company if only one (login is refused for users with none)
     if (!data.requiresCompanySelection && data.companies.length === 1) {
       setActiveCompanyId(data.companies[0].id)
       localStorage.setItem('active_company_id', String(data.companies[0].id))
-    } else if (data.companies.length === 0) {
-      // Platform-level user with no company — clear any stale value
-      setActiveCompanyId(null)
-      localStorage.removeItem('active_company_id')
     }
 
     return { requiresCompanySelection: data.requiresCompanySelection, companies: data.companies }
