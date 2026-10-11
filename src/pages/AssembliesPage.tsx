@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react'
-import { Plus, Eye, FileDown, Ban, X, ListRestart } from 'lucide-react'
+import { Plus, Eye, FileDown, Ban, X } from 'lucide-react'
 import { apiFetch, mutationErrorMessage } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -29,7 +29,7 @@ import { Pagination } from '@/components/Pagination'
 import { ScrollTable } from '@/components/ScrollTable'
 import { CompanyField, DocLetterhead } from '@/components/CompanyField'
 import { exportToXlsx } from '@/lib/exportXlsx'
-import { useLookup, useStock, type LookupOption, type ItemLookupOption, type BillOfMaterialLookupOption } from '@/lib/lookups'
+import { useLookup, useStock, type LookupOption, type BillOfMaterialLookupOption } from '@/lib/lookups'
 import { StockCell } from '@/components/StockCell'
 import { shortItems } from '@/lib/stock'
 import { formatDate } from '@/lib/format'
@@ -86,12 +86,13 @@ interface OutputDraft {
 }
 
 interface MaterialDraft {
-  itemId: number | ''
-  quantity: string
+  itemId: number
+  itemCode: string
+  itemName: string
+  quantity: number
 }
 
 const EMPTY_OUTPUT: OutputDraft = { itemId: '', billOfMaterialId: '', quantity: '' }
-const EMPTY_MATERIAL: MaterialDraft = { itemId: '', quantity: '' }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
@@ -122,16 +123,21 @@ function assemblySearchText(a: Assembly): string {
     ...a.materials.map(l => l.itemCode), a.remarks ?? '', a.companyName, formatDate(a.assemblyDate)].join(' ')
 }
 
-/** Raw materials the outputs need: each output's BOM components × quantity assembled, summed per item. */
+/** Raw materials the outputs need: each output's BOM components × quantity assembled, summed per item.
+ *  A BOM's components are listed as soon as it's picked; they count 0 until its output has a quantity. */
 function materialsFromBoms(outputs: OutputDraft[], boms: BillOfMaterialLookupOption[]): MaterialDraft[] {
-  const totals = new Map<number, number>()
+  const totals = new Map<number, MaterialDraft>()
   for (const output of outputs) {
     const qty = Number(output.quantity)
     const bom = output.billOfMaterialId === '' ? undefined : boms.find(b => b.id === output.billOfMaterialId)
-    if (!bom || !Number.isFinite(qty) || qty <= 0) continue
-    for (const c of bom.components) totals.set(c.itemId, (totals.get(c.itemId) ?? 0) + c.quantity * qty)
+    if (!bom) continue
+    const built = Number.isFinite(qty) && qty > 0 ? qty : 0
+    for (const c of bom.components) {
+      const line = totals.get(c.itemId) ?? { itemId: c.itemId, itemCode: c.itemCode, itemName: c.itemName, quantity: 0 }
+      totals.set(c.itemId, { ...line, quantity: line.quantity + c.quantity * built })
+    }
   }
-  return [...totals].map(([itemId, qty]) => ({ itemId, quantity: String(Number(qty.toFixed(4))) }))
+  return [...totals.values()].map(l => ({ ...l, quantity: Number(l.quantity.toFixed(4)) }))
 }
 
 export function AssembliesPage() {
@@ -171,9 +177,6 @@ export function AssembliesPage() {
   const [remarks, setRemarks]                 = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
   const [outputs, setOutputs]                 = useState<OutputDraft[]>([EMPTY_OUTPUT])
-  const [materials, setMaterials]             = useState<MaterialDraft[]>([EMPTY_MATERIAL])
-  // While true, raw materials follow the outputs' bills of materials; editing a material line takes over.
-  const [materialsFromBom, setMaterialsFromBom] = useState(true)
   const [loading, setLoading]                 = useState(false)
   // Dropdowns are scoped to the form's company (the active company on the list tab).
   const lookupCompanyId = companyId || activeCompanyId
@@ -181,12 +184,14 @@ export function AssembliesPage() {
   // Assemblies are always built in the company's main warehouse — there's no warehouse picker.
   const mainWarehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: creating, params: { mainOnly: 'true' }, onError: () => toast('Failed to load the main warehouse.', 'error') })
   const mainWarehouse = mainWarehouses[0]
-  const formInventoryItems = useLookup<ItemLookupOption>('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' }, onError: () => toast('Failed to load items.', 'error') })
   const boms = useLookup<BillOfMaterialLookupOption>('bills-of-materials', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load bills of materials.', 'error') })
-  const itemOptions = formInventoryItems.map(item => ({ value: String(item.id), label: `${item.code} — ${item.name}` }))
+  // Outputs are limited to items that have an active bill of materials (one option per item, even with several BOMs).
+  const outputItemOptions = [...new Map(boms.map(b => [b.itemId, { value: String(b.itemId), label: `${b.itemCode} — ${b.itemName}` }])).values()]
+  // Raw materials aren't entered — they're always the outputs' BOM components × quantity built.
+  const materials = useMemo(() => materialsFromBoms(outputs, boms), [outputs, boms])
   const stock = useStock(lookupCompanyId, mainWarehouse?.id ?? '', [...outputs, ...materials].map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   // Raw materials whose total exceeds on-hand — on-hand can't go below zero, so Post is blocked.
-  const shortStock = shortItems(materials, stock, l => Number(l.quantity))
+  const shortStock = shortItems(materials, stock, l => l.quantity)
   const { isVisible, menu: columnMenu } = useColumnVisibility('assemblies')
   const { markClean, guardedClose } = useDirtyGuard()
 
@@ -215,13 +220,6 @@ export function AssembliesPage() {
     }
   }, [])
 
-  // Keep raw materials in step with the outputs' BOMs until the user edits a material line.
-  useEffect(() => {
-    if (!creating || !materialsFromBom) return
-    const computed = materialsFromBoms(outputs, boms)
-    setMaterials(computed.length > 0 ? computed : [EMPTY_MATERIAL])
-  }, [creating, materialsFromBom, outputs, boms])
-
   function openView(assembly: Assembly) {
     if (!rec.isRecordTab) return rec.open('view', assembly)
     setActiveAssembly(assembly)
@@ -238,21 +236,17 @@ export function AssembliesPage() {
     setRemarks('')
     setSheetNumber('')
     setOutputs([EMPTY_OUTPUT])
-    setMaterials([EMPTY_MATERIAL])
-    setMaterialsFromBom(true)
-    markClean({ companyId: nextCompanyId, assemblyDate: nextDate, remarks: '', sheetNumber: '', outputs: [EMPTY_OUTPUT], materials: [EMPTY_MATERIAL] })
+    markClean({ companyId: nextCompanyId, assemblyDate: nextDate, remarks: '', sheetNumber: '', outputs: [EMPTY_OUTPUT] })
     setMode('create')
   }
 
   function requestClose() {
-    guardedClose({ companyId, assemblyDate, remarks, sheetNumber, outputs, materials }, () => rec.close())
+    guardedClose({ companyId, assemblyDate, remarks, sheetNumber, outputs }, () => rec.close())
   }
 
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
     setOutputs([EMPTY_OUTPUT])
-    setMaterials([EMPTY_MATERIAL])
-    setMaterialsFromBom(true)
   }
 
   function updateOutput(index: number, patch: Partial<OutputDraft>) {
@@ -265,18 +259,8 @@ export function AssembliesPage() {
     updateOutput(index, { itemId, billOfMaterialId: candidates.length === 1 ? candidates[0].id : '' })
   }
 
-  function updateMaterial(index: number, patch: Partial<MaterialDraft>) {
-    setMaterialsFromBom(false)
-    setMaterials(prev => prev.map((line, i) => i === index ? { ...line, ...patch } : line))
-  }
-
   function addOutput() {
     setOutputs(prev => [...prev, EMPTY_OUTPUT])
-  }
-
-  function addMaterial() {
-    setMaterialsFromBom(false)
-    setMaterials(prev => [...prev, EMPTY_MATERIAL])
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -290,17 +274,21 @@ export function AssembliesPage() {
       return
     }
     const validOutputs = outputs.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
-    const validMaterials = materials.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
     if (validOutputs.length === 0) {
       toast('Add at least one output with an item and quantity.', 'error')
       return
     }
-    if (validMaterials.length === 0) {
-      toast('Add at least one raw material with an item and quantity.', 'error')
+    if (validOutputs.some(l => Number(l.quantity) <= 0)) {
+      toast('Quantities must be greater than zero.', 'error')
       return
     }
-    if ([...validOutputs, ...validMaterials].some(l => Number(l.quantity) <= 0)) {
-      toast('Quantities must be greater than zero.', 'error')
+    // Raw materials come only from the BOMs, so every output needs one.
+    if (validOutputs.some(l => l.billOfMaterialId === '')) {
+      toast('Select a bill of materials for every output.', 'error')
+      return
+    }
+    if (materials.length === 0) {
+      toast('The selected bills of materials have no raw materials.', 'error')
       return
     }
     if (shortStock.size > 0) {
@@ -318,9 +306,8 @@ export function AssembliesPage() {
         outputs: validOutputs.map(l => ({
           itemId: l.itemId,
           quantity: Number(l.quantity),
-          billOfMaterialId: l.billOfMaterialId === '' ? null : l.billOfMaterialId,
+          billOfMaterialId: l.billOfMaterialId,
         })),
-        materials: validMaterials.map(l => ({ itemId: l.itemId, quantity: Number(l.quantity) })),
       }
       await apiFetch<Assembly>('/assemblies', { method: 'POST', body: JSON.stringify(body) })
       toast('Assembly posted successfully.', 'success')
@@ -507,7 +494,7 @@ export function AssembliesPage() {
                         <SearchableSelect
                           value={line.itemId === '' ? '' : String(line.itemId)}
                           onChange={v => handleOutputItemChange(i, v ? Number(v) : '')}
-                          options={itemOptions}
+                          options={outputItemOptions}
                         />
                       ),
                     },
@@ -554,55 +541,27 @@ export function AssembliesPage() {
                   rows={materials}
                   columns={[
                     {
-                      key: 'item', label: 'Raw Material', required: true,
-                      render: (line, i) => (
-                        <SearchableSelect
-                          value={line.itemId === '' ? '' : String(line.itemId)}
-                          onChange={v => updateMaterial(i, { itemId: v ? Number(v) : '' })}
-                          options={itemOptions}
-                        />
-                      ),
+                      key: 'item', label: 'Raw Material', readOnly: true,
+                      render: line => <DocText>{`${line.itemCode} — ${line.itemName}`}</DocText>,
                     },
                     {
                       key: 'onHand', label: 'On Hand', align: 'right', width: '7rem', readOnly: true,
                       render: line => (
                         <StockCell stock={stock} field="quantity" itemId={line.itemId} warehouseChosen={!!mainWarehouse}
-                          short={() => line.itemId !== '' && shortStock.has(line.itemId)} />
+                          short={() => shortStock.has(line.itemId)} />
                       ),
                     },
                     {
-                      key: 'quantity', label: 'Quantity Used', align: 'right', width: '8rem', required: true,
-                      render: (line, i) => (
-                        <Input type="number" step="0.0001" min="0" aria-label={`Raw material ${i + 1} quantity`} value={line.quantity}
-                          onChange={e => updateMaterial(i, { quantity: e.target.value })} className="text-right" />
-                      ),
-                    },
-                    {
-                      key: 'remove', label: '', align: 'center', width: '2.75rem',
-                      render: (_, i) => (
-                        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label={`Remove raw material ${i + 1}`}
-                          onClick={() => { setMaterialsFromBom(false); setMaterials(prev => prev.filter((_, j) => j !== i)) }}
-                          disabled={materials.length === 1}>
-                          <X className="w-4 h-4" />
-                        </Button>
-                      ),
+                      key: 'quantity', label: 'Quantity Used', align: 'right', width: '8rem', readOnly: true,
+                      render: line => <DocText>{line.quantity > 0 ? line.quantity : ''}</DocText>,
                     },
                   ]}
                   footer={
-                    <div className="flex items-center justify-between gap-2">
-                      <Button type="button" variant="ghost" size="sm" onClick={addMaterial}>
-                        <Plus className="w-3.5 h-3.5" />
-                        Add Raw Material
-                      </Button>
-                      {materialsFromBom ? (
-                        <span className="text-xs text-[hsl(var(--muted-foreground))]">Filled from the outputs' bills of materials.</span>
-                      ) : (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setMaterialsFromBom(true)}>
-                          <ListRestart className="w-3.5 h-3.5" />
-                          Refill from Bills of Materials
-                        </Button>
-                      )}
-                    </div>
+                    <span className="text-xs text-[hsl(var(--muted-foreground))]">
+                      {materials.length > 0
+                        ? "Filled from the outputs' bills of materials × quantity built."
+                        : 'Pick an output and its bill of materials to see the raw materials used.'}
+                    </span>
                   }
                 />
                 <DocRow>
