@@ -18,14 +18,14 @@ import { SuppliersPage } from '@/pages/SuppliersPage'
 import { InventoryAdjustmentsPage } from '@/pages/InventoryAdjustmentsPage'
 import { PurchaseOrdersPage } from '@/pages/PurchaseOrdersPage'
 import { PurchaseInvoicesPage } from '@/pages/PurchaseInvoicesPage'
-import { PurchaseReceivesPage } from '@/pages/PurchaseReceivesPage'
+import { PurchaseReceiptsPage } from '@/pages/PurchaseReceiptsPage'
 import { DeliveryReceiptsPage } from '@/pages/DeliveryReceiptsPage'
-import { OutletReceivesPage } from '@/pages/OutletReceivesPage'
+import { OutletReceiptsPage } from '@/pages/OutletReceiptsPage'
 import { OutletDeliveryReceiptsPage } from '@/pages/OutletDeliveryReceiptsPage'
 import { OutletDeliveryReturnsPage } from '@/pages/OutletDeliveryReturnsPage'
 import { StockTransfersPage } from '@/pages/StockTransfersPage'
 import { OutletPullOutsPage } from '@/pages/OutletPullOutsPage'
-import { PullOutReceivesPage } from '@/pages/PullOutReceivesPage'
+import { PullOutReceiptsPage } from '@/pages/PullOutReceiptsPage'
 import { PullOutReasonsPage } from '@/pages/PullOutReasonsPage'
 import { AssembliesPage } from '@/pages/AssembliesPage'
 import { BillsOfMaterialsPage } from '@/pages/BillsOfMaterialsPage'
@@ -33,10 +33,10 @@ import { ReportCategoryPage } from '@/pages/ReportCategoryPage'
 import { InventoryBalancePage } from '@/pages/InventoryBalancePage'
 import { InventoryLedgerPage } from '@/pages/InventoryLedgerPage'
 import {
-  InventoryAdjustmentDetailedPage, OutletReceiveDetailedPage, PurchaseOrderDetailedPage,
-  PurchaseInvoiceDetailedPage, PurchaseReceiveDetailedPage, DeliveryReceiptDetailedPage,
+  InventoryAdjustmentDetailedPage, OutletReceiptDetailedPage, PurchaseOrderDetailedPage,
+  PurchaseInvoiceDetailedPage, PurchaseReceiptDetailedPage, DeliveryReceiptDetailedPage,
   OutletDeliveryReceiptDetailedPage, OutletDeliveryReturnDetailedPage, StockTransferDetailedPage,
-  OutletPullOutDetailedPage, PullOutReceiveDetailedPage, AssemblyDetailedPage,
+  OutletPullOutDetailedPage, PullOutReceiptDetailedPage, AssemblyDetailedPage,
 } from '@/pages/TransactionDetailedReportPages'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
 import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
@@ -59,14 +59,14 @@ const pageComponents: Record<string, ComponentType> = {
   '/inventory-adjustments': InventoryAdjustmentsPage,
   '/purchase-orders': PurchaseOrdersPage,
   '/purchase-invoices': PurchaseInvoicesPage,
-  '/purchase-receives': PurchaseReceivesPage,
+  '/purchase-receipts': PurchaseReceiptsPage,
   '/delivery-receipts': DeliveryReceiptsPage,
-  '/outlet-receives': OutletReceivesPage,
+  '/outlet-receipts': OutletReceiptsPage,
   '/outlet-delivery-receipts': OutletDeliveryReceiptsPage,
   '/outlet-delivery-returns': OutletDeliveryReturnsPage,
   '/stock-transfers': StockTransfersPage,
   '/outlet-pull-outs': OutletPullOutsPage,
-  '/pull-out-receives': PullOutReceivesPage,
+  '/pull-out-receipts': PullOutReceiptsPage,
   '/pull-out-reasons': PullOutReasonsPage,
   '/assemblies': AssembliesPage,
   '/bills-of-materials': BillsOfMaterialsPage,
@@ -74,16 +74,16 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/inventory-balance': InventoryBalancePage,
   '/reports/inventory-ledger': InventoryLedgerPage,
   '/reports/inventory-adjustment-detailed': InventoryAdjustmentDetailedPage,
-  '/reports/outlet-receive-detailed': OutletReceiveDetailedPage,
+  '/reports/outlet-receipt-detailed': OutletReceiptDetailedPage,
   '/reports/purchase-order-detailed': PurchaseOrderDetailedPage,
   '/reports/purchase-invoice-detailed': PurchaseInvoiceDetailedPage,
-  '/reports/purchase-receive-detailed': PurchaseReceiveDetailedPage,
+  '/reports/purchase-receipt-detailed': PurchaseReceiptDetailedPage,
   '/reports/delivery-receipt-detailed': DeliveryReceiptDetailedPage,
   '/reports/outlet-delivery-receipt-detailed': OutletDeliveryReceiptDetailedPage,
   '/reports/outlet-delivery-return-detailed': OutletDeliveryReturnDetailedPage,
   '/reports/stock-transfer-detailed': StockTransferDetailedPage,
   '/reports/outlet-pull-out-detailed': OutletPullOutDetailedPage,
-  '/reports/pull-out-receive-detailed': PullOutReceiveDetailedPage,
+  '/reports/pull-out-receipt-detailed': PullOutReceiptDetailedPage,
   '/reports/assembly-detailed': AssemblyDetailedPage,
   '/document-templates': DocumentTemplatesPage,
   '/transaction-actions': TransactionActionsPage,

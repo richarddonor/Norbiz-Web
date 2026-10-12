@@ -25,11 +25,11 @@ function backlog(config: BacklogConfig): ComponentType<WidgetProps> {
 }
 
 export const WIDGETS: Record<string, WidgetDefinition> = {
-  'pending-outlet-receives': {
+  'pending-outlet-receipts': {
     icon: Truck,
     defaultWide: true,
     component: backlog({
-      endpoint: '/dashboard/widgets/pending-outlet-receives',
+      endpoint: '/dashboard/widgets/pending-outlet-receipts',
       document: ['receipt', 'receipts'],
       counterparty: ['outlet', 'outlets'],
       quantityHint: 'units not yet received',
@@ -40,7 +40,7 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
       barsTitle: 'Waiting by outlet',
       oldestTitle: 'Oldest in transit',
       drillType: 'DELIVERY_RECEIPT',
-      listPage: { path: '/outlet-receives', label: 'Outlet Receives', permission: 'VIEW_OUTLET_RECEIVE' },
+      listPage: { path: '/outlet-receipts', label: 'Outlet Receipts', permission: 'VIEW_OUTLET_RECEIPT' },
       staleDays: 30,
       emptyText: 'Nothing in transit — every outlet delivery has been received.',
     }),
@@ -84,11 +84,11 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
       emptyText: 'Every purchase invoice is paid.',
     }),
   },
-  'pull-outs-awaiting-receive': {
+  'pull-outs-awaiting-receipt': {
     icon: PackageMinus,
     defaultWide: true,
     component: backlog({
-      endpoint: '/dashboard/widgets/pull-outs-awaiting-receive',
+      endpoint: '/dashboard/widgets/pull-outs-awaiting-receipt',
       document: ['pull-out', 'pull-outs'],
       counterparty: ['outlet', 'outlets'],
       quantityHint: 'units on the way back',
@@ -98,11 +98,11 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
       progressCaption: "share of these pull-outs' quantity already received",
       breakdownTitle: 'By reason',
       barsTitle: 'Coming back from',
-      oldestTitle: 'Oldest awaiting receive',
+      oldestTitle: 'Oldest awaiting receipt',
       drillType: 'OUTLET_PULL_OUT',
-      listPage: { path: '/pull-out-receives', label: 'Pull Out Receives', permission: 'VIEW_PULL_OUT_RECEIVE' },
+      listPage: { path: '/pull-out-receipts', label: 'Pull-out Receipts', permission: 'VIEW_PULL_OUT_RECEIPT' },
       staleDays: 30,
-      emptyText: 'Nothing awaiting receive — every pull-out is back at the main warehouse.',
+      emptyText: 'Nothing awaiting receipt — every pull-out is back at the main warehouse.',
     }),
   },
   'stock-in-transit': { icon: ArrowLeftRight, component: StockInTransitWidget, defaultWide: false },

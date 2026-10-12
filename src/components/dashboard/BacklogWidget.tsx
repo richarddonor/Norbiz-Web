@@ -9,7 +9,7 @@ import { compactNumber, todayIso, useWidgetData } from './hooks'
 import { SectionLabel, WidgetBody, type WidgetProps } from './widget-kit'
 
 // One widget body for every "documents still waiting on something" report (backend BacklogResponse):
-// Pending Outlet Receives, Pending Purchase Orders, Pull-outs Awaiting Receive, Unpaid Purchase Invoices.
+// Pending Outlet Receipts, Pending Purchase Orders, Pull-outs Awaiting Receipt, Unpaid Purchase Invoices.
 
 interface AgingBucket { label: string; minDays: number; documentCount: number; outstandingQuantity: number | null; outstandingAmount: number | null }
 interface Slice { id: number | null; name: string; documentCount: number; quantity: number | null; amount: number | null }

@@ -83,7 +83,7 @@ export function PullOutReasonsPage() {
   const inRecordTab = useIsRecordTab()
   const { items: reasons, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PullOutReason>('/pull-out-reasons', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load pull out reasons.', 'error'),
+    onError: () => toast('Failed to load pull-out reasons.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: reasonSearchText,
@@ -171,7 +171,7 @@ export function PullOutReasonsPage() {
       toast('Select a company.', 'error')
       return
     }
-    if (!window.confirm(mode === 'create' ? `Create pull out reason "${name}"?` : `Save changes to pull out reason "${name}"?`)) return
+    if (!window.confirm(mode === 'create' ? `Create pull-out reason "${name}"?` : `Save changes to pull-out reason "${name}"?`)) return
     setLoading(true)
     try {
       if (mode === 'create') {
@@ -179,31 +179,31 @@ export function PullOutReasonsPage() {
           method: 'POST',
           body: JSON.stringify({ name, active, companyId }),
         })
-        toast('Pull out reason created successfully.', 'success')
+        toast('Pull-out reason created successfully.', 'success')
       } else {
         await apiFetch<PullOutReason>(`/pull-out-reasons/${activeReason!.id}`, {
           method: 'PUT',
           body: JSON.stringify({ name, active, companyId: activeReason!.companyId }),
         })
-        toast('Pull out reason updated successfully.', 'success')
+        toast('Pull-out reason updated successfully.', 'success')
       }
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, mode === 'create' ? 'Failed to create pull out reason.' : 'Failed to update pull out reason.'), 'error')
+      toast(mutationErrorMessage(err, mode === 'create' ? 'Failed to create pull-out reason.' : 'Failed to update pull-out reason.'), 'error')
     } finally {
       setLoading(false)
     }
   }
 
   async function handleDelete(reason: PullOutReason) {
-    if (!window.confirm(`Delete pull out reason "${reason.name}"?`)) return
+    if (!window.confirm(`Delete pull-out reason "${reason.name}"?`)) return
     try {
       await apiFetch(`/pull-out-reasons/${reason.id}`, { method: 'DELETE' })
-      toast('Pull out reason deleted.', 'success')
+      toast('Pull-out reason deleted.', 'success')
       reload()
     } catch (err) {
-      toast(deleteErrorMessage(err, 'Failed to delete pull out reason.'), 'error')
+      toast(deleteErrorMessage(err, 'Failed to delete pull-out reason.'), 'error')
     }
   }
 
@@ -223,14 +223,14 @@ export function PullOutReasonsPage() {
   }
 
   const recordName = activeReason?.name ?? ''
-  const tabTitle = mode === 'create' ? 'New Pull Out Reason' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Pull Out Reason'
+  const tabTitle = mode === 'create' ? 'New Pull-out Reason' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Pull-out Reason'
   const ro = mode === 'view'
 
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold">Pull Out Reasons</h1>
+        <h1 className="text-2xl font-bold">Pull-out Reasons</h1>
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
@@ -266,7 +266,7 @@ export function PullOutReasonsPage() {
                     autoFocus={mode === 'create' && showCompanyColumn}
                   />
               }>
-                <DocHeader title="Pull Out Reason Record" />
+                <DocHeader title="Pull-out Reason Record" />
               </DocLetterhead>
               <DocRow>
                 <DocCell label="Name" htmlFor="reason-name" required={!ro}>
@@ -340,7 +340,7 @@ export function PullOutReasonsPage() {
               {reasons.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No pull out reasons match your search/filters.' : 'No pull out reasons to display.'}
+                    {isFiltering ? 'No pull-out reasons match your search/filters.' : 'No pull-out reasons to display.'}
                   </td>
                 </tr>
               ) : (

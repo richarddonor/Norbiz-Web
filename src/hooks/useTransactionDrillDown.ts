@@ -11,14 +11,14 @@ const TRANSACTION_PATHS: Record<TransactionType, string> = {
   INVENTORY_ADJUSTMENT: '/inventory-adjustments',
   PURCHASE_ORDER: '/purchase-orders',
   PURCHASE_INVOICE: '/purchase-invoices',
-  PURCHASE_RECEIVE: '/purchase-receives',
+  PURCHASE_RECEIPT: '/purchase-receipts',
   DELIVERY_RECEIPT: '/delivery-receipts',
-  OUTLET_RECEIVE: '/outlet-receives',
+  OUTLET_RECEIPT: '/outlet-receipts',
   OUTLET_DELIVERY_RECEIPT: '/outlet-delivery-receipts',
   OUTLET_DELIVERY_RETURN: '/outlet-delivery-returns',
   STOCK_TRANSFER: '/stock-transfers',
   OUTLET_PULL_OUT: '/outlet-pull-outs',
-  PULL_OUT_RECEIVE: '/pull-out-receives',
+  PULL_OUT_RECEIPT: '/pull-out-receipts',
   ASSEMBLY: '/assemblies',
 }
 

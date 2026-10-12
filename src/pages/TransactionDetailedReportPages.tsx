@@ -345,8 +345,8 @@ const INVENTORY_ADJUSTMENT: DetailedReportConfig = {
   title: 'Inventory Adjustment - Detailed', endpoint: '/reports/detailed/inventory-adjustments', transactionType: 'INVENTORY_ADJUSTMENT', key: 'inventory-adjustment-detailed',
   loadedLabel: 'Qty Loaded',
 }
-const OUTLET_RECEIVE: DetailedReportConfig = {
-  title: 'Outlet Receive - Detailed', endpoint: '/reports/detailed/outlet-receives', transactionType: 'OUTLET_RECEIVE', key: 'outlet-receive-detailed',
+const OUTLET_RECEIPT: DetailedReportConfig = {
+  title: 'Outlet Receipt - Detailed', endpoint: '/reports/detailed/outlet-receipts', transactionType: 'OUTLET_RECEIPT', key: 'outlet-receipt-detailed',
   counterparty: { ...CUSTOMER, label: 'Outlet' }, sourceLabel: 'DR #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price',
 }
 const PURCHASE_ORDER: DetailedReportConfig = {
@@ -357,8 +357,8 @@ const PURCHASE_INVOICE: DetailedReportConfig = {
   title: 'Purchase Invoice - Detailed', endpoint: '/reports/detailed/purchase-invoices', transactionType: 'PURCHASE_INVOICE', key: 'purchase-invoice-detailed',
   counterparty: SUPPLIER, sourceLabel: 'PO #', loadedLabel: 'Qty Received', priceLabel: 'Cost Price', discount: true,
 }
-const PURCHASE_RECEIVE: DetailedReportConfig = {
-  title: 'Purchase Receive - Detailed', endpoint: '/reports/detailed/purchase-receives', transactionType: 'PURCHASE_RECEIVE', key: 'purchase-receive-detailed',
+const PURCHASE_RECEIPT: DetailedReportConfig = {
+  title: 'Purchase Receipt - Detailed', endpoint: '/reports/detailed/purchase-receipts', transactionType: 'PURCHASE_RECEIPT', key: 'purchase-receipt-detailed',
   counterparty: SUPPLIER, sourceLabel: 'PO / PI #', loadedLabel: 'Qty Loaded', priceLabel: 'Cost Price',
 }
 const DELIVERY_RECEIPT: DetailedReportConfig = {
@@ -370,12 +370,12 @@ const STOCK_TRANSFER: DetailedReportConfig = {
   counterparty: CUSTOMER, loadedLabel: 'Qty Delivered', priceLabel: 'Unit Price',
 }
 const OUTLET_PULL_OUT: DetailedReportConfig = {
-  title: 'Outlet Pull Out - Detailed', endpoint: '/reports/detailed/outlet-pull-outs', transactionType: 'OUTLET_PULL_OUT', key: 'outlet-pull-out-detailed',
+  title: 'Outlet Pull-out - Detailed', endpoint: '/reports/detailed/outlet-pull-outs', transactionType: 'OUTLET_PULL_OUT', key: 'outlet-pull-out-detailed',
   counterparty: { ...CUSTOMER, label: 'Outlet' }, loadedLabel: 'Qty Received', priceLabel: 'Unit Price',
 }
-const PULL_OUT_RECEIVE: DetailedReportConfig = {
-  title: 'Pull Out Receive - Detailed', endpoint: '/reports/detailed/pull-out-receives', transactionType: 'PULL_OUT_RECEIVE', key: 'pull-out-receive-detailed',
-  counterparty: { ...CUSTOMER, label: 'Outlet' }, sourceLabel: 'Pull Out #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price',
+const PULL_OUT_RECEIPT: DetailedReportConfig = {
+  title: 'Pull-out Receipt - Detailed', endpoint: '/reports/detailed/pull-out-receipts', transactionType: 'PULL_OUT_RECEIPT', key: 'pull-out-receipt-detailed',
+  counterparty: { ...CUSTOMER, label: 'Outlet' }, sourceLabel: 'Pull-out #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price',
 }
 // Rows are both outputs and raw materials; materials carry a negative quantity (their effect on stock).
 const ASSEMBLY: DetailedReportConfig = {
@@ -393,14 +393,14 @@ const OUTLET_DELIVERY_RETURN: DetailedReportConfig = {
 }
 
 export const InventoryAdjustmentDetailedPage = () => <TransactionDetailedReport config={INVENTORY_ADJUSTMENT} />
-export const OutletReceiveDetailedPage = () => <TransactionDetailedReport config={OUTLET_RECEIVE} />
+export const OutletReceiptDetailedPage = () => <TransactionDetailedReport config={OUTLET_RECEIPT} />
 export const PurchaseOrderDetailedPage = () => <TransactionDetailedReport config={PURCHASE_ORDER} />
 export const PurchaseInvoiceDetailedPage = () => <TransactionDetailedReport config={PURCHASE_INVOICE} />
-export const PurchaseReceiveDetailedPage = () => <TransactionDetailedReport config={PURCHASE_RECEIVE} />
+export const PurchaseReceiptDetailedPage = () => <TransactionDetailedReport config={PURCHASE_RECEIPT} />
 export const DeliveryReceiptDetailedPage = () => <TransactionDetailedReport config={DELIVERY_RECEIPT} />
 export const OutletDeliveryReceiptDetailedPage = () => <TransactionDetailedReport config={OUTLET_DELIVERY_RECEIPT} />
 export const OutletDeliveryReturnDetailedPage = () => <TransactionDetailedReport config={OUTLET_DELIVERY_RETURN} />
 export const StockTransferDetailedPage = () => <TransactionDetailedReport config={STOCK_TRANSFER} />
 export const OutletPullOutDetailedPage = () => <TransactionDetailedReport config={OUTLET_PULL_OUT} />
-export const PullOutReceiveDetailedPage = () => <TransactionDetailedReport config={PULL_OUT_RECEIVE} />
+export const PullOutReceiptDetailedPage = () => <TransactionDetailedReport config={PULL_OUT_RECEIPT} />
 export const AssemblyDetailedPage = () => <TransactionDetailedReport config={ASSEMBLY} />

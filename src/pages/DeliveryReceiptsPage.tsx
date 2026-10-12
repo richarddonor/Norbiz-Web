@@ -116,7 +116,7 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Outlet deliveries sit in transit until an Outlet Receive takes them in; plain-customer deliveries have nothing to receive.
+// Outlet deliveries sit in transit until an Outlet Receipt takes them in; plain-customer deliveries have nothing to receive.
 function receivingStatus(r: DeliveryReceipt): string {
   if (r.customerType !== 'OUTLET') return '—'
   if (r.loaded) return 'Received'
@@ -400,7 +400,7 @@ export function DeliveryReceiptsPage() {
 
   const recordName = activeReceipt?.referenceNumber ?? ''
   const tabTitle = mode === 'create' ? 'New Delivery Receipt' : recordName || 'Delivery Receipt'
-  // Received (even partly) by an outlet: the backend blocks voiding until those receives are voided.
+  // Received (even partly) by an outlet: the backend blocks voiding until those receipts are voided.
   const receivedByOutlet = !!activeReceipt && activeReceipt.lines.some(l => Number(l.quantityLoaded) > 0)
 
   return (
@@ -496,7 +496,7 @@ export function DeliveryReceiptsPage() {
                     onClick={handleVoid}
                     loading={voiding}
                     disabled={receivedByOutlet}
-                    title={receivedByOutlet ? 'Already received by the outlet — void its Outlet Receive(s) first.' : undefined}
+                    title={receivedByOutlet ? 'Already received by the outlet — void its Outlet Receipt(s) first.' : undefined}
                   >
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -551,7 +551,7 @@ export function DeliveryReceiptsPage() {
                     />
                     {isOutlet && (
                       <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        Posts as in transit to this outlet's warehouse until an Outlet Receive takes it in.
+                        Posts as in transit to this outlet's warehouse until an Outlet Receipt takes it in.
                       </p>
                     )}
                   </DocCell>

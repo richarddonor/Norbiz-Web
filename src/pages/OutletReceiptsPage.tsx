@@ -36,37 +36,33 @@ import { byLineNumber, cn } from '@/lib/utils'
 import { defaultDateFilter } from '@/lib/dateRanges'
 
 type FormMode = 'view' | 'create'
-type SourceMode = 'PURCHASE_ORDER' | 'PURCHASE_INVOICE'
 
 interface CompanyOption {
   id: number
   name: string
 }
 
-interface ReceiveLine {
+interface OutletReceiptLine {
   id: number
   lineNumber: number
   itemId: number
   itemCode: string
   itemName: string
-  purchaseOrderLineId: number | null
-  purchaseInvoiceLineId: number | null
+  deliveryReceiptLineId: number
   quantity: string
   quantityLoaded: string
 }
 
-interface PurchaseReceive {
+interface OutletReceipt {
   id: number
   companyId: number
   companyName: string
+  deliveryReceiptId: number
+  deliveryReceiptReferenceNumber: string
+  customerId: number
+  customerName: string
   warehouseId: number
   warehouseName: string
-  supplierId: number
-  supplierName: string
-  purchaseOrderId: number | null
-  purchaseOrderReferenceNumber: string | null
-  purchaseInvoiceId: number | null
-  purchaseInvoiceReferenceNumber: string | null
   referenceNumber: string
   sheetNumber: string | null
   receiptDate: string
@@ -78,7 +74,7 @@ interface PurchaseReceive {
   voidedAt: string | null
   voidedBy: string | null
   loaded: boolean
-  lines: ReceiveLine[]
+  lines: OutletReceiptLine[]
 }
 
 interface LineDraft {
@@ -95,9 +91,9 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   columns.push(
     { key: 'referenceNumber', label: 'Reference #' },
     { key: 'sheetNumber', label: 'Sheet #' },
+    { key: 'outlet', label: 'Outlet' },
     { key: 'warehouse', label: 'Warehouse' },
-    { key: 'supplier', label: 'Supplier' },
-    { key: 'source', label: 'Source' },
+    { key: 'source', label: 'Delivery Receipt' },
     { key: 'date', label: 'Receipt Date', type: 'date' },
     ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
@@ -110,17 +106,12 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function sourceLabel(r: PurchaseReceive): string {
-  if (r.purchaseOrderReferenceNumber) return `PO: ${r.purchaseOrderReferenceNumber}`
-  if (r.purchaseInvoiceReferenceNumber) return `Invoice: ${r.purchaseInvoiceReferenceNumber}`
-  return '—'
+function receiveSearchText(r: OutletReceipt): string {
+  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.deliveryReceiptReferenceNumber,
+    r.remarks ?? '', r.companyName, formatDate(r.receiptDate)].join(' ')
 }
 
-function receiveSearchText(r: PurchaseReceive): string {
-  return [r.referenceNumber, r.sheetNumber ?? '', r.warehouseName, r.supplierName, sourceLabel(r), r.remarks ?? '', r.companyName, formatDate(r.receiptDate)].join(' ')
-}
-
-export function PurchaseReceivesPage() {
+export function OutletReceiptsPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
@@ -134,9 +125,9 @@ export function PurchaseReceivesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receives, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseReceive>('/purchase-receives', {
+  const { items: receipts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletReceipt>('/outlet-receipts', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load purchase receives.', 'error'),
+    onError: () => toast('Failed to load outlet receipts.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: receiveSearchText,
@@ -145,17 +136,16 @@ export function PurchaseReceivesPage() {
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [mode, setMode]                       = useState<FormMode>('view')
-  const rec = useRecordTab<PurchaseReceive>({
+  const rec = useRecordTab<OutletReceipt>({
     mode,
     onOpen: { view: openView, create: openCreate },
     onRequestClose: requestClose,
-    fetchRecord: id => apiFetch<PurchaseReceive>(`/purchase-receives/${id}`),
+    fetchRecord: id => apiFetch<OutletReceipt>(`/outlet-receipts/${id}`),
   })
-  const [activeReceive, setActiveReceive]     = useState<PurchaseReceive | null>(null)
+  const [activeReceipt, setActiveReceipt]     = useState<OutletReceipt | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
-  const [sourceMode, setSourceMode]           = useState<SourceMode>('PURCHASE_ORDER')
-  const [supplierId, setSupplierId]           = useState<number | ''>('')
-  const [sourceId, setSourceId]               = useState<number | ''>('')
+  const [customerId, setCustomerId]           = useState<number | ''>('')
+  const [deliveryReceiptId, setDeliveryReceiptId] = useState<number | ''>('')
   const [warehouseId, setWarehouseId]         = useState<number | ''>('')
   const [receiptDate, setReceiptDate]         = useState(todayIso())
   const [remarks, setRemarks]                 = useState('')
@@ -165,31 +155,25 @@ export function PurchaseReceivesPage() {
   // Dropdowns are scoped to the form's company (the active company on the list tab).
   const lookupCompanyId = companyId || activeCompanyId
   const creating = inRecordTab && mode === 'create'
-  const warehouses = useLookup<LookupOption>('warehouses', lookupCompanyId, { enabled: !inRecordTab, onError: () => toast('Failed to load warehouses.', 'error') })
-  const formSuppliers = useLookup<LookupOption>('suppliers', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load suppliers.', 'error') })
-  // The lookups' openOnly default already drops voided/fully-loaded sources, and for invoices
-  // keeps only Direct-mode ones (a PO-based invoice is received against its PO instead).
-  const openPurchaseOrders = useLookup<TransactionLookupOption>('purchase-orders', lookupCompanyId, { enabled: creating && sourceMode === 'PURCHASE_ORDER', onError: () => toast('Failed to load purchase orders.', 'error') })
-  const openPurchaseInvoices = useLookup<TransactionLookupOption>('purchase-invoices', lookupCompanyId, { enabled: creating && sourceMode !== 'PURCHASE_ORDER', onError: () => toast('Failed to load purchase invoices.', 'error') })
-  const eligiblePurchaseOrders = supplierId ? openPurchaseOrders.filter(po => po.supplierId === supplierId) : []
-  const eligiblePurchaseInvoices = supplierId ? openPurchaseInvoices.filter(inv => inv.supplierId === supplierId) : []
-  const selectedSource = sourceId
-    ? (sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices).find(src => src.id === sourceId)
-    : undefined
-  const warehouseName = warehouseId ? selectedSource?.warehouseName ?? '' : ''
-  // A receive moves stock from transit into on hand, so both balances are shown as a guide while creating.
+  const outlets = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
+  // openOnly (the default) keeps only outlet DRs that are neither voided nor fully received.
+  const openDeliveryReceipts = useLookup<TransactionLookupOption>('delivery-receipts', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load delivery receipts.', 'error') })
+  const eligibleDeliveryReceipts = customerId ? openDeliveryReceipts.filter(dr => dr.customerId === customerId) : []
+  const selectedDeliveryReceipt = deliveryReceiptId ? eligibleDeliveryReceipts.find(dr => dr.id === deliveryReceiptId) : undefined
+  const warehouseName = warehouseId ? selectedDeliveryReceipt?.warehouseName ?? '' : ''
+  // A receipt moves stock from in transit to on hand in the outlet warehouse, so both balances are shown.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
-  const { isVisible, menu: columnMenu } = useColumnVisibility('purchase-receives')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('outlet-receipts')
   const { markClean, guardedClose } = useDirtyGuard()
 
-  const canCreate = hasPermission('CREATE_PURCHASE_RECEIVE')
+  const canCreate = hasPermission('CREATE_OUTLET_RECEIPT')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
-  const canVoid = hasPermission('VOID_PURCHASE_RECEIVE')
+  const canVoid = hasPermission('VOID_OUTLET_RECEIPT')
   const [voiding, setVoiding] = useState(false)
-  const activity = useTransactionActivity('PURCHASE_RECEIVE', inRecordTab && mode === 'view' ? activeReceive?.id : null, activeReceive?.referenceNumber, activeReceive?.voided)
+  const activity = useTransactionActivity('OUTLET_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
-    items: receives,
+    items: receipts,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -207,28 +191,27 @@ export function PurchaseReceivesPage() {
     }
   }, [])
 
-  function openView(receive: PurchaseReceive) {
-    if (!rec.isRecordTab) return rec.open('view', receive)
-    setActiveReceive(receive)
+  function openView(receipt: OutletReceipt) {
+    if (!rec.isRecordTab) return rec.open('view', receipt)
+    setActiveReceipt(receipt)
     setMode('view')
   }
 
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
-    setActiveReceive(null)
+    setActiveReceipt(null)
     const nextCompanyId = activeCompanyId ?? ''
     const nextDate = todayIso()
     setCompanyId(nextCompanyId)
-    setSourceMode('PURCHASE_ORDER')
-    setSupplierId('')
-    setSourceId('')
+    setCustomerId('')
+    setDeliveryReceiptId('')
     setWarehouseId('')
     setReceiptDate(nextDate)
     setRemarks('')
     setSheetNumber('')
     setLines([])
     markClean({
-      companyId: nextCompanyId, sourceMode: 'PURCHASE_ORDER', supplierId: '', sourceId: '', warehouseId: '',
+      companyId: nextCompanyId, customerId: '', deliveryReceiptId: '', warehouseId: '',
       receiptDate: nextDate, remarks: '', sheetNumber: '', lines: [],
     })
     setMode('create')
@@ -236,33 +219,24 @@ export function PurchaseReceivesPage() {
 
   function requestClose() {
     guardedClose(
-      { companyId, sourceMode, supplierId, sourceId, warehouseId, receiptDate, remarks, sheetNumber, lines },
+      { companyId, customerId, deliveryReceiptId, warehouseId, receiptDate, remarks, sheetNumber, lines },
       () => rec.close()
     )
   }
 
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
-    setSourceMode('PURCHASE_ORDER')
-    setSupplierId('')
-    setSourceId('')
+    setCustomerId('')
+    setDeliveryReceiptId('')
     setWarehouseId('')
     setLines([])
   }
 
-  function handleSourceModeChange(value: SourceMode) {
-    setSourceMode(value)
-    setSupplierId('')
-    setSourceId('')
-    setWarehouseId('')
-    setLines([])
-  }
-
-  // Picking the Supplier narrows which Purchase Orders/Direct Invoices are selectable,
-  // so changing it invalidates whatever source/warehouse/lines were already derived.
-  function handleSupplierChange(id: number | '') {
-    setSupplierId(id)
-    setSourceId('')
+  // Picking the outlet narrows which Delivery Receipts are selectable,
+  // so changing it invalidates whatever delivery receipt/warehouse/lines were already derived.
+  function handleOutletChange(id: number | '') {
+    setCustomerId(id)
+    setDeliveryReceiptId('')
     setWarehouseId('')
     setLines([])
   }
@@ -276,16 +250,9 @@ export function PurchaseReceivesPage() {
       .filter(l => Number(l.outstanding) > 0)
   }
 
-  function handleSourceChange(id: number | '') {
-    setSourceId(id)
-    if (!id) {
-      setWarehouseId('')
-      setLines([])
-      return
-    }
-    const source = sourceMode === 'PURCHASE_ORDER'
-      ? eligiblePurchaseOrders.find(po => po.id === id)
-      : eligiblePurchaseInvoices.find(inv => inv.id === id)
+  function handleDeliveryReceiptChange(id: number | '') {
+    setDeliveryReceiptId(id)
+    const source = id ? eligibleDeliveryReceipts.find(dr => dr.id === id) : undefined
     if (!source) {
       setWarehouseId('')
       setLines([])
@@ -305,12 +272,12 @@ export function PurchaseReceivesPage() {
       toast('Select a company.', 'error')
       return
     }
-    if (!supplierId) {
-      toast('Select a supplier.', 'error')
+    if (!customerId) {
+      toast('Select an outlet.', 'error')
       return
     }
-    if (!sourceId) {
-      toast(`Select a ${sourceMode === 'PURCHASE_ORDER' ? 'purchase order' : 'purchase invoice'} to receive against.`, 'error')
+    if (!deliveryReceiptId) {
+      toast('Select a delivery receipt to receive.', 'error')
       return
     }
     const validLines = lines.filter(l => l.quantity.trim() !== '' && Number(l.quantity) > 0)
@@ -323,26 +290,23 @@ export function PurchaseReceivesPage() {
       toast(`Quantity to receive for ${overLine.itemCode} exceeds the outstanding amount (${overLine.outstanding}).`, 'error')
       return
     }
-    if (!window.confirm('Post this purchase receive? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this outlet receipt? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
         companyId,
-        warehouseId,
-        supplierId,
-        purchaseOrderId: sourceMode === 'PURCHASE_ORDER' ? sourceId : undefined,
-        purchaseInvoiceId: sourceMode === 'PURCHASE_INVOICE' ? sourceId : undefined,
+        deliveryReceiptId,
         receiptDate,
         remarks: remarks || null,
         sheetNumber: sheetNumber || null,
         lines: validLines.map(l => ({ itemId: l.itemId, quantity: Number(l.quantity) })),
       }
-      await apiFetch<PurchaseReceive>('/purchase-receives', { method: 'POST', body: JSON.stringify(body) })
-      toast('Purchase receive posted successfully.', 'success')
+      await apiFetch<OutletReceipt>('/outlet-receipts', { method: 'POST', body: JSON.stringify(body) })
+      toast('Outlet receipt posted successfully.', 'success')
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to post purchase receive.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to post outlet receipt.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -350,61 +314,61 @@ export function PurchaseReceivesPage() {
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<PurchaseReceive>(qs ? `/purchase-receives?${qs}` : '/purchase-receives', 100000)
+    const all = await fetchAllContent<OutletReceipt>(qs ? `/outlet-receipts?${qs}` : '/outlet-receipts', 100000)
     const term = debouncedSearch.trim().toLowerCase()
     const matching = term ? all.filter(r => receiveSearchText(r).toLowerCase().includes(term)) : all
     const rows = matching.map(r => ({
       referenceNumber: r.referenceNumber,
       sheetNumber: r.sheetNumber ?? '',
+      outlet: r.customerName,
       warehouse: r.warehouseName,
-      supplier: r.supplierName,
-      source: sourceLabel(r),
+      source: r.deliveryReceiptReferenceNumber,
       date: formatDate(r.receiptDate),
       voided: r.voided ? 'Yes' : '',
       origin: originLabel(r.origin),
       company: r.companyName,
     }))
-    exportToXlsx('purchase-receives', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('outlet-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   function printFailed() {
-    if (!activeReceive) return
+    if (!activeReceipt) return
     toast(
-      `No active print template configured for Purchase Receives under ${activeReceive.companyName}. Create one under Document Templates while ${activeReceive.companyName} is your active company.`,
+      `No active print template configured for Outlet Receipts under ${activeReceipt.companyName}. Create one under Document Templates while ${activeReceipt.companyName} is your active company.`,
       'error'
     )
   }
 
   async function handleVoid() {
-    if (!activeReceive) return
-    if (!window.confirm(`Void purchase receive "${activeReceive.referenceNumber}"? This reverses its inventory effects and un-loads the source, and cannot be undone.`)) return
+    if (!activeReceipt) return
+    if (!window.confirm(`Void outlet receipt "${activeReceipt.referenceNumber}"? This puts the quantities back in transit, reopens ${activeReceipt.deliveryReceiptReferenceNumber}, and cannot be undone.`)) return
     setVoiding(true)
     try {
-      const voided = await apiFetch<PurchaseReceive>(`/purchase-receives/${activeReceive.id}/void`, { method: 'POST' })
-      setActiveReceive(voided)
-      toast('Purchase receive voided.', 'success')
+      const voided = await apiFetch<OutletReceipt>(`/outlet-receipts/${activeReceipt.id}/void`, { method: 'POST' })
+      setActiveReceipt(voided)
+      toast('Outlet receipt voided.', 'success')
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to void purchase receive.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to void outlet receipt.'), 'error')
     } finally {
       setVoiding(false)
     }
   }
 
-  const recordName = activeReceive?.referenceNumber ?? ''
-  const tabTitle = mode === 'create' ? 'New Purchase Receive' : recordName || 'Purchase Receive'
+  const recordName = activeReceipt?.referenceNumber ?? ''
+  const tabTitle = mode === 'create' ? 'New Outlet Receipt' : recordName || 'Outlet Receipt'
 
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold">Purchase Receives</h1>
+        <h1 className="text-2xl font-bold">Outlet Receipts</h1>
         <div className="flex flex-wrap items-center gap-2">
           <SearchableSelect
-            value={filters.warehouseId ?? ''}
-            onChange={v => setFilters(prev => ({ ...prev, warehouseId: v }))}
-            options={warehouses.map(w => ({ value: String(w.id), label: w.name }))}
-            placeholder="All warehouses"
+            value={filters.customerId ?? ''}
+            onChange={v => setFilters(prev => ({ ...prev, customerId: v }))}
+            options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
+            placeholder="All outlets"
             className="w-44"
           />
           <ReloadButton onReload={reload} loading={listLoading} />
@@ -428,28 +392,28 @@ export function PurchaseReceivesPage() {
 
       {inRecordTab && (
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-3xl">
-          {mode === 'view' && activeReceive ? (
+          {mode === 'view' && activeReceipt ? (
             <div className="space-y-4">
-              <OriginNotice origin={activeReceive.origin} />
+              <OriginNotice origin={activeReceipt.origin} />
               <DocSheet>
-                {activeReceive.voided && <DocStamp text="Voided" />}
-                <DocLetterhead company={<CompanyField id="prcv-company" readOnly name={activeReceive.companyName} />}>
-                  <DocHeader title="Receiving Report" number={activeReceive.referenceNumber}>
+                {activeReceipt.voided && <DocStamp text="Voided" />}
+                <DocLetterhead company={<CompanyField id="orcv-company" readOnly name={activeReceipt.companyName} />}>
+                  <DocHeader title="Outlet Receiving Report" number={activeReceipt.referenceNumber}>
                     <DocRow>
-                      <DocCell label="Receipt Date"><DocText>{formatDate(activeReceive.receiptDate)}</DocText></DocCell>
-                      <DocCell label="Sheet #"><DocText>{activeReceive.sheetNumber}</DocText></DocCell>
+                      <DocCell label="Receipt Date"><DocText>{formatDate(activeReceipt.receiptDate)}</DocText></DocCell>
+                      <DocCell label="Sheet #"><DocText>{activeReceipt.sheetNumber}</DocText></DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Supplier"><DocText>{activeReceive.supplierName}</DocText></DocCell>
-                  <DocCell label="Received At (Warehouse)"><DocText>{activeReceive.warehouseName}</DocText></DocCell>
+                  <DocCell label="Outlet"><DocText>{activeReceipt.customerName}</DocText></DocCell>
+                  <DocCell label="Received At (Warehouse)"><DocText>{activeReceipt.warehouseName}</DocText></DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Received Against"><DocText>{sourceLabel(activeReceive)}</DocText></DocCell>
+                  <DocCell label="Delivery Receipt No."><DocText>{activeReceipt.deliveryReceiptReferenceNumber}</DocText></DocCell>
                 </DocRow>
                 <DocLines
-                  rows={byLineNumber(activeReceive.lines)}
+                  rows={byLineNumber(activeReceipt.lines)}
                   rowKey={line => line.id}
                   lineNumber={line => line.lineNumber}
                   minRows={5}
@@ -459,14 +423,14 @@ export function PurchaseReceivesPage() {
                   ]}
                 />
                 <DocRow>
-                  <DocCell label="Remarks"><DocText>{activeReceive.remarks}</DocText></DocCell>
+                  <DocCell label="Remarks"><DocText>{activeReceipt.remarks}</DocText></DocCell>
                 </DocRow>
-                <TransactionHistory activity={activity} record={activeReceive} />
+                <TransactionHistory activity={activity} record={activeReceipt} />
               </DocSheet>
 
               <div className={RECORD_ACTIONS}>
-                <TransactionActionsMenu activity={activity} voided={activeReceive.voided} />
-                {canVoid && !activeReceive.voided && (
+                <TransactionActionsMenu activity={activity} voided={activeReceipt.voided} />
+                {canVoid && !activeReceipt.voided && (
                   <Button type="button" variant="outline" onClick={handleVoid} loading={voiding}>
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -474,9 +438,9 @@ export function PurchaseReceivesPage() {
                 )}
                 {canPrint && (
                   <PrintButton
-                    companyId={activeReceive.companyId}
-                    documentType="PURCHASE_RECEIVE"
-                    data={activeReceive as unknown as Record<string, unknown>}
+                    companyId={activeReceipt.companyId}
+                    documentType="OUTLET_RECEIPT"
+                    data={activeReceipt as unknown as Record<string, unknown>}
                     onError={printFailed}
                   />
                 )}
@@ -488,7 +452,7 @@ export function PurchaseReceivesPage() {
               <DocSheet>
                 <DocLetterhead company={
                     <CompanyField
-                      id="prcv-company"
+                      id="orcv-company"
                       readOnly={!showCompanyColumn}
                       name={companyOptions.find(c => c.id === companyId)?.name}
                       companies={companyOptions}
@@ -497,61 +461,48 @@ export function PurchaseReceivesPage() {
                       autoFocus={showCompanyColumn}
                     />
                 }>
-                  <DocHeader title="Receiving Report" number={<PendingNumber />}>
+                  <DocHeader title="Outlet Receiving Report" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Receipt Date" htmlFor="prcv-date" required>
-                        <Input id="prcv-date" type="date" value={receiptDate}
+                      <DocCell label="Receipt Date" htmlFor="orcv-date" required>
+                        <Input id="orcv-date" type="date" value={receiptDate}
                           onChange={e => setReceiptDate(e.target.value)} required />
                       </DocCell>
-                      <DocCell label="Sheet #" htmlFor="prcv-sheet">
-                        <Input id="prcv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      <DocCell label="Sheet #" htmlFor="orcv-sheet">
+                        <Input id="orcv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
                       </DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Supplier" htmlFor="prcv-supplier" required>
+                  <DocCell label="Outlet" htmlFor="orcv-outlet" required>
                     <SearchableSelect
-                      id="prcv-supplier"
-                      value={supplierId === '' ? '' : String(supplierId)}
-                      onChange={v => handleSupplierChange(v ? Number(v) : '')}
-                      options={formSuppliers.map(s => ({ value: String(s.id), label: s.name }))}
+                      id="orcv-outlet"
+                      value={customerId === '' ? '' : String(customerId)}
+                      onChange={v => handleOutletChange(v ? Number(v) : '')}
+                      options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
                       disabled={!companyId}
                       autoFocus={!showCompanyColumn}
                     />
                   </DocCell>
                   <DocCell label="Received At (Warehouse)">
                     <DocText className={cn(!warehouseName && 'italic text-[hsl(var(--muted-foreground))]')}>
-                      {warehouseName || 'Derived from the selected source'}
+                      {warehouseName || 'The outlet\'s warehouse, from the delivery receipt'}
                     </DocText>
                   </DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Receive Against" htmlFor="prcv-mode" required>
+                  <DocCell label="Delivery Receipt No." htmlFor="orcv-source" required>
                     <SearchableSelect
-                      id="prcv-mode"
-                      value={sourceMode}
-                      onChange={v => handleSourceModeChange((v || 'PURCHASE_ORDER') as SourceMode)}
-                      options={[
-                        { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
-                        { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice (Direct)' },
-                      ]}
-                      disabled={!companyId}
+                      id="orcv-source"
+                      value={deliveryReceiptId === '' ? '' : String(deliveryReceiptId)}
+                      onChange={v => handleDeliveryReceiptChange(v ? Number(v) : '')}
+                      options={eligibleDeliveryReceipts.map(dr => ({ value: String(dr.id), label: `${dr.referenceNumber} — ${formatDate(dr.transactionDate)}` }))}
+                      placeholder={customerId ? undefined : 'Select an outlet first…'}
+                      disabled={!customerId}
                     />
-                  </DocCell>
-                  <DocCell label={sourceMode === 'PURCHASE_ORDER' ? 'Purchase Order No.' : 'Purchase Invoice No.'} htmlFor="prcv-source" required>
-                    <SearchableSelect
-                      id="prcv-source"
-                      value={sourceId === '' ? '' : String(sourceId)}
-                      onChange={v => handleSourceChange(v ? Number(v) : '')}
-                      options={(sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices)
-                        .map(s => ({ value: String(s.id), label: s.referenceNumber }))}
-                      placeholder={supplierId ? undefined : 'Select a supplier first…'}
-                      disabled={!supplierId}
-                    />
-                    {supplierId && (sourceMode === 'PURCHASE_ORDER' ? eligiblePurchaseOrders : eligiblePurchaseInvoices).length === 0 && (
+                    {customerId && eligibleDeliveryReceipts.length === 0 && (
                       <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        No open (not voided, not yet fully processed) {sourceMode === 'PURCHASE_ORDER' ? 'purchase orders' : 'Direct purchase invoices'} found for this supplier.
+                        No open (not voided, not yet fully received) delivery receipts found for this outlet.
                       </p>
                     )}
                   </DocCell>
@@ -591,13 +542,13 @@ export function PurchaseReceivesPage() {
                   ]}
                   footer={lines.length === 0 && (
                     <p className="py-1 text-xs text-[hsl(var(--muted-foreground))]">
-                      Select a source above to load its outstanding (not yet received) items.
+                      Select a delivery receipt above to load its outstanding (not yet received) items.
                     </p>
                   )}
                 />
                 <DocRow>
-                  <DocCell label="Remarks" htmlFor="prcv-remarks">
-                    <Input id="prcv-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  <DocCell label="Remarks" htmlFor="orcv-remarks">
+                    <Input id="orcv-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
                   </DocCell>
                 </DocRow>
                 <TransactionHistory pending />
@@ -605,7 +556,7 @@ export function PurchaseReceivesPage() {
 
               <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Purchase Receive</Button>
+                <Button type="submit" loading={loading}>Post Outlet Receipt</Button>
               </div>
             </form>
           )}
@@ -622,9 +573,9 @@ export function PurchaseReceivesPage() {
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
+                {isVisible('outlet') && <th className="text-left py-2 px-4 font-medium">Outlet</th>}
                 {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
-                {isVisible('supplier') && <th className="text-left py-2 px-4 font-medium">Supplier</th>}
-                {isVisible('source') && <th className="text-left py-2 px-4 font-medium">Source</th>}
+                {isVisible('source') && <th className="text-left py-2 px-4 font-medium">Delivery Receipt</th>}
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Receipt Date</th>}
                 {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
@@ -635,37 +586,37 @@ export function PurchaseReceivesPage() {
                 isVisible={isVisible}
                 values={filters}
                 onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-                filterable={key => key !== 'warehouse' && key !== 'supplier' && key !== 'company' && key !== 'source' && key !== 'voided'}
+                filterable={key => key !== 'outlet' && key !== 'warehouse' && key !== 'company' && key !== 'source' && key !== 'voided'}
               />
             </thead>
             <tbody>
-              {receives.length === 0 ? (
+              {receipts.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No purchase receives match your search/filters.' : 'No purchase receives to display.'}
+                    {isFiltering ? 'No outlet receipts match your search/filters.' : 'No outlet receipts to display.'}
                   </td>
                 </tr>
               ) : (
-                receives.map((receive, i) => (
+                receipts.map((receipt, i) => (
                   <tr
-                    key={receive.id}
-                    onClick={() => { setActiveIndex(i); openView(receive) }}
+                    key={receipt.id}
+                    onClick={() => { setActiveIndex(i); openView(receipt) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.companyName}</td>}
-                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receive.referenceNumber}</td>}
-                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.sheetNumber ?? '—'}</td>}
-                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.warehouseName}</td>}
-                    {isVisible('supplier') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.supplierName}</td>}
-                    {isVisible('source') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{sourceLabel(receive)}</td>}
-                    {isVisible('date') && <td className="py-2 px-4">{formatDate(receive.receiptDate)}</td>}
-                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receive.origin} /></td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.companyName}</td>}
+                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receipt.referenceNumber}</td>}
+                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.sheetNumber ?? '—'}</td>}
+                    {isVisible('outlet') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.customerName}</td>}
+                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.warehouseName}</td>}
+                    {isVisible('source') && <td className="py-2 px-4 font-mono text-xs text-[hsl(var(--muted-foreground))]">{receipt.deliveryReceiptReferenceNumber}</td>}
+                    {isVisible('date') && <td className="py-2 px-4">{formatDate(receipt.receiptDate)}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receipt.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
-                        {receive.voided && (
+                        {receipt.voided && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
                             Voided
                           </span>
@@ -673,7 +624,7 @@ export function PurchaseReceivesPage() {
                       </td>
                     )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => openView(receive)}>
+                      <Button variant="ghost" size="sm" onClick={() => openView(receipt)}>
                         <Eye className="w-4 h-4" />
                       </Button>
                     </td>

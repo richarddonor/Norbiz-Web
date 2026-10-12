@@ -37,14 +37,14 @@ const DOCUMENT_TYPES = [
   { value: 'INVENTORY_ADJUSTMENT', label: 'Inventory Adjustment' },
   { value: 'PURCHASE_ORDER', label: 'Purchase Order' },
   { value: 'PURCHASE_INVOICE', label: 'Purchase Invoice' },
-  { value: 'PURCHASE_RECEIVE', label: 'Purchase Receive' },
+  { value: 'PURCHASE_RECEIPT', label: 'Purchase Receipt' },
   { value: 'DELIVERY_RECEIPT', label: 'Delivery Receipt' },
-  { value: 'OUTLET_RECEIVE', label: 'Outlet Receive' },
+  { value: 'OUTLET_RECEIPT', label: 'Outlet Receipt' },
   { value: 'OUTLET_DELIVERY_RECEIPT', label: 'Outlet Delivery Receipt' },
   { value: 'OUTLET_DELIVERY_RETURN', label: 'Outlet Delivery Return' },
   { value: 'STOCK_TRANSFER', label: 'Stock Transfer' },
-  { value: 'OUTLET_PULL_OUT', label: 'Outlet Pull Out' },
-  { value: 'PULL_OUT_RECEIVE', label: 'Pull Out Receive' },
+  { value: 'OUTLET_PULL_OUT', label: 'Outlet Pull-out' },
+  { value: 'PULL_OUT_RECEIPT', label: 'Pull-out Receipt' },
   { value: 'ASSEMBLY', label: 'Assembly' },
 ]
 

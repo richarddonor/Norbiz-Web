@@ -61,7 +61,7 @@ export interface TransactionLookupOption {
   /** Delivery Receipt / Outlet Delivery Receipt only (the outlet customer) */
   customerId: number | null
   customerName: string | null
-  /** Delivery Receipt / Outlet Delivery Receipt: the outlet's warehouse, where the receive/return posts */
+  /** Delivery Receipt / Outlet Delivery Receipt: the outlet's warehouse, where the receipt/return posts */
   warehouseId: number
   warehouseName: string
   /** Outlet Delivery Receipt only: the agent credited with the sale */
@@ -95,7 +95,7 @@ export interface BillOfMaterialLookupOption {
  *
  * Also refetches whenever its workspace tab is re-activated: record tabs stay mounted
  * in the background, so without this a form opened before a record was created in
- * another tab (e.g. a new Delivery Receipt for an open Outlet Receive) would never
+ * another tab (e.g. a new Delivery Receipt for an open Outlet Receipt) would never
  * see it. The current options stay visible while the refresh loads.
  */
 export function useLookup<T>(

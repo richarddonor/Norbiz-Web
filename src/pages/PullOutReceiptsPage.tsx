@@ -42,23 +42,23 @@ interface CompanyOption {
   name: string
 }
 
-interface OutletReceiveLine {
+interface PullOutReceiptLine {
   id: number
   lineNumber: number
   itemId: number
   itemCode: string
   itemName: string
-  deliveryReceiptLineId: number
+  outletPullOutLineId: number
   quantity: string
   quantityLoaded: string
 }
 
-interface OutletReceive {
+interface PullOutReceipt {
   id: number
   companyId: number
   companyName: string
-  deliveryReceiptId: number
-  deliveryReceiptReferenceNumber: string
+  outletPullOutId: number
+  outletPullOutReferenceNumber: string
   customerId: number
   customerName: string
   warehouseId: number
@@ -74,7 +74,7 @@ interface OutletReceive {
   voidedAt: string | null
   voidedBy: string | null
   loaded: boolean
-  lines: OutletReceiveLine[]
+  lines: PullOutReceiptLine[]
 }
 
 interface LineDraft {
@@ -93,7 +93,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'sheetNumber', label: 'Sheet #' },
     { key: 'outlet', label: 'Outlet' },
     { key: 'warehouse', label: 'Warehouse' },
-    { key: 'source', label: 'Delivery Receipt' },
+    { key: 'source', label: 'Outlet Pull-out' },
     { key: 'date', label: 'Receipt Date', type: 'date' },
     ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
@@ -106,12 +106,12 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function receiveSearchText(r: OutletReceive): string {
-  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.deliveryReceiptReferenceNumber,
+function receiveSearchText(r: PullOutReceipt): string {
+  return [r.referenceNumber, r.sheetNumber ?? '', r.customerName, r.warehouseName, r.outletPullOutReferenceNumber,
     r.remarks ?? '', r.companyName, formatDate(r.receiptDate)].join(' ')
 }
 
-export function OutletReceivesPage() {
+export function PullOutReceiptsPage() {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn, companies } = useAuth()
   const { zone } = useContentFocus()
@@ -125,9 +125,9 @@ export function OutletReceivesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receives, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletReceive>('/outlet-receives', {
+  const { items: receipts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PullOutReceipt>('/pull-out-receipts', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load outlet receives.', 'error'),
+    onError: () => toast('Failed to load pull-out receipts.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: receiveSearchText,
@@ -136,16 +136,16 @@ export function OutletReceivesPage() {
   const companyOptions = isSuperAdmin ? allCompanies : companies
 
   const [mode, setMode]                       = useState<FormMode>('view')
-  const rec = useRecordTab<OutletReceive>({
+  const rec = useRecordTab<PullOutReceipt>({
     mode,
     onOpen: { view: openView, create: openCreate },
     onRequestClose: requestClose,
-    fetchRecord: id => apiFetch<OutletReceive>(`/outlet-receives/${id}`),
+    fetchRecord: id => apiFetch<PullOutReceipt>(`/pull-out-receipts/${id}`),
   })
-  const [activeReceive, setActiveReceive]     = useState<OutletReceive | null>(null)
+  const [activeReceipt, setActiveReceipt]     = useState<PullOutReceipt | null>(null)
   const [companyId, setCompanyId]             = useState<number | ''>('')
   const [customerId, setCustomerId]           = useState<number | ''>('')
-  const [deliveryReceiptId, setDeliveryReceiptId] = useState<number | ''>('')
+  const [outletPullOutId, setOutletPullOutId] = useState<number | ''>('')
   const [warehouseId, setWarehouseId]         = useState<number | ''>('')
   const [receiptDate, setReceiptDate]         = useState(todayIso())
   const [remarks, setRemarks]                 = useState('')
@@ -156,24 +156,24 @@ export function OutletReceivesPage() {
   const lookupCompanyId = companyId || activeCompanyId
   const creating = inRecordTab && mode === 'create'
   const outlets = useLookup<LookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
-  // openOnly (the default) keeps only outlet DRs that are neither voided nor fully received.
-  const openDeliveryReceipts = useLookup<TransactionLookupOption>('delivery-receipts', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load delivery receipts.', 'error') })
-  const eligibleDeliveryReceipts = customerId ? openDeliveryReceipts.filter(dr => dr.customerId === customerId) : []
-  const selectedDeliveryReceipt = deliveryReceiptId ? eligibleDeliveryReceipts.find(dr => dr.id === deliveryReceiptId) : undefined
-  const warehouseName = warehouseId ? selectedDeliveryReceipt?.warehouseName ?? '' : ''
-  // A receive moves stock from in transit to on hand in the outlet warehouse, so both balances are shown.
+  // openOnly (the default) keeps only outlet pull-outs that are neither voided nor fully received.
+  const openOutletPullOuts = useLookup<TransactionLookupOption>('outlet-pull-outs', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load outlet pull-outs.', 'error') })
+  const eligibleOutletPullOuts = customerId ? openOutletPullOuts.filter(po => po.customerId === customerId) : []
+  const selectedOutletPullOut = outletPullOutId ? eligibleOutletPullOuts.find(po => po.id === outletPullOutId) : undefined
+  const warehouseName = warehouseId ? selectedOutletPullOut?.warehouseName ?? '' : ''
+  // A receipt moves stock from in transit to on hand in the main warehouse, so both balances are shown.
   const stock = useStock(lookupCompanyId, warehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
-  const { isVisible, menu: columnMenu } = useColumnVisibility('outlet-receives')
+  const { isVisible, menu: columnMenu } = useColumnVisibility('pull-out-receipts')
   const { markClean, guardedClose } = useDirtyGuard()
 
-  const canCreate = hasPermission('CREATE_OUTLET_RECEIVE')
+  const canCreate = hasPermission('CREATE_PULL_OUT_RECEIPT')
   const canPrint = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
-  const canVoid = hasPermission('VOID_OUTLET_RECEIVE')
+  const canVoid = hasPermission('VOID_PULL_OUT_RECEIPT')
   const [voiding, setVoiding] = useState(false)
-  const activity = useTransactionActivity('OUTLET_RECEIVE', inRecordTab && mode === 'view' ? activeReceive?.id : null, activeReceive?.referenceNumber, activeReceive?.voided)
+  const activity = useTransactionActivity('PULL_OUT_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
-    items: receives,
+    items: receipts,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -191,27 +191,27 @@ export function OutletReceivesPage() {
     }
   }, [])
 
-  function openView(receive: OutletReceive) {
-    if (!rec.isRecordTab) return rec.open('view', receive)
-    setActiveReceive(receive)
+  function openView(receipt: PullOutReceipt) {
+    if (!rec.isRecordTab) return rec.open('view', receipt)
+    setActiveReceipt(receipt)
     setMode('view')
   }
 
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
-    setActiveReceive(null)
+    setActiveReceipt(null)
     const nextCompanyId = activeCompanyId ?? ''
     const nextDate = todayIso()
     setCompanyId(nextCompanyId)
     setCustomerId('')
-    setDeliveryReceiptId('')
+    setOutletPullOutId('')
     setWarehouseId('')
     setReceiptDate(nextDate)
     setRemarks('')
     setSheetNumber('')
     setLines([])
     markClean({
-      companyId: nextCompanyId, customerId: '', deliveryReceiptId: '', warehouseId: '',
+      companyId: nextCompanyId, customerId: '', outletPullOutId: '', warehouseId: '',
       receiptDate: nextDate, remarks: '', sheetNumber: '', lines: [],
     })
     setMode('create')
@@ -219,7 +219,7 @@ export function OutletReceivesPage() {
 
   function requestClose() {
     guardedClose(
-      { companyId, customerId, deliveryReceiptId, warehouseId, receiptDate, remarks, sheetNumber, lines },
+      { companyId, customerId, outletPullOutId, warehouseId, receiptDate, remarks, sheetNumber, lines },
       () => rec.close()
     )
   }
@@ -227,16 +227,16 @@ export function OutletReceivesPage() {
   function handleCompanyChange(value: number | '') {
     setCompanyId(value)
     setCustomerId('')
-    setDeliveryReceiptId('')
+    setOutletPullOutId('')
     setWarehouseId('')
     setLines([])
   }
 
-  // Picking the outlet narrows which Delivery Receipts are selectable,
-  // so changing it invalidates whatever receipt/warehouse/lines were already derived.
+  // Picking the outlet narrows which Outlet Pull-outs are selectable,
+  // so changing it invalidates whatever pull-out/warehouse/lines were already derived.
   function handleOutletChange(id: number | '') {
     setCustomerId(id)
-    setDeliveryReceiptId('')
+    setOutletPullOutId('')
     setWarehouseId('')
     setLines([])
   }
@@ -250,9 +250,9 @@ export function OutletReceivesPage() {
       .filter(l => Number(l.outstanding) > 0)
   }
 
-  function handleDeliveryReceiptChange(id: number | '') {
-    setDeliveryReceiptId(id)
-    const source = id ? eligibleDeliveryReceipts.find(dr => dr.id === id) : undefined
+  function handleOutletPullOutChange(id: number | '') {
+    setOutletPullOutId(id)
+    const source = id ? eligibleOutletPullOuts.find(po => po.id === id) : undefined
     if (!source) {
       setWarehouseId('')
       setLines([])
@@ -276,8 +276,8 @@ export function OutletReceivesPage() {
       toast('Select an outlet.', 'error')
       return
     }
-    if (!deliveryReceiptId) {
-      toast('Select a delivery receipt to receive.', 'error')
+    if (!outletPullOutId) {
+      toast('Select an outlet pull-out to receive.', 'error')
       return
     }
     const validLines = lines.filter(l => l.quantity.trim() !== '' && Number(l.quantity) > 0)
@@ -290,23 +290,23 @@ export function OutletReceivesPage() {
       toast(`Quantity to receive for ${overLine.itemCode} exceeds the outstanding amount (${overLine.outstanding}).`, 'error')
       return
     }
-    if (!window.confirm('Post this outlet receive? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this pull-out receipt? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
         companyId,
-        deliveryReceiptId,
+        outletPullOutId,
         receiptDate,
         remarks: remarks || null,
         sheetNumber: sheetNumber || null,
         lines: validLines.map(l => ({ itemId: l.itemId, quantity: Number(l.quantity) })),
       }
-      await apiFetch<OutletReceive>('/outlet-receives', { method: 'POST', body: JSON.stringify(body) })
-      toast('Outlet receive posted successfully.', 'success')
+      await apiFetch<PullOutReceipt>('/pull-out-receipts', { method: 'POST', body: JSON.stringify(body) })
+      toast('Outlet receipt posted successfully.', 'success')
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to post outlet receive.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to post pull-out receipt.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -314,7 +314,7 @@ export function OutletReceivesPage() {
 
   async function handleExport() {
     const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<OutletReceive>(qs ? `/outlet-receives?${qs}` : '/outlet-receives', 100000)
+    const all = await fetchAllContent<PullOutReceipt>(qs ? `/pull-out-receipts?${qs}` : '/pull-out-receipts', 100000)
     const term = debouncedSearch.trim().toLowerCase()
     const matching = term ? all.filter(r => receiveSearchText(r).toLowerCase().includes(term)) : all
     const rows = matching.map(r => ({
@@ -322,47 +322,47 @@ export function OutletReceivesPage() {
       sheetNumber: r.sheetNumber ?? '',
       outlet: r.customerName,
       warehouse: r.warehouseName,
-      source: r.deliveryReceiptReferenceNumber,
+      source: r.outletPullOutReferenceNumber,
       date: formatDate(r.receiptDate),
       voided: r.voided ? 'Yes' : '',
       origin: originLabel(r.origin),
       company: r.companyName,
     }))
-    exportToXlsx('outlet-receives', COLUMNS.filter(c => isVisible(c.key)), rows)
+    exportToXlsx('pull-out-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
   }
 
   function printFailed() {
-    if (!activeReceive) return
+    if (!activeReceipt) return
     toast(
-      `No active print template configured for Outlet Receives under ${activeReceive.companyName}. Create one under Document Templates while ${activeReceive.companyName} is your active company.`,
+      `No active print template configured for Pull-out Receipts under ${activeReceipt.companyName}. Create one under Document Templates while ${activeReceipt.companyName} is your active company.`,
       'error'
     )
   }
 
   async function handleVoid() {
-    if (!activeReceive) return
-    if (!window.confirm(`Void outlet receive "${activeReceive.referenceNumber}"? This puts the quantities back in transit, reopens ${activeReceive.deliveryReceiptReferenceNumber}, and cannot be undone.`)) return
+    if (!activeReceipt) return
+    if (!window.confirm(`Void pull-out receipt "${activeReceipt.referenceNumber}"? This puts the quantities back in transit, reopens ${activeReceipt.outletPullOutReferenceNumber}, and cannot be undone.`)) return
     setVoiding(true)
     try {
-      const voided = await apiFetch<OutletReceive>(`/outlet-receives/${activeReceive.id}/void`, { method: 'POST' })
-      setActiveReceive(voided)
-      toast('Outlet receive voided.', 'success')
+      const voided = await apiFetch<PullOutReceipt>(`/pull-out-receipts/${activeReceipt.id}/void`, { method: 'POST' })
+      setActiveReceipt(voided)
+      toast('Outlet receipt voided.', 'success')
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to void outlet receive.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to void pull-out receipt.'), 'error')
     } finally {
       setVoiding(false)
     }
   }
 
-  const recordName = activeReceive?.referenceNumber ?? ''
-  const tabTitle = mode === 'create' ? 'New Outlet Receive' : recordName || 'Outlet Receive'
+  const recordName = activeReceipt?.referenceNumber ?? ''
+  const tabTitle = mode === 'create' ? 'New Pull-out Receipt' : recordName || 'Pull-out Receipt'
 
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold">Outlet Receives</h1>
+        <h1 className="text-2xl font-bold">Pull-out Receipts</h1>
         <div className="flex flex-wrap items-center gap-2">
           <SearchableSelect
             value={filters.customerId ?? ''}
@@ -392,28 +392,28 @@ export function OutletReceivesPage() {
 
       {inRecordTab && (
         <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-3xl">
-          {mode === 'view' && activeReceive ? (
+          {mode === 'view' && activeReceipt ? (
             <div className="space-y-4">
-              <OriginNotice origin={activeReceive.origin} />
+              <OriginNotice origin={activeReceipt.origin} />
               <DocSheet>
-                {activeReceive.voided && <DocStamp text="Voided" />}
-                <DocLetterhead company={<CompanyField id="orcv-company" readOnly name={activeReceive.companyName} />}>
-                  <DocHeader title="Outlet Receiving Report" number={activeReceive.referenceNumber}>
+                {activeReceipt.voided && <DocStamp text="Voided" />}
+                <DocLetterhead company={<CompanyField id="porcv-company" readOnly name={activeReceipt.companyName} />}>
+                  <DocHeader title="Pull-out Receiving Report" number={activeReceipt.referenceNumber}>
                     <DocRow>
-                      <DocCell label="Receipt Date"><DocText>{formatDate(activeReceive.receiptDate)}</DocText></DocCell>
-                      <DocCell label="Sheet #"><DocText>{activeReceive.sheetNumber}</DocText></DocCell>
+                      <DocCell label="Receipt Date"><DocText>{formatDate(activeReceipt.receiptDate)}</DocText></DocCell>
+                      <DocCell label="Sheet #"><DocText>{activeReceipt.sheetNumber}</DocText></DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Outlet"><DocText>{activeReceive.customerName}</DocText></DocCell>
-                  <DocCell label="Received At (Warehouse)"><DocText>{activeReceive.warehouseName}</DocText></DocCell>
+                  <DocCell label="Outlet"><DocText>{activeReceipt.customerName}</DocText></DocCell>
+                  <DocCell label="Received At (Warehouse)"><DocText>{activeReceipt.warehouseName}</DocText></DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Delivery Receipt No."><DocText>{activeReceive.deliveryReceiptReferenceNumber}</DocText></DocCell>
+                  <DocCell label="Outlet Pull-out No."><DocText>{activeReceipt.outletPullOutReferenceNumber}</DocText></DocCell>
                 </DocRow>
                 <DocLines
-                  rows={byLineNumber(activeReceive.lines)}
+                  rows={byLineNumber(activeReceipt.lines)}
                   rowKey={line => line.id}
                   lineNumber={line => line.lineNumber}
                   minRows={5}
@@ -423,14 +423,14 @@ export function OutletReceivesPage() {
                   ]}
                 />
                 <DocRow>
-                  <DocCell label="Remarks"><DocText>{activeReceive.remarks}</DocText></DocCell>
+                  <DocCell label="Remarks"><DocText>{activeReceipt.remarks}</DocText></DocCell>
                 </DocRow>
-                <TransactionHistory activity={activity} record={activeReceive} />
+                <TransactionHistory activity={activity} record={activeReceipt} />
               </DocSheet>
 
               <div className={RECORD_ACTIONS}>
-                <TransactionActionsMenu activity={activity} voided={activeReceive.voided} />
-                {canVoid && !activeReceive.voided && (
+                <TransactionActionsMenu activity={activity} voided={activeReceipt.voided} />
+                {canVoid && !activeReceipt.voided && (
                   <Button type="button" variant="outline" onClick={handleVoid} loading={voiding}>
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -438,9 +438,9 @@ export function OutletReceivesPage() {
                 )}
                 {canPrint && (
                   <PrintButton
-                    companyId={activeReceive.companyId}
-                    documentType="OUTLET_RECEIVE"
-                    data={activeReceive as unknown as Record<string, unknown>}
+                    companyId={activeReceipt.companyId}
+                    documentType="PULL_OUT_RECEIPT"
+                    data={activeReceipt as unknown as Record<string, unknown>}
                     onError={printFailed}
                   />
                 )}
@@ -452,7 +452,7 @@ export function OutletReceivesPage() {
               <DocSheet>
                 <DocLetterhead company={
                     <CompanyField
-                      id="orcv-company"
+                      id="porcv-company"
                       readOnly={!showCompanyColumn}
                       name={companyOptions.find(c => c.id === companyId)?.name}
                       companies={companyOptions}
@@ -461,22 +461,22 @@ export function OutletReceivesPage() {
                       autoFocus={showCompanyColumn}
                     />
                 }>
-                  <DocHeader title="Outlet Receiving Report" number={<PendingNumber />}>
+                  <DocHeader title="Pull-out Receiving Report" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Receipt Date" htmlFor="orcv-date" required>
-                        <Input id="orcv-date" type="date" value={receiptDate}
+                      <DocCell label="Receipt Date" htmlFor="porcv-date" required>
+                        <Input id="porcv-date" type="date" value={receiptDate}
                           onChange={e => setReceiptDate(e.target.value)} required />
                       </DocCell>
-                      <DocCell label="Sheet #" htmlFor="orcv-sheet">
-                        <Input id="orcv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      <DocCell label="Sheet #" htmlFor="porcv-sheet">
+                        <Input id="porcv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
                       </DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
                 <DocRow>
-                  <DocCell label="Outlet" htmlFor="orcv-outlet" required>
+                  <DocCell label="Outlet" htmlFor="porcv-outlet" required>
                     <SearchableSelect
-                      id="orcv-outlet"
+                      id="porcv-outlet"
                       value={customerId === '' ? '' : String(customerId)}
                       onChange={v => handleOutletChange(v ? Number(v) : '')}
                       options={outlets.map(o => ({ value: String(o.id), label: o.name }))}
@@ -486,23 +486,23 @@ export function OutletReceivesPage() {
                   </DocCell>
                   <DocCell label="Received At (Warehouse)">
                     <DocText className={cn(!warehouseName && 'italic text-[hsl(var(--muted-foreground))]')}>
-                      {warehouseName || 'The outlet\'s warehouse, from the delivery receipt'}
+                      {warehouseName || 'The company\'s main warehouse'}
                     </DocText>
                   </DocCell>
                 </DocRow>
                 <DocRow>
-                  <DocCell label="Delivery Receipt No." htmlFor="orcv-source" required>
+                  <DocCell label="Outlet Pull-out No." htmlFor="porcv-source" required>
                     <SearchableSelect
-                      id="orcv-source"
-                      value={deliveryReceiptId === '' ? '' : String(deliveryReceiptId)}
-                      onChange={v => handleDeliveryReceiptChange(v ? Number(v) : '')}
-                      options={eligibleDeliveryReceipts.map(dr => ({ value: String(dr.id), label: `${dr.referenceNumber} — ${formatDate(dr.transactionDate)}` }))}
+                      id="porcv-source"
+                      value={outletPullOutId === '' ? '' : String(outletPullOutId)}
+                      onChange={v => handleOutletPullOutChange(v ? Number(v) : '')}
+                      options={eligibleOutletPullOuts.map(po => ({ value: String(po.id), label: `${po.referenceNumber} — ${formatDate(po.transactionDate)}` }))}
                       placeholder={customerId ? undefined : 'Select an outlet first…'}
                       disabled={!customerId}
                     />
-                    {customerId && eligibleDeliveryReceipts.length === 0 && (
+                    {customerId && eligibleOutletPullOuts.length === 0 && (
                       <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        No open (not voided, not yet fully received) delivery receipts found for this outlet.
+                        No open (not voided, not yet fully received) outlet pull-outs found for this outlet.
                       </p>
                     )}
                   </DocCell>
@@ -542,13 +542,13 @@ export function OutletReceivesPage() {
                   ]}
                   footer={lines.length === 0 && (
                     <p className="py-1 text-xs text-[hsl(var(--muted-foreground))]">
-                      Select a delivery receipt above to load its outstanding (not yet received) items.
+                      Select an outlet pull-out above to load its outstanding (not yet received) items.
                     </p>
                   )}
                 />
                 <DocRow>
-                  <DocCell label="Remarks" htmlFor="orcv-remarks">
-                    <Input id="orcv-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  <DocCell label="Remarks" htmlFor="porcv-remarks">
+                    <Input id="porcv-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} />
                   </DocCell>
                 </DocRow>
                 <TransactionHistory pending />
@@ -556,7 +556,7 @@ export function OutletReceivesPage() {
 
               <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Outlet Receive</Button>
+                <Button type="submit" loading={loading}>Post Pull-out Receipt</Button>
               </div>
             </form>
           )}
@@ -575,7 +575,7 @@ export function OutletReceivesPage() {
                 {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
                 {isVisible('outlet') && <th className="text-left py-2 px-4 font-medium">Outlet</th>}
                 {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
-                {isVisible('source') && <th className="text-left py-2 px-4 font-medium">Delivery Receipt</th>}
+                {isVisible('source') && <th className="text-left py-2 px-4 font-medium">Outlet Pull-out</th>}
                 {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Receipt Date</th>}
                 {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
@@ -590,33 +590,33 @@ export function OutletReceivesPage() {
               />
             </thead>
             <tbody>
-              {receives.length === 0 ? (
+              {receipts.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No outlet receives match your search/filters.' : 'No outlet receives to display.'}
+                    {isFiltering ? 'No pull-out receipts match your search/filters.' : 'No pull-out receipts to display.'}
                   </td>
                 </tr>
               ) : (
-                receives.map((receive, i) => (
+                receipts.map((receipt, i) => (
                   <tr
-                    key={receive.id}
-                    onClick={() => { setActiveIndex(i); openView(receive) }}
+                    key={receipt.id}
+                    onClick={() => { setActiveIndex(i); openView(receipt) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >
-                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.companyName}</td>}
-                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receive.referenceNumber}</td>}
-                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.sheetNumber ?? '—'}</td>}
-                    {isVisible('outlet') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.customerName}</td>}
-                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receive.warehouseName}</td>}
-                    {isVisible('source') && <td className="py-2 px-4 font-mono text-xs text-[hsl(var(--muted-foreground))]">{receive.deliveryReceiptReferenceNumber}</td>}
-                    {isVisible('date') && <td className="py-2 px-4">{formatDate(receive.receiptDate)}</td>}
-                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receive.origin} /></td>}
+                    {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.companyName}</td>}
+                    {isVisible('referenceNumber') && <td className="py-2 px-4 font-mono text-xs">{receipt.referenceNumber}</td>}
+                    {isVisible('sheetNumber') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.sheetNumber ?? '—'}</td>}
+                    {isVisible('outlet') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.customerName}</td>}
+                    {isVisible('warehouse') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{receipt.warehouseName}</td>}
+                    {isVisible('source') && <td className="py-2 px-4 font-mono text-xs text-[hsl(var(--muted-foreground))]">{receipt.outletPullOutReferenceNumber}</td>}
+                    {isVisible('date') && <td className="py-2 px-4">{formatDate(receipt.receiptDate)}</td>}
+                    {isVisible('origin') && <td className="py-2 px-4"><OriginBadge origin={receipt.origin} /></td>}
                     {isVisible('voided') && (
                       <td className="py-2 px-4">
-                        {receive.voided && (
+                        {receipt.voided && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))]">
                             Voided
                           </span>
@@ -624,7 +624,7 @@ export function OutletReceivesPage() {
                       </td>
                     )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => openView(receive)}>
+                      <Button variant="ghost" size="sm" onClick={() => openView(receipt)}>
                         <Eye className="w-4 h-4" />
                       </Button>
                     </td>

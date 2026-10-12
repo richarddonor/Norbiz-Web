@@ -65,10 +65,10 @@ interface OutletPullOut {
   /** source: the outlet's own warehouse */
   warehouseId: number
   warehouseName: string
-  /** destination: the main warehouse holding the pull out in transit */
+  /** destination: the main warehouse holding the pull-out in transit */
   destinationWarehouseId: number
   destinationWarehouseName: string
-  /** null only on migrated legacy pull outs that had none */
+  /** null only on migrated legacy pull-outs that had none */
   pullOutReasonId: number | null
   pullOutReasonName: string | null
   referenceNumber: string
@@ -103,7 +103,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
     { key: 'outlet', label: 'Outlet' },
     { key: 'reason', label: 'Reason' },
     { key: 'status', label: 'Receiving' },
-    { key: 'date', label: 'Pull Out Date', type: 'date' },
+    { key: 'date', label: 'Pull-out Date', type: 'date' },
     { key: 'total', label: 'Total Amount' },
     ORIGIN_COLUMN,
     { key: 'voided', label: 'Voided', type: 'boolean' },
@@ -116,7 +116,7 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// A pull out sits in transit at the main warehouse until Pull Out Receive(s) take it in.
+// A pull-out sits in transit at the main warehouse until Pull-out Receipt(s) take it in.
 function receivingStatus(r: OutletPullOut): string {
   if (r.loaded) return 'Received'
   return r.lines.some(l => Number(l.quantityLoaded) > 0) ? 'Partially received' : 'In transit'
@@ -149,7 +149,7 @@ export function OutletPullOutsPage() {
   const inRecordTab = useIsRecordTab()
   const { items: pullOuts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletPullOut>('/outlet-pull-outs', {
     enabled: !inRecordTab,
-    onError: () => toast('Failed to load outlet pull outs.', 'error'),
+    onError: () => toast('Failed to load outlet pull-outs.', 'error'),
     search: debouncedSearch,
     filters: debouncedFilters,
     searchText: pullOutSearchText,
@@ -177,11 +177,11 @@ export function OutletPullOutsPage() {
   const lookupCompanyId = companyId || activeCompanyId
   const creating = inRecordTab && mode === 'create'
   const outlets = useLookup<CustomerLookupOption>('customers', lookupCompanyId, { enabled: !inRecordTab || creating, params: { type: 'OUTLET' }, onError: () => toast('Failed to load outlets.', 'error') })
-  const reasons = useLookup<LookupOption>('pull-out-reasons', lookupCompanyId, { enabled: !inRecordTab || creating, onError: () => toast('Failed to load pull out reasons.', 'error') })
+  const reasons = useLookup<LookupOption>('pull-out-reasons', lookupCompanyId, { enabled: !inRecordTab || creating, onError: () => toast('Failed to load pull-out reasons.', 'error') })
   const hasInventoryItems = useLookupExists('items', lookupCompanyId, { enabled: creating, params: { tag: 'INVENTORY' } })
   const selectedOutlet = customerId === '' ? undefined : outlets.find(o => o.id === customerId)
   const outletWarehouseId = selectedOutlet?.warehouseId ?? ''
-  // A pull out deducts on-hand stock from the outlet's own warehouse, so that's the balance shown as a guide.
+  // A pull-out deducts on-hand stock from the outlet's own warehouse, so that's the balance shown as a guide.
   const stock = useStock(lookupCompanyId, outletWarehouseId, lines.map(l => l.itemId), { enabled: creating, onError: () => toast('Failed to load stock balances.', 'error') })
   // Items whose quantity across all lines exceeds on-hand — on-hand can't go below zero, so Post is blocked.
   const shortStock = shortItems(lines, stock, l => Number(l.quantity))
@@ -281,7 +281,7 @@ export function OutletPullOutsPage() {
       return
     }
     if (!reasonId) {
-      toast('Select a pull out reason.', 'error')
+      toast('Select a pull-out reason.', 'error')
       return
     }
     const validLines = lines.filter(l => l.itemId !== '' && l.quantity.trim() !== '')
@@ -301,7 +301,7 @@ export function OutletPullOutsPage() {
       toast('Not enough stock on hand for the highlighted line(s) — stock cannot go below zero. Reduce the quantity or restock first.', 'error')
       return
     }
-    if (!window.confirm('Post this outlet pull out? This cannot be edited afterward — only voided.')) return
+    if (!window.confirm('Post this outlet pull-out? This cannot be edited afterward — only voided.')) return
     setLoading(true)
     try {
       const body = {
@@ -318,11 +318,11 @@ export function OutletPullOutsPage() {
         })),
       }
       await apiFetch<OutletPullOut>('/outlet-pull-outs', { method: 'POST', body: JSON.stringify(body) })
-      toast('Outlet pull out posted successfully.', 'success')
+      toast('Outlet pull-out posted successfully.', 'success')
       rec.close()
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to post outlet pull out.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to post outlet pull-out.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -351,37 +351,37 @@ export function OutletPullOutsPage() {
   function printFailed() {
     if (!activePullOut) return
     toast(
-      `No active print template configured for Outlet Pull Outs under ${activePullOut.companyName}. Create one under Document Templates while ${activePullOut.companyName} is your active company.`,
+      `No active print template configured for Outlet Pull-outs under ${activePullOut.companyName}. Create one under Document Templates while ${activePullOut.companyName} is your active company.`,
       'error'
     )
   }
 
   async function handleVoid() {
     if (!activePullOut) return
-    if (!window.confirm(`Void outlet pull out "${activePullOut.referenceNumber}"? This returns the stock to ${activePullOut.warehouseName} and cannot be undone.`)) return
+    if (!window.confirm(`Void outlet pull-out "${activePullOut.referenceNumber}"? This returns the stock to ${activePullOut.warehouseName} and cannot be undone.`)) return
     setVoiding(true)
     try {
       const voided = await apiFetch<OutletPullOut>(`/outlet-pull-outs/${activePullOut.id}/void`, { method: 'POST' })
       setActivePullOut(voided)
-      toast('Outlet pull out voided.', 'success')
+      toast('Outlet pull-out voided.', 'success')
       reload()
     } catch (err) {
-      toast(mutationErrorMessage(err, 'Failed to void outlet pull out.'), 'error')
+      toast(mutationErrorMessage(err, 'Failed to void outlet pull-out.'), 'error')
     } finally {
       setVoiding(false)
     }
   }
 
   const recordName = activePullOut?.referenceNumber ?? ''
-  const tabTitle = mode === 'create' ? 'New Outlet Pull Out' : recordName || 'Outlet Pull Out'
-  // Received (even partly) at the main warehouse: the backend blocks voiding until those receives are voided.
+  const tabTitle = mode === 'create' ? 'New Outlet Pull-out' : recordName || 'Outlet Pull-out'
+  // Received (even partly) at the main warehouse: the backend blocks voiding until those receipts are voided.
   const hasReceipts = !!activePullOut && activePullOut.lines.some(l => Number(l.quantityLoaded) > 0)
 
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
       <div className="flex flex-col gap-3">
-        <h1 className="text-2xl font-bold">Outlet Pull Outs</h1>
+        <h1 className="text-2xl font-bold">Outlet Pull-outs</h1>
         <div className="flex flex-wrap items-center gap-2">
           <SearchableSelect
             value={filters.customerId ?? ''}
@@ -424,9 +424,9 @@ export function OutletPullOutsPage() {
               <DocSheet>
                 {activePullOut.voided && <DocStamp text="Voided" />}
                 <DocLetterhead company={<CompanyField id="opo-company" readOnly name={activePullOut.companyName} />}>
-                  <DocHeader title="Outlet Pull Out" number={activePullOut.referenceNumber}>
+                  <DocHeader title="Outlet Pull-out" number={activePullOut.referenceNumber}>
                     <DocRow>
-                      <DocCell label="Pull Out Date"><DocText>{formatDate(activePullOut.pullOutDate)}</DocText></DocCell>
+                      <DocCell label="Pull-out Date"><DocText>{formatDate(activePullOut.pullOutDate)}</DocText></DocCell>
                       <DocCell label="Sheet #"><DocText>{activePullOut.sheetNumber}</DocText></DocCell>
                     </DocRow>
                   </DocHeader>
@@ -469,7 +469,7 @@ export function OutletPullOutsPage() {
                     onClick={handleVoid}
                     loading={voiding}
                     disabled={hasReceipts}
-                    title={hasReceipts ? 'Received at the main warehouse — void its Pull Out Receive(s) first.' : undefined}
+                    title={hasReceipts ? 'Received at the main warehouse — void its Pull-out Receipt(s) first.' : undefined}
                   >
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
@@ -500,9 +500,9 @@ export function OutletPullOutsPage() {
                       autoFocus={showCompanyColumn}
                     />
                 }>
-                  <DocHeader title="Outlet Pull Out" number={<PendingNumber />}>
+                  <DocHeader title="Outlet Pull-out" number={<PendingNumber />}>
                     <DocRow>
-                      <DocCell label="Pull Out Date" htmlFor="opo-date" required>
+                      <DocCell label="Pull-out Date" htmlFor="opo-date" required>
                         <Input id="opo-date" type="date" value={pullOutDate}
                           onChange={e => setPullOutDate(e.target.value)} required />
                       </DocCell>
@@ -540,7 +540,7 @@ export function OutletPullOutsPage() {
                     />
                     {companyId && reasons.length === 0 && (
                       <p className="pb-1 text-xs text-[hsl(var(--muted-foreground))]">
-                        No active pull out reasons — add one on the Pull Out Reasons page first.
+                        No active pull-out reasons — add one on the Pull-out Reasons page first.
                       </p>
                     )}
                   </DocCell>
@@ -609,7 +609,7 @@ export function OutletPullOutsPage() {
                       </Button>
                       {hasInventoryItems === false && (
                         <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                          No items are tagged Inventory — tag an item on the Items page before posting an outlet pull out.
+                          No items are tagged Inventory — tag an item on the Items page before posting an outlet pull-out.
                         </span>
                       )}
                     </div>
@@ -626,7 +626,7 @@ export function OutletPullOutsPage() {
 
               <div className={RECORD_ACTIONS}>
                 <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
-                <Button type="submit" loading={loading}>Post Outlet Pull Out</Button>
+                <Button type="submit" loading={loading}>Post Outlet Pull-out</Button>
               </div>
             </form>
           )}
@@ -646,7 +646,7 @@ export function OutletPullOutsPage() {
                 {isVisible('outlet') && <th className="text-left py-2 px-4 font-medium">Outlet</th>}
                 {isVisible('reason') && <th className="text-left py-2 px-4 font-medium">Reason</th>}
                 {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Receiving</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Pull Out Date</th>}
+                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Pull-out Date</th>}
                 {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
                 {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
                 {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
@@ -664,7 +664,7 @@ export function OutletPullOutsPage() {
               {pullOuts.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.filter(c => isVisible(c.key)).length + 1} className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-                    {isFiltering ? 'No outlet pull outs match your search/filters.' : 'No outlet pull outs to display.'}
+                    {isFiltering ? 'No outlet pull-outs match your search/filters.' : 'No outlet pull-outs to display.'}
                   </td>
                 </tr>
               ) : (

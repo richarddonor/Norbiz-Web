@@ -175,7 +175,7 @@ interface DocLinesProps<T> {
   rows: readonly T[]
   rowKey?: (row: T, index: number) => React.Key
   /** Value for the `#` column — pass the saved line's `lineNumber` in view mode (a split
-   * Purchase Receive line repeats its number). Defaults to the row's position. */
+   * Purchase Receipt line repeats its number). Defaults to the row's position. */
   lineNumber?: (row: T, index: number) => React.ReactNode
   /** Pads with blank ruled rows up to this count, like a pre-printed grid (view mode). */
   minRows?: number
