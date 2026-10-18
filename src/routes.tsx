@@ -41,6 +41,7 @@ import {
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
 import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
 import { TransactionActionsPage } from '@/pages/TransactionActionsPage'
+import { DeletedRecordsPage } from '@/pages/DeletedRecordsPage'
 
 // Maps each nav path (defined once in src/lib/nav.ts) to its page component.
 const pageComponents: Record<string, ComponentType> = {
@@ -87,6 +88,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/assembly-detailed': AssemblyDetailedPage,
   '/document-templates': DocumentTemplatesPage,
   '/transaction-actions': TransactionActionsPage,
+  '/deleted-records': DeletedRecordsPage,
 }
 
 /** Every authenticated page, matched against one workspace tab's own location — each

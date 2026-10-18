@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Boxes, Barcode, Warehouse, Contact,
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
   PackageOpen, PackagePlus, FileSpreadsheet, HandCoins, Undo2, ArrowRightLeft, PackageMinus, PackageX, Hammer,
-  CircleHelp, ListTree,
+  CircleHelp, ListTree, ArchiveX,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -102,6 +102,11 @@ export const navItems: NavItem[] = [
   { to: '/roles', label: 'Roles', icon: KeyRound, permission: 'VIEW_ROLE', group: 'Access Control', recordLabel: 'Role' },
   { to: '/document-templates', label: 'Document Templates', icon: LayoutTemplate, permission: 'MANAGE_DOCUMENT_TEMPLATES', group: 'Access Control', recordLabel: 'Document Template' },
   { to: '/transaction-actions', label: 'Transaction Actions', icon: ListChecks, permission: 'MANAGE_TRANSACTION_ACTIONS', group: 'Access Control', recordLabel: 'Transaction Action' },
+  // Any master-data VIEW_ permission opens it; the page offers only the types the user can view.
+  { to: '/deleted-records', label: 'Deleted Records', icon: ArchiveX, group: 'Access Control', recordLabel: 'Deleted Record', permission: [
+    'VIEW_BRAND', 'VIEW_ITEM_CATEGORY', 'VIEW_ITEM_GROUP', 'VIEW_ITEM', 'VIEW_EMPLOYEE', 'VIEW_WAREHOUSE',
+    'VIEW_SUPPLIER', 'VIEW_CUSTOMER', 'VIEW_USER', 'VIEW_PULL_OUT_REASON', 'VIEW_BILL_OF_MATERIAL',
+  ] },
 ]
 
 export function findNavItem(pathname: string): NavItem | undefined {
