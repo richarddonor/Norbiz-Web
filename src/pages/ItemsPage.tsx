@@ -440,6 +440,8 @@ export function ItemsPage() {
   const canCreate = hasPermission('CREATE_ITEM')
   const canUpdate = hasPermission('UPDATE_ITEM')
   const canDeleteItem = hasPermission('DELETE_ITEM')
+  // Re-embedding a whole catalog is an admin action, separate from editing items.
+  const canReindexPhotos = hasPermission('REINDEX_ITEM_IMAGES')
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items,
@@ -645,7 +647,7 @@ export function ItemsPage() {
             <FileDown className="w-4 h-4" />
             Export
           </Button>
-          {canUpdate && (
+          {canReindexPhotos && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
