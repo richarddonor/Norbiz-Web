@@ -489,7 +489,7 @@ export function ItemsPage() {
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
     setActiveItem(null)
-    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set() }
+    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set(['INVENTORY']) }
     const nextCompanyId = activeCompanyId ?? ''
     setForm(nextForm)
     setCompanyId(nextCompanyId)
