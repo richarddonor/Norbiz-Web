@@ -28,9 +28,11 @@ import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
-import { isRecognitionUnavailable, itemImageUrl as imageUrl } from '@/lib/itemRecognition'
+import { isRecognitionUnavailable, itemImageUrl as imageUrl, useItemRecognitionAvailable } from '@/lib/itemRecognition'
+import { ItemRecognitionDialog } from '@/components/ItemRecognitionDialog'
+import type { ItemLookupOption } from '@/lib/lookups'
 import { cn } from '@/lib/utils'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 type FormMode = 'view' | 'create' | 'edit'
 
@@ -442,6 +444,10 @@ export function ItemsPage() {
   const canDeleteItem = hasPermission('DELETE_ITEM')
   // Re-embedding a whole catalog is an admin action, separate from editing items.
   const canReindexPhotos = hasPermission('REINDEX_ITEM_IMAGES')
+  // Finding an item by photo is for anyone on this page; it hides once the backend reports recognition unavailable.
+  const recognitionAvailable = useItemRecognitionAvailable()
+  const canFindByPhoto = recognitionAvailable && !!activeCompanyId
+  const [photoOpen, setPhotoOpen] = useState(false)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items,
@@ -510,6 +516,19 @@ export function ItemsPage() {
 
   function switchToEdit() {
     setMode('edit')
+  }
+
+  // The photo match is a lookup option, so the full item is fetched (by its code, then id) before its tab opens.
+  async function openPhotoMatch(match: ItemLookupOption) {
+    setPhotoOpen(false)
+    try {
+      const candidates = await fetchAllContent<Item>(`/items?itemCode=${encodeURIComponent(match.code ?? '')}`)
+      const item = candidates.find(i => i.id === match.id)
+      if (!item) { toast('That item could not be opened.', 'error'); return }
+      openView(item)
+    } catch {
+      toast('Failed to load item.', 'error')
+    }
   }
 
   // Background job on the backend (202): by default only images not indexed yet, `force` redoes all.
@@ -647,7 +666,7 @@ export function ItemsPage() {
             <FileDown className="w-4 h-4" />
             Export
           </Button>
-          {canReindexPhotos && (
+          {(canFindByPhoto || canReindexPhotos) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
@@ -656,10 +675,22 @@ export function ItemsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={() => reindexPhotos(false)}>Index new photos</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => reindexPhotos(true)}>Re-index all photos</DropdownMenuItem>
+                {canFindByPhoto && <DropdownMenuItem onSelect={() => setPhotoOpen(true)}>Find item by photo</DropdownMenuItem>}
+                {canFindByPhoto && canReindexPhotos && <DropdownMenuSeparator />}
+                {canReindexPhotos && <>
+                  <DropdownMenuItem onSelect={() => reindexPhotos(false)}>Index new photos</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => reindexPhotos(true)}>Re-index all photos</DropdownMenuItem>
+                </>}
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+          {canFindByPhoto && (
+            <ItemRecognitionDialog
+              open={photoOpen}
+              onOpenChange={setPhotoOpen}
+              companyId={activeCompanyId!}
+              onPick={openPhotoMatch}
+            />
           )}
           {canCreate && (
             <Button onClick={openCreate}>
