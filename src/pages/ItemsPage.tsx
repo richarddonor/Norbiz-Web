@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react'
-import { Plus, Pencil, Trash2, ImageOff, Eye, FileDown, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, ImageOff, Eye, FileDown, X, ScanSearch } from 'lucide-react'
 import { apiFetch, apiUpload, deleteErrorMessage, ApiError } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
@@ -28,9 +28,9 @@ import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
+import { isRecognitionUnavailable, itemImageUrl as imageUrl } from '@/lib/itemRecognition'
 import { cn } from '@/lib/utils'
-
-const API_BASE = import.meta.env.VITE_API_BASE as string
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 type FormMode = 'view' | 'create' | 'edit'
 
@@ -145,11 +145,6 @@ function itemToForm(item: Item): ItemForm {
     prices,
     tags: new Set(item.tags),
   }
-}
-
-function imageUrl(imagePath: string, ts?: number) {
-  const base = `${API_BASE}/item-images/${imagePath}`
-  return ts ? `${base}?v=${ts}` : base
 }
 
 function itemUnitPrice(item: Item): string {
@@ -515,10 +510,30 @@ export function ItemsPage() {
     setMode('edit')
   }
 
+  // Background job on the backend (202): by default only images not indexed yet, `force` redoes all.
+  async function reindexPhotos(force: boolean) {
+    const prompt = force
+      ? 'Re-index every item photo for photo search? This runs in the background and can take a while.'
+      : 'Index item photos that aren\'t searchable by photo yet? This runs in the background.'
+    if (!window.confirm(prompt)) return
+    try {
+      const res = await apiFetch<{ queued: number }>(`/items/image-recognition/reindex${force ? '?force=true' : ''}`, { method: 'POST' })
+      toast(res.queued === 0
+        ? 'All item photos are already indexed.'
+        : `Indexing ${res.queued} item photo${res.queued === 1 ? '' : 's'} in the background.`, 'success')
+    } catch (err) {
+      if (isRecognitionUnavailable(err)) toast('Photo search is turned off on the server.', 'error')
+      else toast(err instanceof ApiError && err.status < 500 && err.message ? err.message : 'Failed to start photo indexing.', 'error')
+    }
+  }
+
   async function uploadImage(itemId: number, file: File): Promise<string | null> {
     try {
-      const res = await apiUpload<{ imagePath: string }>(`/items/${itemId}/image`, file)
+      const res = await apiUpload<{ imagePath: string; recognitionIndexed: boolean }>(`/items/${itemId}/image`, file)
       setImageVersions(prev => ({ ...prev, [itemId]: Date.now() }))
+      if (res.recognitionIndexed === false) {
+        toast('Image saved, but it couldn\'t be indexed for photo search. Use Photo Search → Index new photos later.')
+      }
       return res.imagePath
     } catch {
       toast('Item saved, but image upload failed.', 'error')
@@ -630,6 +645,20 @@ export function ItemsPage() {
             <FileDown className="w-4 h-4" />
             Export
           </Button>
+          {canUpdate && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <ScanSearch className="w-4 h-4" />
+                  Photo Search
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={() => reindexPhotos(false)}>Index new photos</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => reindexPhotos(true)}>Re-index all photos</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {canCreate && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />

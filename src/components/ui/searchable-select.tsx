@@ -33,10 +33,12 @@ const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled
 /** Quickbooks-style grid navigation: after committing a value, jump focus to the next
  * tabbable field in the same form instead of leaving it on the trigger — so Enter reads
  * as "confirm this field, move to the next one" the same way it does on every other input. */
-function focusNextElement(current: HTMLElement) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function focusNextElement(current: HTMLElement) {
   const container = current.closest('form') ?? document.body
   const focusable = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-    .filter(el => el.offsetParent !== null)
+    // tabIndex -1 controls (e.g. ItemSelect's camera button) are mouse-only, never the next field.
+    .filter(el => el.offsetParent !== null && el.tabIndex >= 0)
   const index = focusable.indexOf(current)
   if (index >= 0 && index < focusable.length - 1) focusable[index + 1]?.focus()
 }

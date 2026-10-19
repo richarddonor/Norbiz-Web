@@ -27,6 +27,7 @@ const listPageShortcuts: Shortcut[] = [
 const transactionShortcuts: Shortcut[] = [
   { keys: ['A'], description: 'Open the Actions menu (posted transaction)' },
   { keys: ['Ctrl', 'Enter'], description: 'Add a line (new transaction)' },
+  { keys: ['Alt', 'P'], description: 'Find an item by photo (on an item dropdown)' },
 ]
 
 function ShortcutRow({ keys, description }: Shortcut) {

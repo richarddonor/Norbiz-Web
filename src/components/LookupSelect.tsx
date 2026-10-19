@@ -11,6 +11,13 @@ const PAGE_SIZE = 50
 const byIdCache = new Map<string, unknown>()
 const byIdInFlight = new Map<string, Promise<unknown>>()
 
+/** Seeds the label cache with a row picked outside the dropdown (e.g. found by photo), so
+ * setting it as the value doesn't refetch it by id. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function primeLookupOption(path: string, row: { id: number }) {
+  byIdCache.set(`${path}/${row.id}`, row)
+}
+
 function fetchById<T>(path: string, id: string): Promise<T> {
   const key = `${path}/${id}`
   if (byIdCache.has(key)) return Promise.resolve(byIdCache.get(key) as T)

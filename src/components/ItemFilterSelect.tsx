@@ -12,7 +12,8 @@ interface Props {
   onError?: () => void
 }
 
-/** Item dropdown for list/report filter bars: a type-ahead `ItemSelect` showing "All items" when blank. */
+/** Item dropdown for list/report filter bars: a type-ahead `ItemSelect` showing "All items" when blank.
+ * No find-by-photo button here — that's for entering lines, and filter bars stay compact. */
 export function ItemFilterSelect({ onChange, placeholder = 'All items', ...props }: Props) {
-  return <ItemSelect {...props} placeholder={placeholder} onChange={v => onChange(v)} />
+  return <ItemSelect {...props} recognize={false} placeholder={placeholder} onChange={v => onChange(v)} />
 }
