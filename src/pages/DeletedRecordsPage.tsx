@@ -8,7 +8,7 @@ import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSignatures, DocStamp 
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory, type MasterDataType } from '@/components/ChangeHistory'
 import { MASTER_DATA_TYPES } from '@/lib/masterData'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -214,7 +214,7 @@ export function DeletedRecordsPage() {
                 <ChangeHistory type={active.type} id={active.recordId} />
               </DocSheet>
               <div className={RECORD_ACTIONS}>
-                <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                <CloseButton onClick={requestClose} />
               </div>
             </div>
           )}

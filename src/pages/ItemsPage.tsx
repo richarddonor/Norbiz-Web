@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection, DocLines } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -28,7 +28,7 @@ import { ScrollTable } from '@/components/ScrollTable'
 import { exportToXlsx } from '@/lib/exportXlsx'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { formatCurrency } from '@/lib/format'
-import { isRecognitionUnavailable, itemImageUrl as imageUrl, useItemRecognitionAvailable } from '@/lib/itemRecognition'
+import { isRecognitionUnavailable, itemImageUrl as imageUrl, useItemRecognitionAvailable, type ItemRecognitionMatch } from '@/lib/itemRecognition'
 import { ItemRecognitionDialog } from '@/components/ItemRecognitionDialog'
 import type { ItemLookupOption } from '@/lib/lookups'
 import { cn } from '@/lib/utils'
@@ -403,16 +403,33 @@ export function ItemsPage() {
   const [filters, setFilters] = useState<Record<string, string>>({})
   const debouncedSearch = useDebouncedValue(search)
   const debouncedFilters = useDebouncedValue(filters)
-  const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
+  // Photo filter: the list shows only the items that look like the user's photo (sent as the
+  // backend's `ids` filter, so column filters and the Global Filter still narrow it), best match first.
+  const [photoFilter, setPhotoFilter] = useState<{ matches: ItemRecognitionMatch[]; preview: string } | null>(null)
+  useEffect(() => () => { if (photoFilter) URL.revokeObjectURL(photoFilter.preview) }, [photoFilter])
+  const photoSimilarity = useMemo(
+    () => new Map(photoFilter?.matches.map(m => [m.item.id, m.similarity]) ?? []),
+    [photoFilter],
+  )
+  const listFilters = useMemo(
+    () => photoFilter ? { ...debouncedFilters, ids: photoFilter.matches.map(m => m.item.id).join(',') } : debouncedFilters,
+    [debouncedFilters, photoFilter],
+  )
+  const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim()) || !!photoFilter
 
   const inRecordTab = useIsRecordTab()
-  const { items, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Item>('/items', {
+  const { items: pageItems, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Item>('/items', {
     enabled: !inRecordTab,
     onError: () => toast('Failed to load items.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: listFilters,
     searchText: itemSearchText,
   })
+  // At most 20 photo matches, so they fit on one page and sorting the page sorts them all.
+  const items = useMemo(
+    () => photoFilter ? [...pageItems].sort((a, b) => (photoSimilarity.get(b.id) ?? 0) - (photoSimilarity.get(a.id) ?? 0)) : pageItems,
+    [pageItems, photoFilter, photoSimilarity],
+  )
 
   const [mode, setMode]               = useState<FormMode>('view')
   const rec = useRecordTab<Item>({
@@ -426,7 +443,12 @@ export function ItemsPage() {
   const [companyId, setCompanyId]     = useState<number | ''>('')
   // Categories belong to the item's company: the picked company on create, the record's own otherwise.
   const categoryCompanyId = (mode === 'create' ? companyId : activeItem?.companyId) || activeCompanyId
-  const categories = useLookup<LookupOption>('item-categories', categoryCompanyId, { enabled: inRecordTab, onError: () => toast('Failed to load categories.', 'error') })
+  const activeCategories = useLookup<LookupOption>('item-categories', categoryCompanyId, { enabled: inRecordTab, onError: () => toast('Failed to load categories.', 'error') })
+  // The lookup only returns active categories; keep an item's current (possibly deactivated) category selectable.
+  const categories = useMemo(() => {
+    if (!activeItem?.itemCategoryId || activeCategories.some(c => c.id === activeItem.itemCategoryId)) return activeCategories
+    return [...activeCategories, { id: activeItem.itemCategoryId, companyId: activeItem.companyId, code: null, name: activeItem.itemCategoryName, active: false }]
+  }, [activeCategories, activeItem])
   const activeGroups = useLookup<LookupOption>('item-groups', categoryCompanyId, { enabled: inRecordTab, onError: () => toast('Failed to load item groups.', 'error') })
   // The lookup only returns active groups; keep an item's current (possibly deactivated) group selectable.
   const groups = useMemo(() => {
@@ -447,7 +469,7 @@ export function ItemsPage() {
   // Finding an item by photo is for anyone on this page; it hides once the backend reports recognition unavailable.
   const recognitionAvailable = useItemRecognitionAvailable()
   const canFindByPhoto = recognitionAvailable && !!activeCompanyId
-  const [photoOpen, setPhotoOpen] = useState(false)
+  const [photoDialog, setPhotoDialog] = useState<'filter' | 'find' | null>(null)
 
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items,
@@ -520,7 +542,7 @@ export function ItemsPage() {
 
   // The photo match is a lookup option, so the full item is fetched (by its code, then id) before its tab opens.
   async function openPhotoMatch(match: ItemLookupOption) {
-    setPhotoOpen(false)
+    setPhotoDialog(null)
     try {
       const candidates = await fetchAllContent<Item>(`/items?itemCode=${encodeURIComponent(match.code ?? '')}`)
       const item = candidates.find(i => i.id === match.id)
@@ -529,6 +551,11 @@ export function ItemsPage() {
     } catch {
       toast('Failed to load item.', 'error')
     }
+  }
+
+  function applyPhotoFilter(matches: ItemRecognitionMatch[], photo: File) {
+    setPhotoDialog(null)
+    setPhotoFilter({ matches, preview: URL.createObjectURL(photo) })
   }
 
   // Background job on the backend (202): by default only images not indexed yet, `force` redoes all.
@@ -634,10 +661,11 @@ export function ItemsPage() {
   }
 
   async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
+    const qs = filtersToQueryString(listFilters)
     const all = await fetchAllContent<Item>(qs ? `/items?${qs}` : '/items', 100000)
     const term = debouncedSearch.trim().toLowerCase()
     const matching = term ? all.filter(item => itemSearchText(item).toLowerCase().includes(term)) : all
+    if (photoFilter) matching.sort((a, b) => (photoSimilarity.get(b.id) ?? 0) - (photoSimilarity.get(a.id) ?? 0))
     const rows = matching.map(item => ({
       itemCode: item.itemCode,
       name: item.name,
@@ -675,7 +703,10 @@ export function ItemsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {canFindByPhoto && <DropdownMenuItem onSelect={() => setPhotoOpen(true)}>Find item by photo</DropdownMenuItem>}
+                {canFindByPhoto && <>
+                  <DropdownMenuItem onSelect={() => setPhotoDialog('filter')}>Filter list by photo</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setPhotoDialog('find')}>Find item by photo</DropdownMenuItem>
+                </>}
                 {canFindByPhoto && canReindexPhotos && <DropdownMenuSeparator />}
                 {canReindexPhotos && <>
                   <DropdownMenuItem onSelect={() => reindexPhotos(false)}>Index new photos</DropdownMenuItem>
@@ -686,10 +717,12 @@ export function ItemsPage() {
           )}
           {canFindByPhoto && (
             <ItemRecognitionDialog
-              open={photoOpen}
-              onOpenChange={setPhotoOpen}
+              open={photoDialog !== null}
+              onOpenChange={open => { if (!open) setPhotoDialog(null) }}
               companyId={activeCompanyId!}
-              onPick={openPhotoMatch}
+              {...(photoDialog === 'filter'
+                ? { title: 'Filter list by photo', limit: 20, onMatches: applyPhotoFilter }
+                : { onPick: openPhotoMatch })}
             />
           )}
           {canCreate && (
@@ -701,6 +734,18 @@ export function ItemsPage() {
           )}
           <GlobalSearch value={search} onChange={setSearch} status={searchAll} />
         </div>
+        {photoFilter && (
+          <div className="flex w-fit items-center gap-3 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--secondary))] py-1 pl-1 pr-2 text-sm">
+            <img src={photoFilter.preview} alt="Your photo" className="h-10 w-10 rounded object-cover" />
+            <span>
+              Showing the {photoFilter.matches.length} item{photoFilter.matches.length === 1 ? '' : 's'} that look most like your photo, best match first
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setPhotoFilter(null)} aria-label="Clear photo filter">
+              <X className="h-4 w-4" />
+              Clear
+            </Button>
+          </div>
+        )}
       </div>
 
       </>)}
@@ -738,14 +783,14 @@ export function ItemsPage() {
             <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                  <CloseButton onClick={requestClose} />
                   {hasPermission('UPDATE_ITEM') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                  <CloseButton onClick={requestClose} label="Cancel" />
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -813,7 +858,16 @@ export function ItemsPage() {
                       </td>
                     )}
                     {isVisible('itemCode') && <td className="py-2 px-4 font-mono text-xs">{item.itemCode}</td>}
-                    {isVisible('name') && <td className="py-2 px-4">{item.name}</td>}
+                    {isVisible('name') && (
+                      <td className="py-2 px-4">
+                        {item.name}
+                        {photoSimilarity.has(item.id) && (
+                          <span className="ml-2 tabular-nums text-xs text-[hsl(var(--muted-foreground))]">
+                            {Math.round(photoSimilarity.get(item.id)! * 100)}% match
+                          </span>
+                        )}
+                      </td>
+                    )}
                     {isVisible('category') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.itemCategoryName}</td>}
                     {isVisible('group') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{item.itemGroupName ?? '—'}</td>}
                     {isVisible('skus') && (

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/context/ToastContext'
 import { Button } from '@/components/ui/button'
+import { CloseButton } from '@/components/RecordTab'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText } from '@/components/ui/doc-form'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -90,7 +91,7 @@ export function ResetPasswordDialog({ open, onOpenChange, userId, username }: Pr
             </DocRow>
           </DocSheet>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={close}>Cancel</Button>
+            <CloseButton onClick={close} label="Cancel" />
             <Button type="submit" loading={loading}>Reset Password</Button>
           </div>
         </form>

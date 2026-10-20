@@ -5,9 +5,9 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocStamp, PendingNumber } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocLines, DocStamp, PendingNumber, TRANSACTION_MIN_ROWS } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { ItemSelect } from '@/components/ItemSelect'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -357,7 +357,7 @@ export function PurchaseOrdersPage() {
       </>)}
 
       {inRecordTab && (
-        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-4xl">
+        <RecordSheet title={tabTitle} status={rec.status} onRequestClose={requestClose} className="max-w-none">
           {mode === 'view' && activeOrder ? (
             <div className="space-y-4">
               <OriginNotice origin={activeOrder.origin} />
@@ -379,7 +379,7 @@ export function PurchaseOrdersPage() {
                   rows={byLineNumber(activeOrder.lines)}
                   rowKey={line => line.id}
                   lineNumber={line => line.lineNumber}
-                  minRows={5}
+                  minRows={TRANSACTION_MIN_ROWS}
                   columns={[
                     { key: 'item', label: 'Item', render: line => `${line.itemCode} — ${line.itemName}` },
                     { key: 'quantity', label: 'Quantity', align: 'right', width: '8rem', render: line => line.quantity },
@@ -408,7 +408,7 @@ export function PurchaseOrdersPage() {
                     onError={printFailed}
                   />
                 )}
-                <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                <CloseButton onClick={requestClose} />
               </div>
             </div>
           ) : (
@@ -523,7 +523,7 @@ export function PurchaseOrdersPage() {
               </DocSheet>
 
               <div className={RECORD_ACTIONS}>
-                <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                <CloseButton onClick={requestClose} label="Cancel" />
                 <Button type="submit" loading={loading}>Post Purchase Order</Button>
               </div>
             </form>

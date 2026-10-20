@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -302,7 +302,7 @@ export function DocumentTemplatesPage() {
             <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                  <CloseButton onClick={requestClose} />
                   {canManage && activeTemplate && (
                     <Button type="button" variant="outline" onClick={() => navigate(`/document-templates/${activeTemplate.id}/design`)}>
                       <LayoutTemplate className="w-4 h-4" />
@@ -315,7 +315,7 @@ export function DocumentTemplatesPage() {
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                  <CloseButton onClick={requestClose} label="Cancel" />
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create & Design' : 'Save'}
                   </Button>

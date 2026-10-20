@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
@@ -384,14 +384,14 @@ export function RolesPage() {
             <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                  <CloseButton onClick={requestClose} />
                   {hasPermission('UPDATE_ROLE') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                  <CloseButton onClick={requestClose} label="Cancel" />
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocCheck, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { ResetPasswordDialog } from '@/components/ResetPasswordDialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
@@ -448,14 +448,14 @@ export function UsersPage() {
                       Reset Password
                     </Button>
                   )}
-                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                  <CloseButton onClick={requestClose} />
                   {hasPermission('UPDATE_USER') && (
                     <Button type="button" onClick={switchToEdit}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                  <CloseButton onClick={requestClose} label="Cancel" />
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>

@@ -5,10 +5,10 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocSignatures } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
@@ -40,6 +40,7 @@ interface Brand {
   companyId: number
   companyName: string
   name: string
+  active: boolean
   createdAt: string | null
   updatedAt: string | null
   createdBy: string | null
@@ -51,6 +52,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
   columns.push({ key: 'name', label: 'Name' })
   columns.push(
+    { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
     { key: 'updatedAt', label: 'Last updated', type: 'date' },
   )
@@ -58,7 +60,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
 }
 
 function brandSearchText(b: Brand): string {
-  return [b.name, b.companyName, b.createdBy ?? '', b.updatedBy ?? ''].join(' ')
+  return [b.name, b.companyName, b.active ? 'active' : 'inactive', b.createdBy ?? '', b.updatedBy ?? ''].join(' ')
 }
 
 
@@ -94,6 +96,7 @@ export function BrandsPage() {
     fetchRecord: id => apiFetch<Brand>(`/brands/${id}`),
   })
   const [activeBrand, setActiveBrand] = useState<Brand | null>(null)
+  const [active, setActive]           = useState(true)
   const [name, setName]               = useState('')
   const [companyId, setCompanyId]     = useState<number | ''>('')
   const [loading, setLoading]         = useState(false)
@@ -132,7 +135,8 @@ export function BrandsPage() {
     if (!rec.isRecordTab) return rec.open('view', brand)
     setActiveBrand(brand)
     setName(brand.name)
-    markClean({ name: brand.name, companyId })
+    setActive(brand.active)
+    markClean({ name: brand.name, active: brand.active, companyId })
     setMode('view')
   }
 
@@ -140,7 +144,8 @@ export function BrandsPage() {
     if (!rec.isRecordTab) return rec.open('edit', brand)
     setActiveBrand(brand)
     setName(brand.name)
-    markClean({ name: brand.name, companyId })
+    setActive(brand.active)
+    markClean({ name: brand.name, active: brand.active, companyId })
     setMode('edit')
   }
 
@@ -148,14 +153,15 @@ export function BrandsPage() {
     if (!rec.isRecordTab) return rec.open('create')
     setActiveBrand(null)
     setName('')
+    setActive(true)
     const nextCompanyId = activeCompanyId ?? ''
     setCompanyId(nextCompanyId)
-    markClean({ name: '', companyId: nextCompanyId })
+    markClean({ name: '', active: true, companyId: nextCompanyId })
     setMode('create')
   }
 
   function requestClose() {
-    guardedClose({ name, companyId }, () => rec.close())
+    guardedClose({ name, active, companyId }, () => rec.close())
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -170,13 +176,13 @@ export function BrandsPage() {
       if (mode === 'create') {
         await apiFetch<Brand>('/brands', {
           method: 'POST',
-          body: JSON.stringify({ name, companyId }),
+          body: JSON.stringify({ name, active, companyId }),
         })
         toast('Brand created successfully.', 'success')
       } else {
         await apiFetch<Brand>(`/brands/${activeBrand!.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ name, companyId: activeBrand!.companyId }),
+          body: JSON.stringify({ name, active, companyId: activeBrand!.companyId }),
         })
         toast('Brand updated successfully.', 'success')
       }
@@ -207,6 +213,7 @@ export function BrandsPage() {
     const matching = term ? all.filter(b => brandSearchText(b).toLowerCase().includes(term)) : all
     const rows = matching.map(b => ({
       name: b.name,
+      active: b.active ? 'Yes' : 'No',
       company: b.companyName,
       createdBy: resolveDisplayName(b.createdBy),
       updatedAt: formatDateTime(b.updatedAt),
@@ -271,6 +278,15 @@ export function BrandsPage() {
                     required={!ro}
                   />
                 </DocCell>
+                <DocCell label="Status">
+                  <DocCheck
+                    id="brand-active"
+                    label="Active"
+                    checked={active}
+                    disabled={ro}
+                    onChange={setActive}
+                  />
+                </DocCell>
               </DocRow>
               {ro && activeBrand && (
                 <DocSignatures entries={[
@@ -286,14 +302,14 @@ export function BrandsPage() {
             <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                  <CloseButton onClick={requestClose} />
                   {hasPermission('UPDATE_BRAND') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                  <CloseButton onClick={requestClose} label="Cancel" />
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -313,6 +329,7 @@ export function BrandsPage() {
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
+                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
                 <th className="py-2 px-4" />
@@ -343,6 +360,18 @@ export function BrandsPage() {
                   >
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{brand.companyName}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{brand.name}</td>}
+                    {isVisible('active') && (
+                      <td className="py-2 px-4">
+                        <span className={cn(
+                          'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium',
+                          brand.active
+                            ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
+                            : 'bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))]'
+                        )}>
+                          {brand.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    )}
                     {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(brand.createdBy)}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(brand.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>

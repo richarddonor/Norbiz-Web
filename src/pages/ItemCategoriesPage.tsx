@@ -5,10 +5,10 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocSignatures } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocCheck, DocSignatures } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
@@ -40,6 +40,7 @@ interface ItemCategory {
   companyId: number
   companyName: string
   name: string
+  active: boolean
   createdAt: string | null
   updatedAt: string | null
   createdBy: string | null
@@ -51,6 +52,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
   columns.push({ key: 'name', label: 'Name' })
   columns.push(
+    { key: 'active', label: 'Active', type: 'boolean' },
     { key: 'createdBy', label: 'Created by' },
     { key: 'updatedAt', label: 'Last updated', type: 'date' },
   )
@@ -58,7 +60,7 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
 }
 
 function categorySearchText(c: ItemCategory): string {
-  return [c.name, c.companyName, c.createdBy ?? '', c.updatedBy ?? ''].join(' ')
+  return [c.name, c.companyName, c.active ? 'active' : 'inactive', c.createdBy ?? '', c.updatedBy ?? ''].join(' ')
 }
 
 export function ItemCategoriesPage() {
@@ -93,6 +95,7 @@ export function ItemCategoriesPage() {
     fetchRecord: id => apiFetch<ItemCategory>(`/item-categories/${id}`),
   })
   const [activeCategory, setActiveCategory] = useState<ItemCategory | null>(null)
+  const [active, setActive]           = useState(true)
   const [name, setName]                   = useState('')
   const [companyId, setCompanyId]         = useState<number | ''>('')
   const [loading, setLoading]             = useState(false)
@@ -131,7 +134,8 @@ export function ItemCategoriesPage() {
     if (!rec.isRecordTab) return rec.open('view', category)
     setActiveCategory(category)
     setName(category.name)
-    markClean({ name: category.name, companyId })
+    setActive(category.active)
+    markClean({ name: category.name, active: category.active, companyId })
     setMode('view')
   }
 
@@ -139,7 +143,8 @@ export function ItemCategoriesPage() {
     if (!rec.isRecordTab) return rec.open('edit', category)
     setActiveCategory(category)
     setName(category.name)
-    markClean({ name: category.name, companyId })
+    setActive(category.active)
+    markClean({ name: category.name, active: category.active, companyId })
     setMode('edit')
   }
 
@@ -147,14 +152,15 @@ export function ItemCategoriesPage() {
     if (!rec.isRecordTab) return rec.open('create')
     setActiveCategory(null)
     setName('')
+    setActive(true)
     const nextCompanyId = activeCompanyId ?? ''
     setCompanyId(nextCompanyId)
-    markClean({ name: '', companyId: nextCompanyId })
+    markClean({ name: '', active: true, companyId: nextCompanyId })
     setMode('create')
   }
 
   function requestClose() {
-    guardedClose({ name, companyId }, () => rec.close())
+    guardedClose({ name, active, companyId }, () => rec.close())
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -169,13 +175,13 @@ export function ItemCategoriesPage() {
       if (mode === 'create') {
         await apiFetch<ItemCategory>('/item-categories', {
           method: 'POST',
-          body: JSON.stringify({ name, companyId }),
+          body: JSON.stringify({ name, active, companyId }),
         })
         toast('Item category created successfully.', 'success')
       } else {
         await apiFetch<ItemCategory>(`/item-categories/${activeCategory!.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ name, companyId: activeCategory!.companyId }),
+          body: JSON.stringify({ name, active, companyId: activeCategory!.companyId }),
         })
         toast('Item category updated successfully.', 'success')
       }
@@ -206,6 +212,7 @@ export function ItemCategoriesPage() {
     const matching = term ? all.filter(c => categorySearchText(c).toLowerCase().includes(term)) : all
     const rows = matching.map(c => ({
       name: c.name,
+      active: c.active ? 'Yes' : 'No',
       company: c.companyName,
       createdBy: resolveDisplayName(c.createdBy),
       updatedAt: formatDateTime(c.updatedAt),
@@ -270,6 +277,15 @@ export function ItemCategoriesPage() {
                     required={!ro}
                   />
                 </DocCell>
+                <DocCell label="Status">
+                  <DocCheck
+                    id="category-active"
+                    label="Active"
+                    checked={active}
+                    disabled={ro}
+                    onChange={setActive}
+                  />
+                </DocCell>
               </DocRow>
               {ro && activeCategory && (
                 <DocSignatures entries={[
@@ -285,14 +301,14 @@ export function ItemCategoriesPage() {
             <div key={mode} className={RECORD_ACTIONS}>
               {mode === 'view' ? (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Close</Button>
+                  <CloseButton onClick={requestClose} />
                   {hasPermission('UPDATE_ITEM_CATEGORY') && (
                     <Button type="button" onClick={() => setMode('edit')}>Edit</Button>
                   )}
                 </>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={requestClose}>Cancel</Button>
+                  <CloseButton onClick={requestClose} label="Cancel" />
                   <Button type="submit" loading={loading}>
                     {mode === 'create' ? 'Create' : 'Save'}
                   </Button>
@@ -312,6 +328,7 @@ export function ItemCategoriesPage() {
               <tr className="border-b border-[hsl(var(--border))]">
                 {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
                 {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
+                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
                 {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
                 {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
                 <th className="py-2 px-4" />
@@ -342,6 +359,18 @@ export function ItemCategoriesPage() {
                   >
                     {showCompanyColumn && isVisible('company') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{category.companyName}</td>}
                     {isVisible('name') && <td className="py-2 px-4 font-medium">{category.name}</td>}
+                    {isVisible('active') && (
+                      <td className="py-2 px-4">
+                        <span className={cn(
+                          'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium',
+                          category.active
+                            ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
+                            : 'bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))]'
+                        )}>
+                          {category.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    )}
                     {isVisible('createdBy') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{resolveDisplayName(category.createdBy)}</td>}
                     {isVisible('updatedAt') && <td className="py-2 px-4 text-[hsl(var(--muted-foreground))]">{formatDateTime(category.updatedAt)}</td>}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>

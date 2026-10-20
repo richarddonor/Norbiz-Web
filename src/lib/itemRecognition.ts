@@ -53,14 +53,16 @@ async function downscale(file: File): Promise<File> {
 /**
  * The company's items that look most like `photo`, best first (empty when nothing is similar
  * enough). `params` are the item dropdown's own lookup params (e.g. `{ tag: 'INVENTORY' }`), so
- * only items the dropdown could offer come back. A 503 marks recognition unavailable for the session.
+ * only items the dropdown could offer come back. `limit` is 1–20 (backend cap). A 503 marks recognition
+ * unavailable for the session.
  */
 export async function recognizeItem(
   photo: File,
   companyId: number,
   params?: Record<string, string>,
+  limit = 5,
 ): Promise<ItemRecognitionMatch[]> {
-  const qs = new URLSearchParams({ ...params, companyId: String(companyId), limit: '5' })
+  const qs = new URLSearchParams({ ...params, companyId: String(companyId), limit: String(limit) })
   try {
     return await apiUpload<ItemRecognitionMatch[]>(`/lookups/items/recognize?${qs}`, await downscale(photo))
   } catch (err) {

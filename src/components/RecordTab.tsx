@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react'
 import { useWorkspace, useTabInstance } from '@/context/WorkspaceContext'
 import { findRecordBase } from '@/lib/nav'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 type OpenMode = 'view' | 'edit' | 'create'
 export type RecordStatus = 'loading' | 'ready' | 'missing'
@@ -165,3 +166,14 @@ export function RecordSheet({ title, status = 'ready', onRequestClose, className
  * one click (or Enter) away and nothing scrolls past it. */
 export const RECORD_ACTIONS =
   'sticky bottom-0 z-20 mt-auto flex justify-end gap-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--background))]/85 py-3 backdrop-blur'
+
+/** A Close/Cancel button with the Esc hint — RecordSheet (and a Dialog) already wires Esc
+ * to the same close path. Pass the page's dirty-guarded `requestClose`. */
+export function CloseButton({ onClick, label = 'Close' }: { onClick: () => void; label?: 'Close' | 'Cancel' }) {
+  return (
+    <Button type="button" variant="outline" onClick={onClick}>
+      {label}
+      <kbd className="ml-1 px-1 py-0.5 rounded bg-black/10 text-[10px] font-mono">Esc</kbd>
+    </Button>
+  )
+}

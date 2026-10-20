@@ -82,11 +82,17 @@ interface HistoryRow {
 
 const PENDING = 'italic text-[hsl(var(--muted-foreground))]'
 
+/** Events shown before "Show all" — enough to see where the document stands without pushing
+ * the sheet past one screen. */
+const RECENT_EVENTS = 3
+
 /** "Transaction History" section at the foot of a transaction sheet — replaces the old
- * Posted by / Date posted signature strip. `pending` renders the create-mode placeholder. */
+ * Posted by / Date posted signature strip. `pending` renders the create-mode placeholder.
+ * Shows the latest few events; the section's "Show all" button expands the rest. */
 export function TransactionHistory(props: { activity: TransactionActivity; record: HistoryRecord } | { pending: true }) {
   const resolveDisplayName = useUserDisplayNames()
   const { displayName, username } = useAuth()
+  const [showAll, setShowAll] = useState(false)
 
   let rows: HistoryRow[]
   if ('pending' in props) {
@@ -111,12 +117,22 @@ export function TransactionHistory(props: { activity: TransactionActivity; recor
     }))
   }
 
+  const hidden = showAll ? 0 : Math.max(0, rows.length - RECENT_EVENTS)
   return (
     <>
-      <DocSection title="Transaction History" />
+      <DocSection
+        title="Transaction History"
+        action={rows.length > RECENT_EVENTS && (
+          <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setShowAll(v => !v)}>
+            {showAll ? 'Show latest' : `Show all ${rows.length} (${hidden} earlier)`}
+          </Button>
+        )}
+      />
       <DocLines
-        rows={rows}
+        dense
+        rows={rows.slice(hidden)}
         rowKey={r => r.key}
+        lineNumber={(_, i) => hidden + i + 1}
         columns={[
           { key: 'at', label: 'Date / Time', width: '11rem', render: r => <span className="whitespace-nowrap tabular-nums">{r.at}</span> },
           { key: 'action', label: 'Action', render: r => r.action },

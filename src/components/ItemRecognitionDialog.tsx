@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Camera, ImageOff, ImageUp, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { CloseButton } from '@/components/RecordTab'
 import { useToast } from '@/context/ToastContext'
 import { ApiError } from '@/lib/api'
 import { isRecognitionUnavailable, itemImageUrl, recognizeItem, type ItemRecognitionMatch } from '@/lib/itemRecognition'
@@ -14,7 +15,14 @@ interface Props {
   companyId: number
   /** the item dropdown's lookup params (e.g. `{ tag: 'INVENTORY' }`) */
   params?: Record<string, string>
-  onPick: (item: ItemLookupOption) => void
+  /** pick one suggestion; ignored when `onMatches` is set */
+  onPick?: (item: ItemLookupOption) => void
+  /** takes every suggestion at once (e.g. to filter a list) instead of letting the user pick one;
+   * only called when something matched, otherwise the dialog says so and stays open */
+  onMatches?: (matches: ItemRecognitionMatch[], photo: File) => void
+  /** most suggestions to ask for, 1–20 */
+  limit?: number
+  title?: string
   /** where focus goes when the dialog closes (Radix would otherwise restore it to the camera button) */
   onCloseAutoFocus?: (e: Event) => void
 }
@@ -29,7 +37,7 @@ interface Props {
  * Where that isn't available (no camera API, or an insecure origin) it falls back to a file input
  * with `capture`, which opens the camera app on phones and a file chooser elsewhere.
  */
-export function ItemRecognitionDialog({ open, onOpenChange, companyId, params, onPick, onCloseAutoFocus }: Props) {
+export function ItemRecognitionDialog({ open, onOpenChange, companyId, params, onPick, onMatches, limit, title = 'Find item by photo', onCloseAutoFocus }: Props) {
   const { toast } = useToast()
   const inputRef = useRef<HTMLInputElement>(null)
   const captureInputRef = useRef<HTMLInputElement>(null)
@@ -122,12 +130,13 @@ export function ItemRecognitionDialog({ open, onOpenChange, companyId, params, o
     setExcluded([])
     setLoading(true)
     try {
-      const found = await recognizeItem(file, companyId, params)
+      const found = await recognizeItem(file, companyId, params, limit)
       // Nothing the dropdown offers matched: check whether its tag filter hid the item.
       const others = found.length === 0 && params?.tag
         ? await recognizeItem(file, companyId, withoutTag(params))
         : []
       if (request !== requestRef.current) return
+      if (onMatches && found.length > 0) { onMatches(found, file); return }
       setMatches(found)
       setExcluded(others.slice(0, 3))
     } catch (err) {
@@ -171,7 +180,7 @@ export function ItemRecognitionDialog({ open, onOpenChange, companyId, params, o
         onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]) }}
       >
         <DialogHeader>
-          <DialogTitle>Find item by photo</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
         <div className="mt-4 flex flex-col gap-4 sm:flex-row">
@@ -221,7 +230,7 @@ export function ItemRecognitionDialog({ open, onOpenChange, companyId, params, o
                   <li key={m.item.id}>
                     <button
                       type="button"
-                      onClick={() => onPick(m.item)}
+                      onClick={() => onPick?.(m.item)}
                       className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-[hsl(var(--secondary))] focus-visible:bg-[hsl(var(--secondary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
                     >
                       {m.imagePath
@@ -249,7 +258,7 @@ export function ItemRecognitionDialog({ open, onOpenChange, companyId, params, o
           </div>
         ) : (
           <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <CloseButton onClick={() => onOpenChange(false)} label="Cancel" />
             <Button type="button" variant="outline" disabled={loading} onClick={() => inputRef.current?.click()}>
               <ImageUp className="h-4 w-4" />
               Choose photo

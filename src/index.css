@@ -65,6 +65,17 @@
 .doc-sheet > .doc-row:last-child > :first-child { border-bottom-left-radius: var(--doc-corner); }
 .doc-sheet > .doc-row:last-child > :last-child { border-bottom-right-radius: var(--doc-corner); }
 
+/* DocLines column headings stay visible while a long document scrolls its tab. Sticky cells
+   need an opaque background (the tint is layered over the card colour), and collapsed borders
+   don't travel with them, so the bottom rule is redrawn as an inset shadow. */
+.doc-lines-head th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(hsl(var(--secondary) / 0.5), hsl(var(--secondary) / 0.5)), hsl(var(--card));
+  box-shadow: inset 0 -1px 0 hsl(var(--rule-soft));
+}
+
 #document-print-root {
   position: fixed;
   top: -99999px;

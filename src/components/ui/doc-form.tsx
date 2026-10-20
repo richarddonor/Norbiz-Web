@@ -125,7 +125,7 @@ export function DocHeader({ title, number, children, className }: DocHeaderProps
         className
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-1.5">
         <div className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[hsl(var(--primary))]">{title}</div>
         {number !== undefined && (
           <div className="inline-flex items-center gap-1.5 rounded-md border border-[hsl(var(--rule-soft))] bg-[hsl(var(--card))] px-2 py-0.5 text-xs text-[hsl(var(--muted-foreground))]">
@@ -181,19 +181,29 @@ interface DocLinesProps<T> {
   minRows?: number
   /** Rendered as a final full-width row — e.g. the "Add Line" button. */
   footer?: React.ReactNode
+  /** Shorter rows for secondary read-only grids (e.g. Transaction History). */
+  dense?: boolean
   className?: string
 }
+
+/** View-mode `minRows` for a transaction's line grid: a ten-line pre-printed grid, sized so
+ * the whole document (header, lines, totals, recent history) still fits on one screen. */
+export const TRANSACTION_MIN_ROWS = 10
 
 const READ_ONLY_CELL = 'cursor-default bg-[hsl(var(--muted))]/70 text-[hsl(var(--muted-foreground))]'
 
 const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' } as const
 
 /** Ruled line-item grid with a leading `#` column. Each cell provides `DocCellContext`,
- * so per-line `Input` / `SearchableSelect` controls render borderless inside it. */
-export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, footer, className }: DocLinesProps<T>) {
+ * so per-line `Input` / `SearchableSelect` controls render borderless inside it. Rows are
+ * compact (the height of a borderless in-cell control) so a transaction's header, ten lines,
+ * totals and recent history fit on one screen; the column headings stick to the top of the
+ * tab while a longer document scrolls (`.doc-lines-head` in index.css). */
+export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, footer, dense, className }: DocLinesProps<T>) {
   const cols = columns.filter((c): c is DocColumn<T> => !!c)
   const padding = Math.max(0, minRows - rows.length)
   const cell = cn('border-l first:border-l-0 border-t px-3', RULE)
+  const rowHeight = dense ? 'h-7' : 'h-8'
   return (
     <div className={cn('border-t first:border-t-0', RULE, className)}>
       <table className="w-full table-fixed border-collapse text-sm">
@@ -201,11 +211,11 @@ export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, fo
           <col style={{ width: '2.5rem' }} />
           {cols.map(c => <col key={c.key} style={c.width ? { width: c.width } : undefined} />)}
         </colgroup>
-        <thead>
-          <tr className="bg-[hsl(var(--secondary))]/50">
-            <th className={cn('border-l first:border-l-0 px-2 py-2 text-center', RULE, CAPTION_TEXT)}>#</th>
+        <thead className="doc-lines-head">
+          <tr>
+            <th className={cn('border-l first:border-l-0 px-2 py-1.5 text-center', RULE, CAPTION_TEXT)}>#</th>
             {cols.map(c => (
-              <th key={c.key} className={cn('border-l px-3 py-2', RULE, CAPTION_TEXT, ALIGN[c.align ?? 'left'])}
+              <th key={c.key} className={cn('border-l px-3 py-1.5', RULE, CAPTION_TEXT, ALIGN[c.align ?? 'left'])}
                 title={c.readOnly ? 'Read-only' : c.required ? 'Required' : undefined}>{c.label}{c.required && <RequiredMark />}</th>
             ))}
           </tr>
@@ -213,7 +223,7 @@ export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, fo
         <tbody>
           {rows.map((row, i) => (
             <tr key={rowKey ? rowKey(row, i) : i} className="transition-colors hover:bg-[hsl(var(--secondary))]/30">
-              <td className={cn(cell, 'h-10 px-2 text-center text-xs tabular-nums text-[hsl(var(--muted-foreground))]')}>{lineNumber ? lineNumber(row, i) : i + 1}</td>
+              <td className={cn(cell, rowHeight, 'px-2 text-center text-xs tabular-nums text-[hsl(var(--muted-foreground))]')}>{lineNumber ? lineNumber(row, i) : i + 1}</td>
               {cols.map(c => (
                 <td key={c.key} className={cn(cell, FOCUS_BOX, ALIGN[c.align ?? 'left'], c.align === 'right' && 'tabular-nums',
                   c.readOnly && READ_ONLY_CELL)}>
@@ -224,7 +234,7 @@ export function DocLines<T>({ columns, rows, rowKey, lineNumber, minRows = 0, fo
           ))}
           {Array.from({ length: padding }, (_, i) => (
             <tr key={`pad-${i}`} aria-hidden>
-              <td className={cn(cell, 'h-10')} />
+              <td className={cn(cell, rowHeight)} />
               {cols.map(c => <td key={c.key} className={cell} />)}
             </tr>
           ))}
@@ -251,13 +261,13 @@ export interface DocTotal {
 /** Right-hand totals block (Subtotal / Discount / … / Net Payable). */
 export function DocTotals({ entries, className }: { entries: DocTotal[]; className?: string }) {
   return (
-    <div className={cn('min-w-0 border-l first:border-l-0 px-3 py-2.5', RULE, className)}>
+    <div className={cn('min-w-0 border-l first:border-l-0 px-3 py-2', RULE, className)}>
       {entries.map((e, i) => (
         <div
           key={i}
           className={cn(
-            'flex items-baseline justify-between gap-4 py-1',
-            e.grand && 'mt-1.5 rounded-lg bg-[hsl(var(--primary))]/[0.07] px-3 py-2 font-semibold'
+            'flex items-baseline justify-between gap-4 py-0.5',
+            e.grand && 'mt-1 rounded-lg bg-[hsl(var(--primary))]/[0.07] px-3 py-1.5 font-semibold first:mt-0'
           )}
         >
           <span className={e.grand ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))]'}>{e.label}</span>
