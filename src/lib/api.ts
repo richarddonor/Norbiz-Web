@@ -13,6 +13,14 @@ function getToken() {
   return localStorage.getItem('auth_token')
 }
 
+// Dispatched when a request that carried a token comes back 401 (expired/invalid token);
+// AuthProvider listens for it and logs out, which sends ProtectedRoute back to /login.
+export const AUTH_EXPIRED_EVENT = 'auth:expired'
+
+function checkUnauthorized(response: Response, token: string | null) {
+  if (response.status === 401 && token && token === getToken()) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+}
+
 function getActiveCompanyId() {
   return localStorage.getItem('active_company_id')
 }
@@ -46,7 +54,10 @@ export async function apiUpload<T>(url: string, file: File, fieldName = 'file'):
     },
   })
 
-  if (!response.ok) throw await toApiError(response)
+  if (!response.ok) {
+    checkUnauthorized(response, token)
+    throw await toApiError(response)
+  }
 
   return unwrap<T>(await response.text())
 }
@@ -67,7 +78,10 @@ export async function apiFetch<T>(url: string, options: RequestInit = {}): Promi
     },
   })
 
-  if (!response.ok) throw await toApiError(response)
+  if (!response.ok) {
+    checkUnauthorized(response, token)
+    throw await toApiError(response)
+  }
 
   return unwrap<T>(await response.text())
 }

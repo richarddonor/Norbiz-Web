@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, AUTH_EXPIRED_EVENT } from '@/lib/api'
 
 export interface CompanyInfo {
   id: number
@@ -57,10 +57,31 @@ function parseTokenUsername(token: string | null): string | null {
   }
 }
 
+/** Token expiry as epoch ms (the JWT `exp` claim), or null if it can't be read. */
+function parseTokenExpiry(token: string | null): number | null {
+  if (!token) return null
+  try {
+    const exp = JSON.parse(atob(token.split('.')[1])).exp
+    return typeof exp === 'number' ? exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+function storedToken(): string | null {
+  const token = localStorage.getItem('auth_token')
+  const expiry = parseTokenExpiry(token)
+  if (token && expiry !== null && expiry <= Date.now()) {
+    localStorage.removeItem('auth_token')
+    return null
+  }
+  return token
+}
+
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('auth_token'))
+  const [token, setToken] = useState<string | null>(storedToken)
   const [me, setMe] = useState<MeResponse | null>(null)
   const [activeCompanyId, setActiveCompanyId] = useState<number | null>(() => {
     const stored = localStorage.getItem('active_company_id')
@@ -139,6 +160,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveCompanyId(null)
     setAwaitingCompanySelection(false)
   }, [])
+
+  // Back to the login screen once the token expires: on a timer at its `exp`, or as soon as
+  // any request with it is rejected with 401 (e.g. the backend's TTL changed, or the tab slept
+  // past the timer).
+  useEffect(() => {
+    if (!token) return
+    const onExpired = () => logout()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    const expiry = parseTokenExpiry(token)
+    const timer = expiry !== null ? window.setTimeout(logout, Math.max(0, expiry - Date.now())) : undefined
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+      window.clearTimeout(timer)
+    }
+  }, [token, logout])
 
   const hasPermission = useCallback((...required: string[]) => {
     return required.some(p => (me?.permissions ?? []).includes(p))
