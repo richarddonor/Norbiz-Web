@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Activity, ArrowLeftRight, CalendarRange, HeartPulse, PackageMinus, ReceiptText, ShoppingCart, SlidersHorizontal, Trophy, Truck } from 'lucide-react'
+import { Activity, ArrowLeftRight, CalendarRange, HandCoins, HeartPulse, Hourglass, Landmark, PackageMinus, ReceiptText, ShoppingCart, SlidersHorizontal, Trophy, Truck } from 'lucide-react'
 import type { WidgetProps } from './widget-kit'
 import { BacklogWidget, type BacklogConfig } from './BacklogWidget'
 import { OutletSalesWidget } from './OutletSalesWidget'
@@ -9,6 +9,8 @@ import { OutletStockHealthWidget } from './OutletStockHealthWidget'
 import { InventoryAdjustmentTrendWidget } from './InventoryAdjustmentTrendWidget'
 import { AgentLeaderboardWidget } from './AgentLeaderboardWidget'
 import { TransactionActivityWidget } from './TransactionActivityWidget'
+import { SubledgerWidget, type SubledgerConfig } from './SubledgerWidget'
+import { CashAndChecksWidget } from './CashAndChecksWidget'
 
 /** Frontend half of a dashboard widget. The key matches the backend `DashboardWidget` slug; the
  * name, category, description and permission come from `GET /dashboard/widgets`. */
@@ -22,6 +24,11 @@ export interface WidgetDefinition {
 function backlog(config: BacklogConfig): ComponentType<WidgetProps> {
   const Backlog = (props: WidgetProps) => <BacklogWidget {...props} config={config} />
   return Backlog
+}
+
+function subledger(config: SubledgerConfig): ComponentType<WidgetProps> {
+  const Subledger = (props: WidgetProps) => <SubledgerWidget {...props} config={config} />
+  return Subledger
 }
 
 export const WIDGETS: Record<string, WidgetDefinition> = {
@@ -111,4 +118,45 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
   'outlet-sales': { icon: Activity, component: OutletSalesWidget, defaultWide: true },
   'agent-leaderboard': { icon: Trophy, component: AgentLeaderboardWidget, defaultWide: false },
   'transaction-activity': { icon: CalendarRange, component: TransactionActivityWidget, defaultWide: true },
+  'receivables-aging': {
+    icon: Hourglass,
+    defaultWide: true,
+    component: subledger({
+      endpoint: '/dashboard/widgets/receivables-aging',
+      party: ['customer', 'customers'],
+      bucketsTitle: 'Aging',
+      // Current, then an ordinal ramp that ends in the critical color for 120+.
+      bucketColors: ['var(--viz-seq-1)', 'var(--viz-seq-2)', 'var(--viz-seq-3)', 'var(--viz-seq-4)', 'var(--viz-seq-5)', 'var(--viz-critical)'],
+      thirdTile: 'pending',
+      creditsLabel: 'Unapplied credits',
+      creditsHint: 'customer advances and credit memos',
+      settledLabel: 'Collected',
+      barsTitle: 'Owed by customer',
+      itemsTitle: 'Most overdue',
+      report: { path: '/reports/ar-aging', label: 'AR Aging', permission: 'VIEW_AR_REPORT' },
+      staleDays: 90,
+      emptyText: 'No open receivables — every customer is paid up.',
+    }),
+  },
+  'payables-due': {
+    icon: HandCoins,
+    defaultWide: true,
+    component: subledger({
+      endpoint: '/dashboard/widgets/payables-due',
+      party: ['supplier', 'suppliers'],
+      bucketsTitle: 'Due schedule',
+      // Overdue 31+, overdue 1-30, due this week, this month, later: urgency fades left to right.
+      bucketColors: ['var(--viz-critical)', 'var(--viz-serious)', 'var(--viz-warning)', 'var(--viz-seq-2)', 'var(--viz-seq-1)'],
+      thirdTile: 'dueSoon',
+      creditsLabel: 'Supplier advances',
+      creditsHint: 'advances and debit memos not yet applied',
+      settledLabel: 'Paid',
+      barsTitle: 'Owed to supplier',
+      itemsTitle: 'Due first',
+      report: { path: '/reports/ap-aging', label: 'AP Aging', permission: 'VIEW_AP_REPORT' },
+      staleDays: 60,
+      emptyText: 'No open payables — every supplier bill is settled.',
+    }),
+  },
+  'cash-and-checks': { icon: Landmark, component: CashAndChecksWidget, defaultWide: true },
 }
