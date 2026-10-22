@@ -4,7 +4,7 @@ import {
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
   PackageOpen, PackagePlus, FileSpreadsheet, HandCoins, Undo2, ArrowRightLeft, PackageMinus, PackageX, Hammer,
   CircleHelp, ListTree, ArchiveX, ReceiptText, Wallet, NotebookPen, RotateCcw, FileText, BadgeCheck, Banknote, Send,
-  Landmark, CreditCard, GitCompareArrows, Settings, Calculator, Hourglass, BookOpen, Coins,
+  Landmark, CreditCard, GitCompareArrows, Settings, Palette, Calculator, Hourglass, BookOpen, Coins,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -138,6 +138,7 @@ export const navItems: NavItem[] = [
   { to: '/users', label: 'Users', icon: Users, permission: 'VIEW_USER', group: 'Access Control', recordLabel: 'User' },
   { to: '/roles', label: 'Roles', icon: KeyRound, permission: 'VIEW_ROLE', group: 'Access Control', recordLabel: 'Role' },
   { to: '/document-templates', label: 'Document Templates', icon: LayoutTemplate, permission: 'MANAGE_DOCUMENT_TEMPLATES', group: 'Access Control', recordLabel: 'Document Template' },
+  { to: '/company-theme', label: 'Company Theme', icon: Palette, permission: 'MANAGE_COMPANY_THEME', group: 'Access Control' },
   { to: '/transaction-actions', label: 'Transaction Actions', icon: ListChecks, permission: 'MANAGE_TRANSACTION_ACTIONS', group: 'Access Control', recordLabel: 'Transaction Action' },
   // Any master-data VIEW_ permission opens it; the page offers only the types the user can view.
   { to: '/deleted-records', label: 'Deleted Records', icon: ArchiveX, group: 'Access Control', recordLabel: 'Deleted Record', permission: [

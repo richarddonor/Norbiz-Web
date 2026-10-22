@@ -1,9 +1,10 @@
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { X, XSquare, Home } from 'lucide-react'
 import { useWorkspace, TabInstanceContext, MAIN_TAB, type WorkspaceTab, type TabInstance } from '@/context/WorkspaceContext'
 import { findNavItem, findRecordBase } from '@/lib/nav'
 import { PageRoutes } from '@/routes'
 import { cn } from '@/lib/utils'
+import { playOpen } from '@/theme/motion'
 
 function tabMeta(tab: WorkspaceTab) {
   if (tab.key === MAIN_TAB) {
@@ -54,7 +55,7 @@ function useTabShortcuts() {
 }
 
 export function WorkspaceTabBar() {
-  const { tabs, activeKey, activate, requestCloseTab, requestCloseAllTabs } = useWorkspace()
+  const { tabs, activeKey, closingKeys, activate, requestCloseTab, requestCloseAllTabs } = useWorkspace()
   useTabShortcuts()
 
   // Only the module tab — no strip needed until a record is opened.
@@ -75,6 +76,7 @@ export function WorkspaceTabBar() {
             <div
               key={tab.key}
               role="tab"
+              data-tab-key={tab.key}
               aria-selected={active}
               tabIndex={-1}
               title={`${title}${i < 9 ? `  (Alt+${i + 1})` : ''}`}
@@ -82,6 +84,7 @@ export function WorkspaceTabBar() {
               onAuxClick={e => { if (e.button === 1 && closable) { e.preventDefault(); requestCloseTab(tab.key) } }}
               className={cn(
                 'group relative -mb-px flex h-9 max-w-56 shrink-0 cursor-pointer select-none items-center gap-2 rounded-t-lg border border-b-0 px-3 text-sm transition-colors',
+                closingKeys.has(tab.key) && 'pointer-events-none',
                 active
                   ? 'border-[hsl(var(--border))] bg-[hsl(var(--background))] font-medium text-[hsl(var(--foreground))]'
                   : 'border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--secondary))] hover:text-[hsl(var(--foreground))]'
@@ -123,7 +126,7 @@ const FOCUSABLE = 'input:not([readonly]):not([disabled]), select, textarea, butt
 
 /** One tab's page, kept mounted while hidden so its unsaved form state, scroll position
  * and list filters are all still there when the user switches back. */
-const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
+const TabPanel = memo(function TabPanel({ tab, active, closing }: { tab: WorkspaceTab; active: boolean; closing: boolean }) {
   // A page in its own tab behaves like the list tab (row navigation, no form padding).
   const isRecord = tab.key !== MAIN_TAB && !!findRecordBase(tab.location.pathname)
   // A page tab remounts on each new `openPage` request (a drill-down with fresh filters),
@@ -136,6 +139,13 @@ const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; ac
   const ref = useRef<HTMLDivElement>(null)
   const lastFocused = useRef<HTMLElement | null>(null)
   const wasActive = useRef(active)
+
+  // A record tab mounts when it's first shown (newly opened, or a restored tab first switched to):
+  // play the company theme's "pulled out of the drawer" entrance once, not on every tab switch.
+  const openedOnMount = useRef(isRecord && active)
+  useLayoutEffect(() => {
+    if (openedOnMount.current && ref.current) playOpen(ref.current)
+  }, [])
 
   // Put the cursor back where it was when returning to a record tab; on the list tab,
   // leave focus on the page itself so ↑↓/Enter row navigation works immediately.
@@ -158,11 +168,14 @@ const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; ac
       <div
         ref={ref}
         role="tabpanel"
-        hidden={!active}
+        data-tab-key={tab.key}
+        // A closing tab stays visible above the next one until its file-away animation ends.
+        hidden={!active && !closing}
+        inert={closing || undefined}
         onFocus={e => { lastFocused.current = e.target as HTMLElement }}
         // Record tabs drop the bottom padding so the form's action bar sits flush against
         // the bottom edge — nothing scrolls past it.
-        className={cn('absolute inset-0 overflow-y-auto p-6', isRecord && 'px-4 pb-0 pt-4')}
+        className={cn('absolute inset-0 overflow-y-auto p-6', isRecord && 'px-4 pb-0 pt-4', closing && 'pointer-events-none z-30 bg-[hsl(var(--background))] shadow-2xl')}
       >
         <PageRoutes key={pageRequest} location={tab.location} />
       </div>
@@ -171,11 +184,11 @@ const TabPanel = memo(function TabPanel({ tab, active }: { tab: WorkspaceTab; ac
 })
 
 export function WorkspacePanels() {
-  const { tabs, activeKey } = useWorkspace()
+  const { tabs, activeKey, closingKeys } = useWorkspace()
   return (
-    <div className="relative flex-1 min-h-0 bg-[hsl(var(--background))]">
+    <div className="relative isolate flex-1 min-h-0 overflow-hidden bg-[hsl(var(--background))]">
       {tabs.filter(t => t.mounted).map(tab => (
-        <TabPanel key={tab.key} tab={tab} active={tab.key === activeKey} />
+        <TabPanel key={tab.key} tab={tab} active={tab.key === activeKey} closing={closingKeys.has(tab.key)} />
       ))}
     </div>
   )

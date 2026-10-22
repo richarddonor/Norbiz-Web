@@ -5,6 +5,7 @@ import { ToastContextProvider } from '@/context/ToastContextProvider'
 import { AppLayout } from '@/components/AppLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { LoginPage } from '@/pages/LoginPage'
+import { CompanyThemeSync } from '@/theme/CompanyThemeSync'
 
 function AppRoutes() {
   const { isAuthenticated, awaitingCompanySelection } = useAuth()
@@ -30,6 +31,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <CompanyThemeSync />
         <ToastContextProvider>
           <AppRoutes />
         </ToastContextProvider>

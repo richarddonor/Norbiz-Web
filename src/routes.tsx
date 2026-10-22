@@ -4,6 +4,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { navItems, reportCategories, permissionsOf } from '@/lib/nav'
 import type { TabLocation } from '@/context/WorkspaceContext'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { CompanyThemePage } from '@/pages/CompanyThemePage'
 import { UsersPage } from '@/pages/UsersPage'
 import { RolesPage } from '@/pages/RolesPage'
 import { ItemsPage } from '@/pages/ItemsPage'
@@ -134,6 +135,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/banks': BanksPage,
   '/accounting-settings': AccountingSettingsPage,
   '/document-templates': DocumentTemplatesPage,
+  '/company-theme': CompanyThemePage,
   '/transaction-actions': TransactionActionsPage,
   '/deleted-records': DeletedRecordsPage,
 }

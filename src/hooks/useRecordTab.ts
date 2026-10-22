@@ -15,7 +15,10 @@ interface Options<T> {
   /** The page's guarded close (dirty check → `rec.close()`); used by the tab's ×, Alt+W and Esc. */
   onRequestClose: () => void
   /** Loads the record by id when the tab was opened without one in hand — a pasted URL,
-   * or a tab restored from a previous session that predates its stored payload. */
+   * or a tab restored from a previous session that predates its stored payload. Also
+   * re-loads a viewed record whenever its tab becomes active: the list row it was opened
+   * with may be a summary (no lines), and other documents change it while the tab sits
+   * open (a deposit clears a payment's cash). */
   fetchRecord?: (id: string) => Promise<T>
 }
 
@@ -31,7 +34,7 @@ export function useIsRecordTab() {
  * same open functions to seed the form, and `rec.close()` replaces `setOpen(false)`). */
 export function useRecordTab<T>({ mode, onOpen, onRequestClose, fetchRecord }: Options<T>) {
   const tab = useTabInstance()
-  const { openRecord, closeTab, registerCloseHandler } = useWorkspace()
+  const { openRecord, closeTab, registerCloseHandler, activeKey } = useWorkspace()
   const base = findRecordBase(tab.location.pathname)
   const recordId = tab.isRecord && base ? tab.location.pathname.slice(base.to.length + 1) : null
   const [status, setStatus] = useState<RecordStatus>('loading')
@@ -82,6 +85,20 @@ export function useRecordTab<T>({ mode, onOpen, onRequestClose, fetchRecord }: O
     else if (fetcher) fetcher(recordId).then(apply).catch(() => setStatus('missing'))
     else setStatus('missing')
   }, [tab.isRecord, recordId, request])
+
+  // Refresh a viewed record from the server when its tab is shown (including right after it
+  // is first seeded). Skipped while editing so an in-progress form is never clobbered.
+  const active = tab.isRecord && activeKey === tab.key
+  useEffect(() => {
+    if (!active || status !== 'ready' || recordId === null || recordId === 'new') return
+    const { fetchRecord: fetcher } = latest.current
+    if (!fetcher || latest.current.mode !== 'view') return
+    let cancelled = false
+    fetcher(recordId)
+      .then(record => { if (!cancelled && latest.current.mode === 'view') latest.current.onOpen.view(record) })
+      .catch(() => { /* keep showing what we have */ })
+    return () => { cancelled = true }
+  }, [active, status, recordId])
 
   return {
     isRecordTab: tab.isRecord,

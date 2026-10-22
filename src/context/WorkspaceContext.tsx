@@ -42,6 +42,8 @@ export const HOME: TabLocation = { pathname: navItems[0].to, search: '', state: 
 export interface WorkspaceValue {
   tabs: WorkspaceTab[]
   activeKey: string
+  /** Tabs playing their close animation (src/theme/motion.ts): no longer active, still on screen until it ends. */
+  closingKeys: ReadonlySet<string>
   activate: (key: string) => void
   /** Closes the tab unconditionally — call after a successful save, or from inside a
    * tab's own close handler once the user has confirmed discarding changes. */

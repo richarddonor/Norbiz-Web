@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Building2, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
+import { loadStoredTheme, logoSrc } from '@/theme/applyTheme'
+import { themeHex } from '@/theme/presets'
 
 type Step = 'credentials' | 'company'
 
@@ -21,6 +23,9 @@ export function LoginPage() {
   const [password, setPassword]   = useState('')
   const [loading, setLoading]     = useState(false)
   const [companies, setCompanies] = useState<CompanyInfo[]>([])
+  // The last company signed into on this browser (CompanyThemeSync already applied its colours).
+  const [lastCompany] = useState(loadStoredTheme)
+  const lastLogo = logoSrc(lastCompany?.theme)
 
   async function handleCredentials(e: FormEvent) {
     e.preventDefault()
@@ -50,6 +55,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--background))]">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
+          {lastLogo && <img src={lastLogo} alt={lastCompany?.companyName ?? ''} className="mx-auto mb-2 h-12 max-w-[12rem] object-contain" />}
           <CardTitle className="text-2xl">Norbiz</CardTitle>
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
             {step === 'credentials' ? 'Sign in to your account' : 'Select a company to continue'}
@@ -97,7 +103,7 @@ export function LoginPage() {
                   onClick={() => handleSelectCompany(company)}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))] hover:border-[hsl(var(--primary))] transition-colors text-left"
                 >
-                  <Building2 className="w-5 h-5 shrink-0 text-[hsl(var(--muted-foreground))]" />
+                  <CompanyBadge company={company} />
                   <span className="flex-1 text-sm font-medium">{company.name}</span>
                   <ChevronRight className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
                 </button>
@@ -113,5 +119,21 @@ export function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+/** A company's logo, else its initial on its brand colour — so each company in the list is recognisable. */
+function CompanyBadge({ company }: { company: CompanyInfo }) {
+  const logo = logoSrc(company.theme)
+  if (logo) return <img src={logo} alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
+  const color = company.theme ? themeHex(company.theme.preset, company.theme.color) : null
+  return (
+    <span
+      className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[hsl(var(--primary))] text-sm font-bold text-white"
+      style={color ? { backgroundColor: color } : undefined}
+      aria-hidden
+    >
+      {company.name.trim()[0]?.toUpperCase()}
+    </span>
   )
 }

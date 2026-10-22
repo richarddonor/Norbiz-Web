@@ -1,8 +1,11 @@
 import { createContext, useContext } from 'react'
+import type { CompanyTheme } from '@/theme/types'
 
 export interface CompanyInfo {
   id: number
   name: string
+  /** The company's UI theme (docs/THEMING.md); applied by CompanyThemeSync. */
+  theme?: CompanyTheme
 }
 
 export interface LoginResult {
@@ -36,6 +39,8 @@ export interface AuthContextType {
   hasPermission: (...required: string[]) => boolean
   login: (username: string, password: string) => Promise<LoginResult>
   selectCompany: (companyId: number) => void
+  /** Re-fetches `/auth/me` — e.g. after the company theme changed. */
+  refreshProfile: () => Promise<void>
   logout: () => void
 }
 

@@ -104,6 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAwaitingCompanySelection(false)
   }, [])
 
+  const refreshProfile = useCallback(async () => {
+    if (!token) return
+    const data = await apiFetch<MeResponse>('/auth/me')
+    setProfile({ token, me: data })
+  }, [token])
+
   const logout = useCallback(() => {
     localStorage.removeItem('auth_token')
     localStorage.removeItem('active_company_id')
@@ -161,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasPermission,
       login,
       selectCompany,
+      refreshProfile,
       logout,
     }}>
       {children}

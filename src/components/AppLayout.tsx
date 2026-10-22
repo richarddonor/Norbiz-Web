@@ -20,6 +20,7 @@ import { useHotkeys } from '@/hooks/useHotkeys'
 import { WorkspaceProvider } from '@/context/WorkspaceProvider'
 import { LayoutZoneContext, type FocusZone } from '@/hooks/useContentFocus'
 import { WorkspaceTabBar, WorkspacePanels } from '@/components/WorkspaceTabs'
+import { logoSrc } from '@/theme/applyTheme'
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
@@ -50,7 +51,9 @@ export function AppLayout() {
 }
 
 function Workspace() {
-  const { logout, hasPermission, displayName, username } = useAuth()
+  const { logout, hasPermission, displayName, username, activeCompany } = useAuth()
+  const logo = logoSrc(activeCompany?.theme)
+  const initial = (activeCompany?.name.trim()[0] ?? 'N').toUpperCase()
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
@@ -182,7 +185,7 @@ function Workspace() {
           over the content until focus leaves it, since keyboard users need the labels. */}
       <aside
         className={cn(
-          'relative shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] transition-[width] duration-200',
+          'app-sidebar relative shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] transition-[width] duration-200',
           collapsed ? 'w-14' : 'w-60',
         )}
       >
@@ -193,9 +196,12 @@ function Workspace() {
                 onClick={toggleSidebar}
                 title="Expand sidebar (Ctrl+B)"
                 aria-label="Expand sidebar"
-                className="grid h-7 w-7 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm font-bold text-[hsl(var(--primary-foreground))] hover:opacity-90"
+                className={cn(
+                  'grid h-7 w-7 place-items-center overflow-hidden rounded-lg text-sm font-bold hover:opacity-90',
+                  !logo && 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]',
+                )}
               >
-                N
+                {logo ? <img src={logo} alt="" className="h-full w-full object-contain" /> : initial}
               </button>
             </div>
 
@@ -239,10 +245,15 @@ function Workspace() {
             )}
           >
             <div className="flex items-center justify-between gap-2 px-4 py-5 border-b border-[hsl(var(--border))]">
-              <span className="flex items-center gap-2 text-lg font-bold tracking-tight">
-                <span className="grid h-7 w-7 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm text-[hsl(var(--primary-foreground))]">N</span>
-                Norbiz
-              </span>
+              {/* The company's own brand: its logo, else its initial and name; "Norbiz" when no company is active. */}
+              {logo ? (
+                <img src={logo} alt={activeCompany?.name ?? ''} title={activeCompany?.name} className="h-8 max-w-[9.5rem] object-contain object-left" />
+              ) : (
+                <span className="flex min-w-0 items-center gap-2 text-lg font-bold tracking-tight">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[hsl(var(--primary))] text-sm text-[hsl(var(--primary-foreground))]">{initial}</span>
+                  <span className="truncate" title={activeCompany?.name}>{activeCompany?.name ?? 'Norbiz'}</span>
+                </span>
+              )}
               {/* Over a collapsed rail (keyboard overlay) the same spot offers to keep it open. */}
               <button
                 onClick={toggleSidebar}

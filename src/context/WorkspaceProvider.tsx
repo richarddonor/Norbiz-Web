@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { findNavItem, findRecordBase, findReport } from '@/lib/nav'
+import { playClose } from '@/theme/motion'
 import { WorkspaceContext, MAIN_TAB, HOME, type RecordRequest, type TabLocation, type WorkspaceTab, type WorkspaceValue } from '@/context/WorkspaceContext'
 
 function toTabLocation(loc: { pathname: string; search: string; state: unknown }): TabLocation {
@@ -137,8 +138,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [tabs, username])
 
   const tabsRef = useRef(tabs)
+  const activeKeyRef = useRef(activeKey)
   useEffect(() => {
     tabsRef.current = tabs
+    activeKeyRef.current = activeKey
   })
 
   const goTo = useCallback((tab: WorkspaceTab) => {
@@ -151,20 +154,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (tab) goTo(tab)
   }, [goTo])
 
+  // Tabs still on screen playing their close animation. The ref guards against closing one twice mid-animation.
+  const [closingKeys, setClosingKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const closing = useRef(new Set<string>())
+
   const closeTab = useCallback((key: string) => {
-    if (key === MAIN_TAB) return
+    if (key === MAIN_TAB || closing.current.has(key)) return
     closeHandlers.current.delete(key)
     if (closingBatch.current) {
       closingBatch.current.add(key)
       return
     }
     const remaining = tabsRef.current.filter(t => t.key !== key)
-    setTabs(remaining)
-    if (key === activeKey) {
-      const nextKey = history.current.find(k => k !== key && remaining.some(t => t.key === k)) ?? MAIN_TAB
-      const next = remaining.find(t => t.key === nextKey)!
-      goTo(next)
+    const next = key === activeKey
+      ? remaining.find(t => t.key === (history.current.find(k => k !== key && remaining.some(r => r.key === k)) ?? MAIN_TAB))!
+      : null
+    // The visible record is filed away into its tab (company theme motion) while the next tab is already
+    // shown beneath it; the tab is removed once the animation ends. Background tabs just go.
+    const selector = `[data-tab-key="${CSS.escape(key)}"]`
+    const panel = next ? document.querySelector<HTMLElement>(`[role="tabpanel"]${selector}`) : null
+    const done = panel ? playClose(panel, document.querySelector<HTMLElement>(`[role="tab"]${selector}`)) : null
+    if (!done) {
+      setTabs(remaining)
+      if (next) goTo(next)
+      return
     }
+    closing.current.add(key)
+    setClosingKeys(new Set(closing.current))
+    if (next) goTo(next)
+    done.then(() => {
+      closing.current.delete(key)
+      setClosingKeys(new Set(closing.current))
+      // Reopened mid-animation (e.g. Back): keep it, and undo the folded-away pose.
+      if (activeKeyRef.current === key) panel?.getAnimations().forEach(a => a.cancel())
+      else setTabs(prev => prev.filter(t => t.key !== key))
+    })
   }, [activeKey, goTo])
 
   const requestCloseTab = useCallback((key: string) => {
@@ -217,8 +241,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [activate, navigate])
 
   const value = useMemo<WorkspaceValue>(() => ({
-    tabs, activeKey, activate, closeTab, requestCloseTab, requestCloseAllTabs, setTabTitle, registerCloseHandler, openRecord, openPage,
-  }), [tabs, activeKey, activate, closeTab, requestCloseTab, requestCloseAllTabs, setTabTitle, registerCloseHandler, openRecord, openPage])
+    tabs, activeKey, closingKeys, activate, closeTab, requestCloseTab, requestCloseAllTabs, setTabTitle, registerCloseHandler, openRecord, openPage,
+  }), [tabs, activeKey, closingKeys, activate, closeTab, requestCloseTab, requestCloseAllTabs, setTabTitle, registerCloseHandler, openRecord, openPage])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

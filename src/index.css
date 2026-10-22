@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @layer base {
   :root {
@@ -20,6 +21,10 @@
     /* Paper-form ruling: the sheet's outer frame, and the softer inner grid lines. */
     --rule: 220 13% 84%;
     --rule-soft: 220 14% 91%;
+    /* Brand hue/saturation as separate parts, so the sidebar styles below can mix their own shades.
+       applyTheme (src/theme) overrides these and the palette above per company. */
+    --brand-h: 224;
+    --brand-s: 76%;
   }
 
   .dark {
@@ -58,7 +63,7 @@
 /* DocSheet is rounded but can't clip its children (SearchableSelect dropdowns would be
    cut off), so the corner cells round their own focus/tint backgrounds to match. */
 .doc-sheet {
-  --doc-corner: calc(0.75rem - 1px);
+  --doc-corner: calc(var(--radius-xl) - 1px);
 }
 .doc-sheet > .doc-row:first-child > :first-child { border-top-left-radius: var(--doc-corner); }
 .doc-sheet > .doc-row:first-child > :last-child { border-top-right-radius: var(--doc-corner); }
@@ -220,4 +225,69 @@
 @keyframes dash-rise { from { transform: scaleY(0); } }
 @media (prefers-reduced-motion: reduce) {
   .dash-draw, .dash-grow, .dash-rise, .dash-live-dot { animation: none; stroke-dashoffset: 0; }
+}
+
+/* ---- Company theme (docs/THEMING.md): data attributes on <html> set by applyTheme ---- */
+
+/* Corner radius: Tailwind's rounded-* utilities read these. SOFT keeps Tailwind's defaults. */
+:root[data-radius='sharp'] {
+  --radius-xs: 0.0625rem;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.1875rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.3125rem;
+  --radius-2xl: 0.375rem;
+}
+:root[data-radius='round'] {
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.5rem;
+}
+
+/* Sidebar style: the sidebar re-scopes the shared tokens, so everything inside it follows without its own classes. */
+.app-sidebar {
+  color: hsl(var(--foreground));
+}
+:root[data-sidebar='tinted'] .app-sidebar {
+  --card: var(--brand-h) min(var(--brand-s), 45%) 95%;
+  --secondary: var(--brand-h) min(var(--brand-s), 40%) 90%;
+  --secondary-foreground: var(--brand-h) 40% 12%;
+  --border: var(--brand-h) min(var(--brand-s), 30%) 87%;
+  --muted-foreground: var(--brand-h) min(var(--brand-s), 20%) 36%;
+}
+:root[data-sidebar='dark'] .app-sidebar {
+  --card: var(--brand-h) min(var(--brand-s), 30%) 13%;
+  --foreground: 0 0% 98%;
+  --card-foreground: 0 0% 98%;
+  --muted-foreground: var(--brand-h) min(var(--brand-s), 14%) 72%;
+  --secondary: var(--brand-h) min(var(--brand-s), 25%) 21%;
+  --secondary-foreground: 0 0% 98%;
+  --border: var(--brand-h) min(var(--brand-s), 22%) 21%;
+  /* The brand colour is too dark to read on the dark panel: lift it. */
+  --primary: var(--brand-h) var(--brand-s) 72%;
+  --primary-foreground: 222 47% 11%;
+  --ring: var(--brand-h) var(--brand-s) 72%;
+}
+
+/* Form surface: record forms (DocSheet) on warm paper, optionally with a faint grain. */
+:root[data-surface='paper'] .doc-sheet,
+:root[data-surface='grain'] .doc-sheet {
+  --card: 42 55% 98.5%;
+  box-shadow: 0 1px 0 hsl(var(--rule)), 0 14px 28px -18px rgb(70 50 20 / 0.35);
+}
+:root[data-surface='grain'] .doc-sheet {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .3 0 0 0 0 .15 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Motion: record tabs animate in src/theme/motion.ts; dialogs use tw-animate-css's variant classes
+   (`data-[state=open]:animate-in`), hence the attribute match. */
+:root[data-motion='none'] [class*='animate-in'],
+:root[data-motion='none'] [class*='animate-out'] {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root [class*='animate-in'], :root [class*='animate-out'] { animation: none; }
 }
