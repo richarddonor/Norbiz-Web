@@ -20,6 +20,18 @@ const TRANSACTION_PATHS: Record<TransactionType, string> = {
   OUTLET_PULL_OUT: '/outlet-pull-outs',
   PULL_OUT_RECEIPT: '/pull-out-receipts',
   ASSEMBLY: '/assemblies',
+  SALES_INVOICE: '/sales-invoices',
+  CUSTOMER_MEMO: '/customer-memos',
+  SUPPLIER_MEMO: '/supplier-memos',
+  CUSTOMER_PAYMENT: '/customer-payments',
+  SUPPLIER_PAYMENT: '/supplier-payments',
+  CUSTOMER_CREDIT_APPLICATION: '/customer-credit-applications',
+  SUPPLIER_CREDIT_APPLICATION: '/supplier-credit-applications',
+  CUSTOMER_REFUND: '/customer-refunds',
+  SUPPLIER_REFUND: '/supplier-refunds',
+  DEPOSIT: '/deposits',
+  BANK_RECONCILIATION: '/bank-reconciliations',
+  STATEMENT_OF_ACCOUNT: '/statements-of-account',
 }
 
 /** The transaction type an inventory movement's `sourceType` refers to — a void posts

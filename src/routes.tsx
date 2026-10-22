@@ -36,12 +36,27 @@ import {
   InventoryAdjustmentDetailedPage, OutletReceiptDetailedPage, PurchaseOrderDetailedPage,
   PurchaseInvoiceDetailedPage, PurchaseReceiptDetailedPage, DeliveryReceiptDetailedPage,
   OutletDeliveryReceiptDetailedPage, OutletDeliveryReturnDetailedPage, StockTransferDetailedPage,
-  OutletPullOutDetailedPage, PullOutReceiptDetailedPage, AssemblyDetailedPage,
+  OutletPullOutDetailedPage, PullOutReceiptDetailedPage, AssemblyDetailedPage, SalesInvoiceDetailedPage,
+  CustomerMemoDetailedPage, SupplierMemoDetailedPage, CustomerPaymentDetailedPage, SupplierPaymentDetailedPage,
+  CustomerCreditApplicationDetailedPage, SupplierCreditApplicationDetailedPage, CustomerRefundDetailedPage, SupplierRefundDetailedPage,
+  DepositDetailedPage, BankReconciliationDetailedPage, StatementOfAccountDetailedPage,
 } from '@/pages/TransactionDetailedReportPages'
 import { DocumentTemplatesPage } from '@/pages/DocumentTemplatesPage'
 import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPage'
 import { TransactionActionsPage } from '@/pages/TransactionActionsPage'
 import { DeletedRecordsPage } from '@/pages/DeletedRecordsPage'
+import { SalesInvoicesPage } from '@/pages/SalesInvoicesPage'
+import { CustomerMemosPage, SupplierMemosPage } from '@/pages/MemoPages'
+import { CustomerPaymentsPage, SupplierPaymentsPage } from '@/pages/PaymentPages'
+import { CustomerCreditApplicationsPage, SupplierCreditApplicationsPage, CustomerRefundsPage, SupplierRefundsPage } from '@/pages/CreditAndRefundPages'
+import { DepositsPage } from '@/pages/DepositsPage'
+import { BankReconciliationsPage } from '@/pages/BankReconciliationsPage'
+import { StatementsOfAccountPage } from '@/pages/StatementsOfAccountPage'
+import { ReceivedChecksPage, IssuedChecksPage } from '@/pages/CheckPages'
+import { BanksPage } from '@/pages/BanksPage'
+import { BankAccountsPage } from '@/pages/BankAccountsPage'
+import { AccountingSettingsPage } from '@/pages/AccountingSettingsPage'
+import { ArAgingPage, ApAgingPage, CustomerLedgerPage, SupplierLedgerPage, OpenReceivablesPage, OpenPayablesPage, BankBookPage } from '@/pages/AccountingReportPages'
 
 // Maps each nav path (defined once in src/lib/nav.ts) to its page component.
 const pageComponents: Record<string, ComponentType> = {
@@ -86,6 +101,42 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/outlet-pull-out-detailed': OutletPullOutDetailedPage,
   '/reports/pull-out-receipt-detailed': PullOutReceiptDetailedPage,
   '/reports/assembly-detailed': AssemblyDetailedPage,
+  '/reports/sales-invoice-detailed': SalesInvoiceDetailedPage,
+  '/reports/ar-aging': ArAgingPage,
+  '/reports/ap-aging': ApAgingPage,
+  '/reports/customer-ledger': CustomerLedgerPage,
+  '/reports/supplier-ledger': SupplierLedgerPage,
+  '/reports/open-receivables': OpenReceivablesPage,
+  '/reports/open-payables': OpenPayablesPage,
+  '/reports/bank-book': BankBookPage,
+  '/reports/customer-memo-detailed': CustomerMemoDetailedPage,
+  '/reports/supplier-memo-detailed': SupplierMemoDetailedPage,
+  '/reports/customer-payment-detailed': CustomerPaymentDetailedPage,
+  '/reports/supplier-payment-detailed': SupplierPaymentDetailedPage,
+  '/reports/customer-credit-application-detailed': CustomerCreditApplicationDetailedPage,
+  '/reports/supplier-credit-application-detailed': SupplierCreditApplicationDetailedPage,
+  '/reports/customer-refund-detailed': CustomerRefundDetailedPage,
+  '/reports/supplier-refund-detailed': SupplierRefundDetailedPage,
+  '/reports/deposit-detailed': DepositDetailedPage,
+  '/reports/bank-reconciliation-detailed': BankReconciliationDetailedPage,
+  '/reports/statement-of-account-detailed': StatementOfAccountDetailedPage,
+  '/sales-invoices': SalesInvoicesPage,
+  '/customer-payments': CustomerPaymentsPage,
+  '/customer-memos': CustomerMemosPage,
+  '/customer-credit-applications': CustomerCreditApplicationsPage,
+  '/customer-refunds': CustomerRefundsPage,
+  '/statements-of-account': StatementsOfAccountPage,
+  '/received-checks': ReceivedChecksPage,
+  '/supplier-payments': SupplierPaymentsPage,
+  '/supplier-memos': SupplierMemosPage,
+  '/supplier-credit-applications': SupplierCreditApplicationsPage,
+  '/supplier-refunds': SupplierRefundsPage,
+  '/issued-checks': IssuedChecksPage,
+  '/deposits': DepositsPage,
+  '/bank-reconciliations': BankReconciliationsPage,
+  '/bank-accounts': BankAccountsPage,
+  '/banks': BanksPage,
+  '/accounting-settings': AccountingSettingsPage,
   '/document-templates': DocumentTemplatesPage,
   '/transaction-actions': TransactionActionsPage,
   '/deleted-records': DeletedRecordsPage,

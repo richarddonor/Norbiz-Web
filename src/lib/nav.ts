@@ -3,7 +3,8 @@ import {
   LayoutDashboard, Users, KeyRound, Package, Tag, Layers, Boxes, Barcode, Warehouse, Contact,
   Store, Truck, ClipboardList, Scale, ScrollText, LayoutTemplate, ShoppingCart, Receipt, PackageCheck, ListChecks,
   PackageOpen, PackagePlus, FileSpreadsheet, HandCoins, Undo2, ArrowRightLeft, PackageMinus, PackageX, Hammer,
-  CircleHelp, ListTree, ArchiveX,
+  CircleHelp, ListTree, ArchiveX, ReceiptText, Wallet, NotebookPen, Link2, RotateCcw, FileText, BadgeCheck, Banknote, Send,
+  Landmark, CreditCard, GitCompareArrows, Settings, Calculator, Hourglass, BookOpen, Coins,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -31,6 +32,7 @@ export const reportCategories = [
   { to: '/reports/inventory', label: 'Inventory', icon: Warehouse },
   { to: '/reports/purchases', label: 'Purchases', icon: ShoppingCart },
   { to: '/reports/sales', label: 'Sales', icon: PackageOpen },
+  { to: '/reports/accounting', label: 'Accounting', icon: Calculator },
 ] as const
 
 const reports: (NavItem & { parent: (typeof reportCategories)[number]['to'] })[] = [
@@ -48,6 +50,26 @@ const reports: (NavItem & { parent: (typeof reportCategories)[number]['to'] })[]
   { to: '/reports/outlet-pull-out-detailed', label: 'Outlet Pull-out - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_PULL_OUT_DETAILED_REPORT', parent: '/reports/sales', description: 'Stock pulled out of outlets, one row per line item.' },
   { to: '/reports/pull-out-receipt-detailed', label: 'Pull-out Receipt - Detailed', icon: FileSpreadsheet, permission: 'VIEW_PULL_OUT_RECEIPT_DETAILED_REPORT', parent: '/reports/sales', description: 'Pulled-out stock received at the main warehouse, one row per line item.' },
   { to: '/reports/assembly-detailed', label: 'Assembly - Detailed', icon: FileSpreadsheet, permission: 'VIEW_ASSEMBLY_DETAILED_REPORT', parent: '/reports/inventory', description: 'Assemblies, one row per output or raw material.' },
+  { to: '/reports/sales-invoice-detailed', label: 'Sales Invoice - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SALES_INVOICE_DETAILED_REPORT', parent: '/reports/sales', description: 'Sales invoices, one row per line item.' },
+  // AR/AP (../Norbiz/docs/ACCOUNTING.md "Reports")
+  { to: '/reports/ar-aging', label: 'Accounts Receivable Aging', icon: Hourglass, permission: 'VIEW_AR_REPORT', parent: '/reports/accounting', description: 'What customers owe, by how overdue, as of a date.' },
+  { to: '/reports/ap-aging', label: 'Accounts Payable Aging', icon: Hourglass, permission: 'VIEW_AP_REPORT', parent: '/reports/accounting', description: 'What we owe suppliers, by how overdue, as of a date.' },
+  { to: '/reports/customer-ledger', label: 'Customer Ledger', icon: BookOpen, permission: 'VIEW_AR_REPORT', parent: '/reports/accounting', description: 'A customer\'s charges, payments and credits with a running balance.' },
+  { to: '/reports/supplier-ledger', label: 'Supplier Ledger', icon: BookOpen, permission: 'VIEW_AP_REPORT', parent: '/reports/accounting', description: 'A supplier\'s payables, payments and credits with a running balance.' },
+  { to: '/reports/open-receivables', label: 'Open Receivables', icon: Coins, permission: 'VIEW_AR_REPORT', parent: '/reports/accounting', description: 'Every receivable and customer credit with its balance.' },
+  { to: '/reports/open-payables', label: 'Open Payables', icon: Coins, permission: 'VIEW_AP_REPORT', parent: '/reports/accounting', description: 'Every payable and supplier credit with its balance.' },
+  { to: '/reports/bank-book', label: 'Bank Book', icon: Landmark, permission: 'VIEW_BANK_BOOK', parent: '/reports/accounting', description: 'A bank account\'s entries with a running balance.' },
+  { to: '/reports/customer-memo-detailed', label: 'Customer Memo - Detailed', icon: FileSpreadsheet, permission: 'VIEW_CUSTOMER_MEMO_DETAILED_REPORT', parent: '/reports/accounting', description: 'Customer memos, one row per line.' },
+  { to: '/reports/supplier-memo-detailed', label: 'Supplier Memo - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SUPPLIER_MEMO_DETAILED_REPORT', parent: '/reports/accounting', description: 'Supplier memos, one row per line.' },
+  { to: '/reports/customer-payment-detailed', label: 'Customer Payment - Detailed', icon: FileSpreadsheet, permission: 'VIEW_CUSTOMER_PAYMENT_DETAILED_REPORT', parent: '/reports/accounting', description: 'Customer payments, one row per tender.' },
+  { to: '/reports/supplier-payment-detailed', label: 'Supplier Payment - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SUPPLIER_PAYMENT_DETAILED_REPORT', parent: '/reports/accounting', description: 'Supplier payments, one row per tender.' },
+  { to: '/reports/customer-credit-application-detailed', label: 'Customer Credit Application - Detailed', icon: FileSpreadsheet, permission: 'VIEW_CUSTOMER_CREDIT_APPLICATION_DETAILED_REPORT', parent: '/reports/accounting', description: 'Customer credit applications, one row per application.' },
+  { to: '/reports/supplier-credit-application-detailed', label: 'Supplier Credit Application - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SUPPLIER_CREDIT_APPLICATION_DETAILED_REPORT', parent: '/reports/accounting', description: 'Supplier credit applications, one row per application.' },
+  { to: '/reports/customer-refund-detailed', label: 'Customer Refund - Detailed', icon: FileSpreadsheet, permission: 'VIEW_CUSTOMER_REFUND_DETAILED_REPORT', parent: '/reports/accounting', description: 'Customer refunds, one row per refunded credit.' },
+  { to: '/reports/supplier-refund-detailed', label: 'Supplier Refund - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SUPPLIER_REFUND_DETAILED_REPORT', parent: '/reports/accounting', description: 'Supplier refunds, one row per refunded credit.' },
+  { to: '/reports/deposit-detailed', label: 'Deposit - Detailed', icon: FileSpreadsheet, permission: 'VIEW_DEPOSIT_DETAILED_REPORT', parent: '/reports/accounting', description: 'Deposits, one row per deposited item.' },
+  { to: '/reports/bank-reconciliation-detailed', label: 'Bank Reconciliation - Detailed', icon: FileSpreadsheet, permission: 'VIEW_BANK_RECONCILIATION_DETAILED_REPORT', parent: '/reports/accounting', description: 'Bank reconciliations, one row per cleared item or adjustment.' },
+  { to: '/reports/statement-of-account-detailed', label: 'Statement of Account - Detailed', icon: FileSpreadsheet, permission: 'VIEW_STATEMENT_OF_ACCOUNT_DETAILED_REPORT', parent: '/reports/accounting', description: 'Statements of account, one row per open item.' },
   { to: '/reports/outlet-delivery-return-detailed', label: 'Outlet Delivery Return - Detailed', icon: FileSpreadsheet, permission: 'VIEW_OUTLET_DELIVERY_RETURN_DETAILED_REPORT', parent: '/reports/sales', description: 'Outlet sales returns, one row per line item, with the agent.' },
 ]
 
@@ -97,6 +119,25 @@ export const navItems: NavItem[] = [
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, permission: 'VIEW_PURCHASE_ORDER', group: 'Purchases', recordLabel: 'Purchase Order' },
   { to: '/purchase-invoices', label: 'Purchase Invoices', icon: Receipt, permission: 'VIEW_PURCHASE_INVOICE', group: 'Purchases', recordLabel: 'Purchase Invoice' },
   { to: '/purchase-receipts', label: 'Purchase Receipts', icon: PackageCheck, permission: 'VIEW_PURCHASE_RECEIPT', group: 'Purchases', recordLabel: 'Purchase Receipt' },
+  { to: '/sales-invoices', label: 'Sales Invoices', icon: ReceiptText, permission: 'VIEW_SALES_INVOICE', group: 'Receivables', recordLabel: 'Sales Invoice' },
+  { to: '/customer-payments', label: 'Customer Payments', icon: Wallet, permission: 'VIEW_CUSTOMER_PAYMENT', group: 'Receivables', recordLabel: 'Customer Payment' },
+  { to: '/customer-memos', label: 'Customer Memos', icon: NotebookPen, permission: 'VIEW_CUSTOMER_MEMO', group: 'Receivables', recordLabel: 'Customer Memo' },
+  { to: '/customer-credit-applications', label: 'Customer Credit Applications', icon: Link2, permission: 'VIEW_CUSTOMER_CREDIT_APPLICATION', group: 'Receivables', recordLabel: 'Customer Credit Application' },
+  { to: '/customer-refunds', label: 'Customer Refunds', icon: RotateCcw, permission: 'VIEW_CUSTOMER_REFUND', group: 'Receivables', recordLabel: 'Customer Refund' },
+  { to: '/statements-of-account', label: 'Statements of Account', icon: FileText, permission: 'VIEW_STATEMENT_OF_ACCOUNT', group: 'Receivables', recordLabel: 'Statement of Account' },
+  { to: '/received-checks', label: 'Received Checks', icon: BadgeCheck, permission: ['VIEW_CUSTOMER_PAYMENT', 'UPDATE_RECEIVED_CHECK_STATUS', 'CREATE_DEPOSIT'], group: 'Receivables' },
+  { to: '/supplier-payments', label: 'Supplier Payments', icon: Banknote, permission: 'VIEW_SUPPLIER_PAYMENT', group: 'Payables', recordLabel: 'Supplier Payment' },
+  { to: '/supplier-memos', label: 'Supplier Memos', icon: NotebookPen, permission: 'VIEW_SUPPLIER_MEMO', group: 'Payables', recordLabel: 'Supplier Memo' },
+  { to: '/supplier-credit-applications', label: 'Supplier Credit Applications', icon: Link2, permission: 'VIEW_SUPPLIER_CREDIT_APPLICATION', group: 'Payables', recordLabel: 'Supplier Credit Application' },
+  { to: '/supplier-refunds', label: 'Supplier Refunds', icon: RotateCcw, permission: 'VIEW_SUPPLIER_REFUND', group: 'Payables', recordLabel: 'Supplier Refund' },
+  { to: '/issued-checks', label: 'Issued Checks', icon: Send, permission: ['VIEW_SUPPLIER_PAYMENT', 'UPDATE_ISSUED_CHECK_STATUS'], group: 'Payables' },
+  { to: '/deposits', label: 'Deposits', icon: Landmark, permission: 'VIEW_DEPOSIT', group: 'Banking', recordLabel: 'Deposit' },
+  { to: '/bank-reconciliations', label: 'Bank Reconciliations', icon: GitCompareArrows, permission: 'VIEW_BANK_RECONCILIATION', group: 'Banking', recordLabel: 'Bank Reconciliation' },
+  { to: '/bank-accounts', label: 'Bank Accounts', icon: CreditCard, permission: 'VIEW_BANK_ACCOUNT', group: 'Banking', recordLabel: 'Bank Account' },
+  { to: '/banks', label: 'Banks', icon: Landmark, permission: 'VIEW_BANK', group: 'Banking', recordLabel: 'Bank' },
+  { to: '/accounting-settings', label: 'Accounting Settings', icon: Settings, group: 'Banking', permission: [
+    'MANAGE_ACCOUNTING_SETTINGS', 'VIEW_SALES_INVOICE', 'VIEW_CUSTOMER_PAYMENT', 'VIEW_SUPPLIER_PAYMENT', 'VIEW_AR_REPORT', 'VIEW_AP_REPORT',
+  ] },
   ...reportNavItems(),
   { to: '/users', label: 'Users', icon: Users, permission: 'VIEW_USER', group: 'Access Control', recordLabel: 'User' },
   { to: '/roles', label: 'Roles', icon: KeyRound, permission: 'VIEW_ROLE', group: 'Access Control', recordLabel: 'Role' },
@@ -105,7 +146,7 @@ export const navItems: NavItem[] = [
   // Any master-data VIEW_ permission opens it; the page offers only the types the user can view.
   { to: '/deleted-records', label: 'Deleted Records', icon: ArchiveX, group: 'Access Control', recordLabel: 'Deleted Record', permission: [
     'VIEW_BRAND', 'VIEW_ITEM_CATEGORY', 'VIEW_ITEM_GROUP', 'VIEW_ITEM', 'VIEW_EMPLOYEE', 'VIEW_WAREHOUSE',
-    'VIEW_SUPPLIER', 'VIEW_CUSTOMER', 'VIEW_USER', 'VIEW_PULL_OUT_REASON', 'VIEW_BILL_OF_MATERIAL',
+    'VIEW_SUPPLIER', 'VIEW_CUSTOMER', 'VIEW_USER', 'VIEW_PULL_OUT_REASON', 'VIEW_BILL_OF_MATERIAL', 'VIEW_BANK', 'VIEW_BANK_ACCOUNT',
   ] },
 ]
 

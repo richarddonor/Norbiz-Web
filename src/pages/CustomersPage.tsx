@@ -56,6 +56,8 @@ interface Customer {
   email: string | null
   phone: string | null
   active: boolean
+  /** Payment terms in days: invoices fall due on the document date + this. */
+  termDays: number
   /** OUTLET only: the outlet's own warehouse, created automatically by the backend. */
   warehouseId: number | null
   warehouseName: string | null
@@ -72,6 +74,7 @@ type CustomerForm = {
   email: string
   phone: string
   active: boolean
+  termDays: string
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
@@ -91,11 +94,11 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
 }
 
 function emptyForm(): CustomerForm {
-  return { code: '', name: '', type: 'CUSTOMER', email: '', phone: '', active: true }
+  return { code: '', name: '', type: 'CUSTOMER', email: '', phone: '', active: true, termDays: '0' }
 }
 
 function customerToForm(c: Customer): CustomerForm {
-  return { code: c.code ?? '', name: c.name, type: c.type, email: c.email ?? '', phone: c.phone ?? '', active: c.active }
+  return { code: c.code ?? '', name: c.name, type: c.type, email: c.email ?? '', phone: c.phone ?? '', active: c.active, termDays: String(c.termDays ?? 0) }
 }
 
 function customerSearchText(c: Customer): string {
@@ -216,7 +219,7 @@ export function CustomersPage() {
     setLoading(true)
     try {
       const submitCompanyId = mode === 'create' ? companyId : activeCustomer!.companyId
-      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, type: form.type, email: form.email || null, phone: form.phone || null, active: form.active }
+      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, type: form.type, email: form.email || null, phone: form.phone || null, active: form.active, termDays: Number(form.termDays) || 0 }
       if (mode === 'create') {
         await apiFetch<Customer>('/customers', { method: 'POST', body: JSON.stringify(body) })
         toast('Customer created successfully.', 'success')
@@ -369,6 +372,13 @@ export function CustomersPage() {
                 <DocCell label="Phone" htmlFor="cust-phone">
                   <Input id="cust-phone" value={form.phone} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                </DocCell>
+              </DocRow>
+              <DocSection title="Payment Terms" />
+              <DocRow>
+                <DocCell label="Terms (days)" htmlFor="cust-terms">
+                  <Input id="cust-terms" type="number" min="0" max="365" value={form.termDays} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, termDays: e.target.value }))} />
                 </DocCell>
               </DocRow>
               {ro && activeCustomer && (

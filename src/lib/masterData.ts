@@ -15,4 +15,6 @@ export const MASTER_DATA_TYPES: Record<MasterDataType, { label: string; permissi
   USER: { label: 'User', permission: 'VIEW_USER' },
   PULL_OUT_REASON: { label: 'Pull-out Reason', permission: 'VIEW_PULL_OUT_REASON' },
   BILL_OF_MATERIAL: { label: 'Bill of Materials', permission: 'VIEW_BILL_OF_MATERIAL' },
+  BANK: { label: 'Bank', permission: 'VIEW_BANK' },
+  BANK_ACCOUNT: { label: 'Bank Account', permission: 'VIEW_BANK_ACCOUNT' },
 }

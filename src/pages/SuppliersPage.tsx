@@ -50,6 +50,8 @@ interface Supplier {
   email: string | null
   phone: string | null
   active: boolean
+  /** Payment terms in days: invoices fall due on the document date + this. */
+  termDays: number
   createdAt: string | null
   updatedAt: string | null
   createdBy: string | null
@@ -62,6 +64,7 @@ type SupplierForm = {
   email: string
   phone: string
   active: boolean
+  termDays: string
 }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
@@ -77,11 +80,11 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
 }
 
 function emptyForm(): SupplierForm {
-  return { code: '', name: '', email: '', phone: '', active: true }
+  return { code: '', name: '', email: '', phone: '', active: true, termDays: '0' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
-  return { code: s.code ?? '', name: s.name, email: s.email ?? '', phone: s.phone ?? '', active: s.active }
+  return { code: s.code ?? '', name: s.name, email: s.email ?? '', phone: s.phone ?? '', active: s.active, termDays: String(s.termDays ?? 0) }
 }
 
 function supplierSearchText(s: Supplier): string {
@@ -202,7 +205,7 @@ export function SuppliersPage() {
     setLoading(true)
     try {
       const submitCompanyId = mode === 'create' ? companyId : activeSupplier!.companyId
-      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, email: form.email || null, phone: form.phone || null, active: form.active }
+      const body = { companyId: submitCompanyId, code: form.code || null, name: form.name, email: form.email || null, phone: form.phone || null, active: form.active, termDays: Number(form.termDays) || 0 }
       if (mode === 'create') {
         await apiFetch<Supplier>('/suppliers', { method: 'POST', body: JSON.stringify(body) })
         toast('Supplier created successfully.', 'success')
@@ -324,6 +327,13 @@ export function SuppliersPage() {
                 <DocCell label="Phone" htmlFor="supp-phone">
                   <Input id="supp-phone" value={form.phone} readOnly={ro}
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                </DocCell>
+              </DocRow>
+              <DocSection title="Payment Terms" />
+              <DocRow>
+                <DocCell label="Terms (days)" htmlFor="supp-terms">
+                  <Input id="supp-terms" type="number" min="0" max="365" value={form.termDays} readOnly={ro}
+                    onChange={e => setForm(f => ({ ...f, termDays: e.target.value }))} />
                 </DocCell>
               </DocRow>
               {ro && activeSupplier && (

@@ -48,8 +48,9 @@ interface DetailedReportRow {
   referenceNumber: string
   sheetNumber: string | null
   transactionDate: string
-  warehouseId: number
-  warehouseName: string
+  /** null on accounting reports */
+  warehouseId: number | null
+  warehouseName: string | null
   counterpartyId: number | null
   counterpartyName: string | null
   /** Outlet Delivery Receipt / Return only: the sales agent */
@@ -65,11 +66,14 @@ interface DetailedReportRow {
   createdAt: string | null
   createdBy: string | null
   lineNumber: number
-  itemId: number
-  itemCode: string
-  itemName: string
-  quantity: string
-  quantityLoaded: string
+  /** accounting reports: what the line is (item fields are null for them) */
+  description: string | null
+  /** item fields and quantities are null on accounting reports */
+  itemId: number | null
+  itemCode: string | null
+  itemName: string | null
+  quantity: string | null
+  quantityLoaded: string | null
   /** null without VIEW_COST_PRICE on purchase reports, and always on Inventory Adjustment */
   price: string | null
   discountPercentage: string | null
@@ -91,6 +95,9 @@ interface DetailedReportConfig {
   loadedLabel: string
   priceLabel?: string
   discount?: boolean
+  /** Accounting documents: rows are memo lines / tenders / applications… with a description and an amount,
+   * no warehouse or item (the backend rejects those filters). */
+  amounts?: boolean
 }
 
 function buildColumns(config: DetailedReportConfig, showCompanyColumn: boolean): readonly ColumnDef[] {
@@ -100,11 +107,23 @@ function buildColumns(config: DetailedReportConfig, showCompanyColumn: boolean):
     { key: 'referenceNumber', label: 'Reference #', sortable: true },
     { key: 'sheetNumber', label: 'Sheet #', sortable: true },
     { key: 'date', label: 'Date', sortable: true, type: 'date' },
-    { key: 'warehouse', label: 'Warehouse', sortable: true },
   )
+  if (!config.amounts) columns.push({ key: 'warehouse', label: 'Warehouse', sortable: true })
   if (config.counterparty) columns.push({ key: 'counterparty', label: config.counterparty.label, sortable: true })
   if (config.agent) columns.push({ key: 'agent', label: 'Agent' })
   if (config.sourceLabel) columns.push({ key: 'sourceReferenceNumber', label: config.sourceLabel })
+  if (config.amounts) {
+    columns.push(
+      { key: 'remarks', label: 'Remarks' },
+      { key: 'lineNumber', label: 'Line #', sortable: true },
+      { key: 'description', label: 'Description' },
+      { key: 'amount', label: 'Amount', sortable: true, total: 'currency' },
+      ORIGIN_COLUMN,
+      { key: 'voided', label: 'Voided', sortable: true, type: 'boolean' },
+      { key: 'createdBy', label: 'Posted By' },
+    )
+    return columns
+  }
   columns.push(
     { key: 'remarks', label: 'Remarks' },
     { key: 'lineNumber', label: 'Line #', sortable: true },
@@ -132,8 +151,8 @@ const NUMERIC = new Set(['lineNumber', 'quantity', 'quantityLoaded', 'price', 'd
 const PINNED = 'referenceNumber'
 
 function rowSearchText(r: DetailedReportRow): string {
-  return [r.companyName, r.referenceNumber, r.sheetNumber ?? '', formatDate(r.transactionDate), r.warehouseName, r.counterpartyName ?? '', r.agentName ?? '',
-    r.sourceReferenceNumber ?? '', r.remarks ?? '', r.itemCode, r.itemName, r.createdBy ?? '', r.voided ? 'voided' : ''].join(' ')
+  return [r.companyName, r.referenceNumber, r.sheetNumber ?? '', formatDate(r.transactionDate), r.warehouseName ?? '', r.counterpartyName ?? '', r.agentName ?? '',
+    r.sourceReferenceNumber ?? '', r.remarks ?? '', r.description ?? '', r.itemCode ?? '', r.itemName ?? '', r.createdBy ?? '', r.voided ? 'voided' : ''].join(' ')
 }
 
 function TransactionDetailedReport({ config }: { config: DetailedReportConfig }) {
@@ -152,7 +171,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   const debouncedFilters = useDebouncedValue(filters)
   const isFiltering = !!debouncedSearch.trim() || !!warehouseId || !!counterpartyId || !!itemId || !!agentId || Object.values(debouncedFilters).some(v => v.trim())
 
-  const combinedFilters: Record<string, string> = { ...debouncedFilters, warehouseId, itemId }
+  const combinedFilters: Record<string, string> = config.amounts ? { ...debouncedFilters } : { ...debouncedFilters, warehouseId, itemId }
   if (config.counterparty) combinedFilters[config.counterparty.param] = counterpartyId
   if (config.agent) combinedFilters.agentId = agentId
   const grouping = useRowGrouping(COLUMNS, config.key)
@@ -168,7 +187,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   // Filter-bar options for the session's active company — inactive records included, since
   // past transactions may reference them.
   const lookupParams = { activeOnly: 'false' }
-  const warehouses = useLookup<LookupOption>('warehouses', activeCompanyId, { params: lookupParams, onError: () => toast('Failed to load warehouses.', 'error') })
+  const warehouses = useLookup<LookupOption>('warehouses', activeCompanyId, { params: lookupParams, enabled: !config.amounts, onError: () => toast('Failed to load warehouses.', 'error') })
   const counterparties = useLookup<LookupOption>(config.counterparty?.lookup ?? 'suppliers', activeCompanyId, {
     params: lookupParams,
     enabled: !!config.counterparty,
@@ -204,15 +223,16 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
       case 'referenceNumber': return r.referenceNumber
       case 'sheetNumber': return r.sheetNumber ?? ''
       case 'date': return formatDate(r.transactionDate)
-      case 'warehouse': return r.warehouseName
+      case 'warehouse': return r.warehouseName ?? ''
       case 'counterparty': return r.counterpartyName ?? ''
       case 'agent': return r.agentName ?? ''
       case 'sourceReferenceNumber': return r.sourceReferenceNumber ?? ''
       case 'remarks': return r.remarks ?? ''
+      case 'description': return r.description ?? ''
       case 'origin': return r.origin === 'NATIVE' ? '' : originLabel(r.origin)
       case 'lineNumber': return String(r.lineNumber)
-      case 'itemCode': return r.itemCode
-      case 'itemName': return r.itemName
+      case 'itemCode': return r.itemCode ?? ''
+      case 'itemName': return r.itemName ?? ''
       case 'quantity': return formatQuantity(r.quantity)
       case 'quantityLoaded': return formatQuantity(r.quantityLoaded)
       case 'price': return r.price === null ? '' : formatCurrency(r.price)
@@ -243,13 +263,15 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
       <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold">{config.title}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchableSelect
-            value={warehouseId}
-            onChange={setWarehouseId}
-            options={warehouses.map(w => ({ value: String(w.id), label: w.name }))}
-            placeholder="All warehouses"
-            className="w-44"
-          />
+          {!config.amounts && (
+            <SearchableSelect
+              value={warehouseId}
+              onChange={setWarehouseId}
+              options={warehouses.map(w => ({ value: String(w.id), label: w.name }))}
+              placeholder="All warehouses"
+              className="w-44"
+            />
+          )}
           {config.counterparty && (
             <SearchableSelect
               value={counterpartyId}
@@ -268,15 +290,17 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
               className="w-44"
             />
           )}
-          <ItemFilterSelect
-            value={itemId}
-            onChange={setItemId}
-            companyId={activeCompanyId}
-            params={lookupParams}
-            onError={() => toast('Failed to load items.', 'error')}
-            placeholder="All items"
-            className="w-52"
-          />
+          {!config.amounts && (
+            <ItemFilterSelect
+              value={itemId}
+              onChange={setItemId}
+              companyId={activeCompanyId}
+              params={lookupParams}
+              onError={() => toast('Failed to load items.', 'error')}
+              placeholder="All items"
+              className="w-52"
+            />
+          )}
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
           <GroupByMenu grouping={grouping} view={view} status={allRows} />
@@ -410,6 +434,28 @@ const OUTLET_DELIVERY_RETURN: DetailedReportConfig = {
   counterparty: { ...CUSTOMER, label: 'Outlet' }, agent: true, sourceLabel: 'ODR #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price',
 }
 
+const SALES_INVOICE: DetailedReportConfig = {
+  title: 'Sales Invoice - Detailed', endpoint: '/reports/detailed/sales-invoices', transactionType: 'SALES_INVOICE', key: 'sales-invoice-detailed',
+  counterparty: CUSTOMER, sourceLabel: 'DR #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price', discount: true,
+}
+
+// Accounting documents: one row per memo line / tender / application / refund line / deposited item / reconciliation line / statement line.
+function accounting(title: string, path: string, transactionType: TransactionType, counterparty?: DetailedReportConfig['counterparty']): DetailedReportConfig {
+  return { title: `${title} - Detailed`, endpoint: `/reports/detailed/${path}`, transactionType, key: `${path.replace(/s$/, '')}-detailed`,
+    counterparty, loadedLabel: '', amounts: true }
+}
+const CUSTOMER_MEMO = accounting('Customer Memo', 'customer-memos', 'CUSTOMER_MEMO', CUSTOMER)
+const SUPPLIER_MEMO = accounting('Supplier Memo', 'supplier-memos', 'SUPPLIER_MEMO', SUPPLIER)
+const CUSTOMER_PAYMENT = accounting('Customer Payment', 'customer-payments', 'CUSTOMER_PAYMENT', CUSTOMER)
+const SUPPLIER_PAYMENT = accounting('Supplier Payment', 'supplier-payments', 'SUPPLIER_PAYMENT', SUPPLIER)
+const CUSTOMER_CREDIT_APPLICATION = accounting('Customer Credit Application', 'customer-credit-applications', 'CUSTOMER_CREDIT_APPLICATION', CUSTOMER)
+const SUPPLIER_CREDIT_APPLICATION = accounting('Supplier Credit Application', 'supplier-credit-applications', 'SUPPLIER_CREDIT_APPLICATION', SUPPLIER)
+const CUSTOMER_REFUND = accounting('Customer Refund', 'customer-refunds', 'CUSTOMER_REFUND', CUSTOMER)
+const SUPPLIER_REFUND = accounting('Supplier Refund', 'supplier-refunds', 'SUPPLIER_REFUND', SUPPLIER)
+const DEPOSIT = accounting('Deposit', 'deposits', 'DEPOSIT')
+const BANK_RECONCILIATION = accounting('Bank Reconciliation', 'bank-reconciliations', 'BANK_RECONCILIATION')
+const STATEMENT_OF_ACCOUNT = accounting('Statement of Account', 'statements-of-account', 'STATEMENT_OF_ACCOUNT', CUSTOMER)
+
 export const InventoryAdjustmentDetailedPage = () => <TransactionDetailedReport config={INVENTORY_ADJUSTMENT} />
 export const OutletReceiptDetailedPage = () => <TransactionDetailedReport config={OUTLET_RECEIPT} />
 export const PurchaseOrderDetailedPage = () => <TransactionDetailedReport config={PURCHASE_ORDER} />
@@ -422,3 +468,15 @@ export const StockTransferDetailedPage = () => <TransactionDetailedReport config
 export const OutletPullOutDetailedPage = () => <TransactionDetailedReport config={OUTLET_PULL_OUT} />
 export const PullOutReceiptDetailedPage = () => <TransactionDetailedReport config={PULL_OUT_RECEIPT} />
 export const AssemblyDetailedPage = () => <TransactionDetailedReport config={ASSEMBLY} />
+export const SalesInvoiceDetailedPage = () => <TransactionDetailedReport config={SALES_INVOICE} />
+export const CustomerMemoDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_MEMO} />
+export const SupplierMemoDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_MEMO} />
+export const CustomerPaymentDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_PAYMENT} />
+export const SupplierPaymentDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_PAYMENT} />
+export const CustomerCreditApplicationDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_CREDIT_APPLICATION} />
+export const SupplierCreditApplicationDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_CREDIT_APPLICATION} />
+export const CustomerRefundDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_REFUND} />
+export const SupplierRefundDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_REFUND} />
+export const DepositDetailedPage = () => <TransactionDetailedReport config={DEPOSIT} />
+export const BankReconciliationDetailedPage = () => <TransactionDetailedReport config={BANK_RECONCILIATION} />
+export const StatementOfAccountDetailedPage = () => <TransactionDetailedReport config={STATEMENT_OF_ACCOUNT} />

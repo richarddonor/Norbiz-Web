@@ -84,6 +84,11 @@ function listKeyFor(endpoint: string) {
   return endpointBase(endpoint).replace(/^\/+|\/+$/g, '').replace(/[^A-Za-z0-9._-]+/g, '.')
 }
 
+/** Refreshes every mounted list of `endpoint` — what `reload()` does, for a record tab that renders no list itself. */
+export function reloadList(endpoint: string) {
+  listChanges.dispatchEvent(new CustomEvent('change', { detail: endpointBase(endpoint) }))
+}
+
 /** Serializes non-empty column filters into a query string — reused by
  * Export handlers so they fetch the same filtered set that's on screen. */
 export function filtersToQueryString(filters: Record<string, string>): string {

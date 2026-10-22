@@ -111,7 +111,8 @@ export function TransactionHistory(props: { activity: TransactionActivity; recor
     rows = events.map(e => ({
       key: e.id,
       at: formatDateTime(e.performedAt),
-      action: e.eventType === 'CREATED' ? 'Posted' : e.eventType === 'VOIDED' ? 'Voided' : (e.actionName ?? e.actionCode ?? 'Action'),
+      action: e.eventType === 'CREATED' ? 'Posted' : e.eventType === 'VOIDED' ? 'Voided' : e.eventType === 'STATUS_CHANGED' ? 'Check status'
+        : (e.actionName ?? e.actionCode ?? 'Action'),
       by: resolveDisplayName(e.performedBy),
       remarks: e.remarks,
     }))

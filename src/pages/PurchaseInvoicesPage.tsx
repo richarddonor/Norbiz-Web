@@ -97,6 +97,13 @@ interface PurchaseInvoice {
   feesTotal: string
   netPayable: string | null
   paymentStatus: PaymentStatus
+  termDays: number
+  dueDate: string | null
+  /** Tracked by the AR/AP subledger (posted through Norbiz on/after the accounting start date): balance/pendingAmount are set. */
+  tracked: boolean
+  balance: string | null
+  /** Part of what's paid that is still in uncleared checks. */
+  pendingAmount: string | null
   createdAt: string | null
   createdBy: string | null
   origin: TransactionOrigin
@@ -189,6 +196,8 @@ export function PurchaseInvoicesPage() {
   const [warehouseId, setWarehouseId]         = useState<number | ''>('')
   const [supplierId, setSupplierId]           = useState<number | ''>('')
   const [invoiceDate, setInvoiceDate]         = useState(todayIso())
+  const [termDays, setTermDays]               = useState('')
+  const [dueDate, setDueDate]                 = useState('')
   const [remarks, setRemarks]                 = useState('')
   const [sheetNumber, setSheetNumber]         = useState('')
   const [discountPercentage, setDiscountPercentage] = useState('')
@@ -260,18 +269,20 @@ export function PurchaseInvoicesPage() {
     setRemarks('')
     setSheetNumber('')
     setDiscountPercentage('')
+    setTermDays('')
+    setDueDate('')
     setLines(nextLines)
     setFees([])
     markClean({
       companyId: nextCompanyId, invoiceMode: 'DIRECT', purchaseOrderId: '', warehouseId: '', supplierId: '',
-      invoiceDate: nextDate, remarks: '', sheetNumber: '', discountPercentage: '', lines: nextLines, fees: [],
+      invoiceDate: nextDate, remarks: '', sheetNumber: '', discountPercentage: '', termDays: '', dueDate: '', lines: nextLines, fees: [],
     })
     setMode('create')
   }
 
   function requestClose() {
     guardedClose(
-      { companyId, invoiceMode, purchaseOrderId, warehouseId, supplierId, invoiceDate, remarks, sheetNumber, discountPercentage, lines, fees },
+      { companyId, invoiceMode, purchaseOrderId, warehouseId, supplierId, invoiceDate, remarks, sheetNumber, discountPercentage, termDays, dueDate, lines, fees },
       () => rec.close()
     )
   }
@@ -380,6 +391,8 @@ export function PurchaseInvoicesPage() {
         supplierId,
         purchaseOrderId: invoiceMode === 'PO_BASED' ? purchaseOrderId : undefined,
         invoiceDate,
+        termDays: termDays.trim() !== '' ? Number(termDays) : undefined,
+        dueDate: dueDate || undefined,
         remarks: remarks || null,
         sheetNumber: sheetNumber || null,
         discountPercentage: discountPercentage.trim() !== '' ? Number(discountPercentage) : undefined,
@@ -503,6 +516,7 @@ export function PurchaseInvoicesPage() {
                     </DocRow>
                     <DocRow>
                       <DocCell label="Payment Status"><DocText>{PAYMENT_STATUS_LABELS[activeInvoice.paymentStatus]}</DocText></DocCell>
+                      <DocCell label="Due Date"><DocText>{activeInvoice.dueDate ? `${formatDate(activeInvoice.dueDate)} (${activeInvoice.termDays} days)` : ''}</DocText></DocCell>
                     </DocRow>
                   </DocHeader>
                 </DocLetterhead>
@@ -551,6 +565,10 @@ export function PurchaseInvoicesPage() {
                     },
                     { label: 'Add: Fees', value: formatCurrency(activeInvoice.feesTotal) },
                     ...(canViewCostPrice ? [{ label: 'Net Payable', value: formatCurrency(activeInvoice.netPayable), grand: true }] : []),
+                    ...(activeInvoice.tracked && !activeInvoice.voided ? [
+                      ...(Number(activeInvoice.pendingAmount) ? [{ label: 'Paid by uncleared checks', value: formatCurrency(activeInvoice.pendingAmount) }] : []),
+                      { label: 'Balance', value: formatCurrency(activeInvoice.balance), grand: true },
+                    ] : []),
                   ]} />
                 </DocRow>
                 <TransactionHistory activity={activity} record={activeInvoice} />
@@ -597,6 +615,14 @@ export function PurchaseInvoicesPage() {
                       </DocCell>
                       <DocCell label="Sheet #" htmlFor="pinv-sheet">
                         <Input id="pinv-sheet" value={sheetNumber} onChange={e => setSheetNumber(e.target.value)} />
+                      </DocCell>
+                    </DocRow>
+                    <DocRow>
+                      <DocCell label="Terms (days)" htmlFor="pinv-terms">
+                        <Input id="pinv-terms" type="number" min="0" max="365" value={termDays} onChange={e => setTermDays(e.target.value)} placeholder="Supplier's terms" />
+                      </DocCell>
+                      <DocCell label="Due Date" htmlFor="pinv-due">
+                        <Input id="pinv-due" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
                       </DocCell>
                     </DocRow>
                     <DocRow>

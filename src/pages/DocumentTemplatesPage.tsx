@@ -52,6 +52,18 @@ const DOCUMENT_TYPES = [
   { value: 'OUTLET_PULL_OUT', label: 'Outlet Pull-out' },
   { value: 'PULL_OUT_RECEIPT', label: 'Pull-out Receipt' },
   { value: 'ASSEMBLY', label: 'Assembly' },
+  { value: 'SALES_INVOICE', label: 'Sales Invoice' },
+  { value: 'CUSTOMER_MEMO', label: 'Customer Memo' },
+  { value: 'SUPPLIER_MEMO', label: 'Supplier Memo' },
+  { value: 'CUSTOMER_PAYMENT', label: 'Customer Payment' },
+  { value: 'SUPPLIER_PAYMENT', label: 'Supplier Payment' },
+  { value: 'CUSTOMER_CREDIT_APPLICATION', label: 'Customer Credit Application' },
+  { value: 'SUPPLIER_CREDIT_APPLICATION', label: 'Supplier Credit Application' },
+  { value: 'CUSTOMER_REFUND', label: 'Customer Refund' },
+  { value: 'SUPPLIER_REFUND', label: 'Supplier Refund' },
+  { value: 'DEPOSIT', label: 'Deposit' },
+  { value: 'BANK_RECONCILIATION', label: 'Bank Reconciliation' },
+  { value: 'STATEMENT_OF_ACCOUNT', label: 'Statement of Account' },
 ]
 
 interface DocumentTemplate {
