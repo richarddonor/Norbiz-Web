@@ -16,6 +16,11 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows, useGrandTotals } from '@/hooks/useRowGrouping'
+import { GroupByMenu, GrandTotalRow } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -75,30 +80,33 @@ function balanceSearchText(b: Balance): string {
 }
 
 function buildColumns(mode: BalanceMode, showCompanyColumn: boolean, canViewCostPrice: boolean): readonly ColumnDef[] {
+  // Only the live balance is a table the backend can sort; as-of and period balances are
+  // aggregated from the ledger in item/warehouse order.
+  const sortable = mode === 'current'
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable })
   columns.push(
-    { key: 'warehouse', label: 'Warehouse' },
-    { key: 'itemCode', label: 'Item Code' },
-    { key: 'itemName', label: 'Item Name' },
+    { key: 'warehouse', label: 'Warehouse', sortable },
+    { key: 'itemCode', label: 'Item Code', sortable },
+    { key: 'itemName', label: 'Item Name', sortable },
   )
   if (mode === 'period') {
     columns.push(
-      { key: 'beginningQuantity', label: 'Beginning Quantity' },
-      { key: 'beginningTransitQuantity', label: 'Beginning Transit Quantity' },
-      { key: 'endingQuantity', label: 'Ending Quantity' },
-      { key: 'endingTransitQuantity', label: 'Ending Transit Quantity' },
-      { key: 'netQuantityChange', label: 'Net Quantity Change' },
-      { key: 'netTransitQuantityChange', label: 'Net Transit Quantity Change' },
+      { key: 'beginningQuantity', label: 'Beginning Quantity', total: 'quantity' },
+      { key: 'beginningTransitQuantity', label: 'Beginning Transit Quantity', total: 'quantity' },
+      { key: 'endingQuantity', label: 'Ending Quantity', total: 'quantity' },
+      { key: 'endingTransitQuantity', label: 'Ending Transit Quantity', total: 'quantity' },
+      { key: 'netQuantityChange', label: 'Net Quantity Change', total: 'quantity' },
+      { key: 'netTransitQuantityChange', label: 'Net Transit Quantity Change', total: 'quantity' },
     )
   } else {
     columns.push(
-      { key: 'quantity', label: 'Quantity' },
-      { key: 'transitQuantity', label: 'Transit Quantity' },
+      { key: 'quantity', label: 'Quantity', sortable, total: 'quantity' },
+      { key: 'transitQuantity', label: 'Transit Quantity', sortable, total: 'quantity' },
     )
   }
   if (canViewCostPrice) {
-    columns.push({ key: 'costPrice', label: 'Cost Price' }, { key: 'value', label: 'Value' })
+    columns.push({ key: 'costPrice', label: 'Cost Price' }, { key: 'value', label: 'Value', total: 'currency' })
   }
   return columns
 }
@@ -136,11 +144,14 @@ export function InventoryBalancePage() {
     }
     return base
   }, [warehouseId, itemId, mode, asOfDate, startDate, endDate])
-
-  const { items: balances, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<Balance>('/inventory-balances', {
+  const grouping = useRowGrouping(COLUMNS, 'inventory-balances')
+  const sorting = useListSort(COLUMNS)
+  const { items: balances, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll, allRows, allItems, totals } = usePagedList<Balance>('/inventory-balances', {
+    all: grouping.active,
+    totals: true,
     onError: () => toast('Failed to load inventory balances.', 'error'),
     search: debouncedSearch,
-    filters,
+    filters: sorting.apply(filters),
     searchText: balanceSearchText,
   })
   // Filter-bar options for the session's active company.
@@ -164,8 +175,11 @@ export function InventoryBalancePage() {
     openPage(`${LEDGER_PATH}?${params}`)
   }
 
+  const view = useGroupedRows(grouping, balances, listRow)
+  const grandTotals = useGrandTotals(COLUMNS, allItems, totals, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: balances,
+    view,
     onView: openLedger,
     enabled: zone === 'content',
   })
@@ -174,12 +188,9 @@ export function InventoryBalancePage() {
     { key: 'r', handler: () => reload() },
   ], zone === 'content')
 
-  async function handleExport() {
-    const qs = filtersToQueryString(filters)
-    const all = await fetchAllContent<Balance>(qs ? `/inventory-balances?${qs}` : '/inventory-balances', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(b => balanceSearchText(b).toLowerCase().includes(term)) : all
-    const rows = matching.map(b => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(b: Balance) {
+    return {
       company: b.companyName,
       warehouse: b.warehouseName,
       itemCode: b.itemCode,
@@ -193,8 +204,16 @@ export function InventoryBalancePage() {
       netQuantityChange: b.netQuantityChange ?? '',
       netTransitQuantityChange: b.netTransitQuantityChange ?? '',
       ...(canViewCostPrice ? { costPrice: formatCurrency(b.costPrice), value: formatCurrency(b.value) } : {}),
-    }))
-    exportToXlsx('inventory-balance', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(filters))
+    const all = await fetchAllContent<Balance>(qs ? `/inventory-balances?${qs}` : '/inventory-balances', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(b => balanceSearchText(b).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('inventory-balance', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   return (
@@ -254,6 +273,7 @@ export function InventoryBalancePage() {
           )}
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -267,23 +287,23 @@ export function InventoryBalancePage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
-                {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
-                {isVisible('itemName') && <th className={cn('text-left py-2 px-4 font-medium', PINNED_TH)}>Item Name</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('warehouse') && <SortableTh sorting={sorting} column="warehouse" className="text-left py-2 px-4 font-medium">Warehouse</SortableTh>}
+                {isVisible('itemCode') && <SortableTh sorting={sorting} column="itemCode" className="text-left py-2 px-4 font-medium">Item Code</SortableTh>}
+                {isVisible('itemName') && <SortableTh sorting={sorting} column="itemName" className={cn('text-left py-2 px-4 font-medium', PINNED_TH)}>Item Name</SortableTh>}
                 {mode === 'period' ? (
                   <>
-                    {isVisible('beginningQuantity') && <th className="text-right py-2 px-4 font-medium">Beginning Quantity</th>}
-                    {isVisible('beginningTransitQuantity') && <th className="text-right py-2 px-4 font-medium">Beginning Transit Quantity</th>}
-                    {isVisible('endingQuantity') && <th className="text-right py-2 px-4 font-medium">Ending Quantity</th>}
-                    {isVisible('endingTransitQuantity') && <th className="text-right py-2 px-4 font-medium">Ending Transit Quantity</th>}
-                    {isVisible('netQuantityChange') && <th className="text-right py-2 px-4 font-medium">Net Quantity Change</th>}
-                    {isVisible('netTransitQuantityChange') && <th className="text-right py-2 px-4 font-medium">Net Transit Quantity Change</th>}
+                    {isVisible('beginningQuantity') && <SortableTh sorting={sorting} column="beginningQuantity" className="text-right py-2 px-4 font-medium">Beginning Quantity</SortableTh>}
+                    {isVisible('beginningTransitQuantity') && <SortableTh sorting={sorting} column="beginningTransitQuantity" className="text-right py-2 px-4 font-medium">Beginning Transit Quantity</SortableTh>}
+                    {isVisible('endingQuantity') && <SortableTh sorting={sorting} column="endingQuantity" className="text-right py-2 px-4 font-medium">Ending Quantity</SortableTh>}
+                    {isVisible('endingTransitQuantity') && <SortableTh sorting={sorting} column="endingTransitQuantity" className="text-right py-2 px-4 font-medium">Ending Transit Quantity</SortableTh>}
+                    {isVisible('netQuantityChange') && <SortableTh sorting={sorting} column="netQuantityChange" className="text-right py-2 px-4 font-medium">Net Quantity Change</SortableTh>}
+                    {isVisible('netTransitQuantityChange') && <SortableTh sorting={sorting} column="netTransitQuantityChange" className="text-right py-2 px-4 font-medium">Net Transit Quantity Change</SortableTh>}
                   </>
                 ) : (
                   <>
-                    {isVisible('quantity') && <th className="text-right py-2 px-4 font-medium">Quantity</th>}
-                    {isVisible('transitQuantity') && <th className="text-right py-2 px-4 font-medium">Transit Quantity</th>}
+                    {isVisible('quantity') && <SortableTh sorting={sorting} column="quantity" className="text-right py-2 px-4 font-medium">Quantity</SortableTh>}
+                    {isVisible('transitQuantity') && <SortableTh sorting={sorting} column="transitQuantity" className="text-right py-2 px-4 font-medium">Transit Quantity</SortableTh>}
                   </>
                 )}
                 {canViewCostPrice && isVisible('costPrice') && <th className="text-right py-2 px-4 font-medium">Cost Price</th>}
@@ -298,7 +318,7 @@ export function InventoryBalancePage() {
                   </td>
                 </tr>
               ) : (
-                balances.map((balance, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (balance, i) => (
                   <tr
                     key={`${balance.itemId}-${balance.warehouseId}`}
                     onClick={() => { setActiveIndex(i); openLedger(balance) }}
@@ -334,8 +354,9 @@ export function InventoryBalancePage() {
                 ))
               )}
             </tbody>
+            <GrandTotalRow columns={COLUMNS} isVisible={isVisible} totals={grandTotals} />
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
     </div>

@@ -17,6 +17,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -30,10 +35,10 @@ import { cn } from '@/lib/utils'
 type FormMode = 'view' | 'create' | 'edit'
 
 const COLUMNS: readonly ColumnDef[] = [
-  { key: 'skuCode', label: 'SKU Code' },
-  { key: 'itemCode', label: 'Item Code' },
-  { key: 'itemName', label: 'Item Name' },
-  { key: 'unitPrice', label: 'Unit Price' },
+  { key: 'skuCode', label: 'SKU Code', sortable: true },
+  { key: 'itemCode', label: 'Item Code', sortable: true },
+  { key: 'itemName', label: 'Item Name', sortable: true },
+  { key: 'unitPrice', label: 'Unit Price', sortable: true },
 ]
 
 function skuSearchText(sku: ItemSku): string {
@@ -80,11 +85,14 @@ export function ItemSkusPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: skus, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemSku>('/item-skus', {
+  const grouping = useRowGrouping(COLUMNS, 'item-skus')
+  const sorting = useListSort(COLUMNS)
+  const { items: skus, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<ItemSku>('/item-skus', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load SKUs.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: skuSearchText,
   })
 
@@ -105,8 +113,10 @@ export function ItemSkusPage() {
   const canUpdate = hasPermission('UPDATE_ITEM')
   const canDeleteSku = hasPermission('DELETE_ITEM')
 
+  const view = useGroupedRows(grouping, skus, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: skus,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteSku ? handleDelete : undefined,
@@ -200,18 +210,23 @@ export function ItemSkusPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<ItemSku>(qs ? `/item-skus?${qs}` : '/item-skus', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(sku => skuSearchText(sku).toLowerCase().includes(term)) : all
-    const rows = matching.map(sku => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(sku: ItemSku) {
+    return {
       skuCode: sku.skuCode,
       itemCode: sku.itemCode,
       itemName: sku.itemName,
       unitPrice: formatCurrency(sku.unitPrice),
-    }))
-    exportToXlsx('item-skus', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<ItemSku>(qs ? `/item-skus?${qs}` : '/item-skus', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(sku => skuSearchText(sku).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('item-skus', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeSku?.skuCode ?? ''
@@ -227,6 +242,7 @@ export function ItemSkusPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -330,10 +346,10 @@ export function ItemSkusPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {isVisible('skuCode') && <th className="text-left py-2 px-4 font-medium">SKU Code</th>}
-                {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
-                {isVisible('itemName') && <th className="text-left py-2 px-4 font-medium">Item Name</th>}
-                {isVisible('unitPrice') && <th className="text-right py-2 px-4 font-medium">Unit Price</th>}
+                {isVisible('skuCode') && <SortableTh sorting={sorting} column="skuCode" className="text-left py-2 px-4 font-medium">SKU Code</SortableTh>}
+                {isVisible('itemCode') && <SortableTh sorting={sorting} column="itemCode" className="text-left py-2 px-4 font-medium">Item Code</SortableTh>}
+                {isVisible('itemName') && <SortableTh sorting={sorting} column="itemName" className="text-left py-2 px-4 font-medium">Item Name</SortableTh>}
+                {isVisible('unitPrice') && <SortableTh sorting={sorting} column="unitPrice" className="text-right py-2 px-4 font-medium">Unit Price</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -351,7 +367,7 @@ export function ItemSkusPage() {
                   </td>
                 </tr>
               ) : (
-                skus.map((sku, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (sku, i) => (
                   <tr
                     key={sku.id}
                     onClick={() => { setActiveIndex(i); openView(sku) }}
@@ -386,7 +402,7 @@ export function ItemSkusPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

@@ -17,6 +17,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -61,12 +66,12 @@ type WarehouseForm = {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
-  columns.push({ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }, { key: 'kind', label: 'Type' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
+  columns.push({ key: 'code', label: 'Code', sortable: true }, { key: 'name', label: 'Name', sortable: true }, { key: 'kind', label: 'Type' })
   columns.push(
-    { key: 'active', label: 'Active', type: 'boolean' },
-    { key: 'createdBy', label: 'Created by' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
+    { key: 'createdBy', label: 'Created by', sortable: true },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -103,11 +108,14 @@ export function WarehousesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: warehouses, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Warehouse>('/warehouses', {
+  const grouping = useRowGrouping(COLUMNS, 'warehouses')
+  const sorting = useListSort(COLUMNS)
+  const { items: warehouses, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<Warehouse>('/warehouses', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load warehouses.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: warehouseSearchText,
   })
 
@@ -130,8 +138,10 @@ export function WarehousesPage() {
   const canUpdate = hasPermission('UPDATE_WAREHOUSE')
   const canDeleteWarehouse = hasPermission('DELETE_WAREHOUSE')
 
+  const view = useGroupedRows(grouping, warehouses, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: warehouses,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteWarehouse ? handleDelete : undefined,
@@ -238,12 +248,9 @@ export function WarehousesPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<Warehouse>(qs ? `/warehouses?${qs}` : '/warehouses', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(w => warehouseSearchText(w).toLowerCase().includes(term)) : all
-    const rows = matching.map(w => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(w: Warehouse) {
+    return {
       code: w.code ?? '',
       name: w.name,
       kind: warehouseKind(w),
@@ -251,8 +258,16 @@ export function WarehousesPage() {
       active: w.active ? 'Yes' : 'No',
       createdBy: resolveDisplayName(w.createdBy),
       updatedAt: formatDateTime(w.updatedAt),
-    }))
-    exportToXlsx('warehouses', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<Warehouse>(qs ? `/warehouses?${qs}` : '/warehouses', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(w => warehouseSearchText(w).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('warehouses', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeWarehouse?.name ?? ''
@@ -267,6 +282,7 @@ export function WarehousesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -397,13 +413,13 @@ export function WarehousesPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('kind') && <th className="text-left py-2 px-4 font-medium">Type</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('code') && <SortableTh sorting={sorting} column="code" className="text-left py-2 px-4 font-medium">Code</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('kind') && <SortableTh sorting={sorting} column="kind" className="text-left py-2 px-4 font-medium">Type</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('createdBy') && <SortableTh sorting={sorting} column="createdBy" className="text-left py-2 px-4 font-medium">Created by</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -422,7 +438,7 @@ export function WarehousesPage() {
                   </td>
                 </tr>
               ) : (
-                warehouses.map((warehouse, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (warehouse, i) => (
                   <tr
                     key={warehouse.id}
                     onClick={() => { setActiveIndex(i); openView(warehouse) }}
@@ -484,7 +500,7 @@ export function WarehousesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

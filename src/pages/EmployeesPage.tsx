@@ -16,8 +16,13 @@ import { useUserDisplayNames } from '@/hooks/useUserDisplayNames'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
-import { usePagedList, fetchAllContent } from '@/hooks/usePagedList'
+import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -69,16 +74,19 @@ type EmployeeForm = {
   userId: number | ''
 }
 
+// This list has no column filters, only the sort.
+const NO_FILTERS: Record<string, string> = {}
+
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'employeeCode', label: 'Employee Code' },
-    { key: 'firstName', label: 'First Name' },
-    { key: 'lastName', label: 'Last Name' },
-    { key: 'email', label: 'Email' },
-    { key: 'phone', label: 'Phone' },
-    { key: 'active', label: 'Active' },
+    { key: 'employeeCode', label: 'Employee Code', sortable: true },
+    { key: 'firstName', label: 'First Name', sortable: true },
+    { key: 'lastName', label: 'Last Name', sortable: true },
+    { key: 'email', label: 'Email', sortable: true },
+    { key: 'phone', label: 'Phone', sortable: true },
+    { key: 'active', label: 'Active', sortable: true },
     { key: 'tags', label: 'Tags' },
     { key: 'username', label: 'Linked User' },
   )
@@ -120,10 +128,14 @@ export function EmployeesPage() {
   const isFiltering = !!debouncedSearch.trim()
 
   const inRecordTab = useIsRecordTab()
-  const { items: employees, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Employee>('/employees', {
+  const grouping = useRowGrouping(COLUMNS, 'employees')
+  const sorting = useListSort(COLUMNS)
+  const { items: employees, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<Employee>('/employees', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load employees.', 'error'),
     search: debouncedSearch,
+    filters: sorting.apply(NO_FILTERS),
     searchText: employeeSearchText,
   })
 
@@ -149,8 +161,10 @@ export function EmployeesPage() {
   const canUpdate = hasPermission('UPDATE_EMPLOYEE')
   const canDeleteEmployee = hasPermission('DELETE_EMPLOYEE')
 
+  const view = useGroupedRows(grouping, employees, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: employees,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteEmployee ? handleDelete : undefined,
@@ -253,11 +267,9 @@ export function EmployeesPage() {
     }
   }
 
-  async function handleExport() {
-    const all = await fetchAllContent<Employee>('/employees', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(e => employeeSearchText(e).toLowerCase().includes(term)) : all
-    const rows = matching.map(e => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(e: Employee) {
+    return {
       employeeCode: e.employeeCode,
       firstName: e.firstName,
       lastName: e.lastName,
@@ -267,8 +279,16 @@ export function EmployeesPage() {
       tags: e.tags.join(', '),
       username: e.username ?? '',
       company: e.companyName,
-    }))
-    exportToXlsx('employees', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(NO_FILTERS))
+    const all = await fetchAllContent<Employee>(qs ? `/employees?${qs}` : '/employees', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(e => employeeSearchText(e).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('employees', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeEmployee ? `${activeEmployee.lastName}, ${activeEmployee.firstName}` : ''
@@ -283,6 +303,7 @@ export function EmployeesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -413,15 +434,15 @@ export function EmployeesPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('employeeCode') && <th className="text-left py-2 px-4 font-medium">Employee Code</th>}
-                {isVisible('firstName') && <th className="text-left py-2 px-4 font-medium">First Name</th>}
-                {isVisible('lastName') && <th className="text-left py-2 px-4 font-medium">Last Name</th>}
-                {isVisible('email') && <th className="text-left py-2 px-4 font-medium">Email</th>}
-                {isVisible('phone') && <th className="text-left py-2 px-4 font-medium">Phone</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
-                {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Linked User</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('employeeCode') && <SortableTh sorting={sorting} column="employeeCode" className="text-left py-2 px-4 font-medium">Employee Code</SortableTh>}
+                {isVisible('firstName') && <SortableTh sorting={sorting} column="firstName" className="text-left py-2 px-4 font-medium">First Name</SortableTh>}
+                {isVisible('lastName') && <SortableTh sorting={sorting} column="lastName" className="text-left py-2 px-4 font-medium">Last Name</SortableTh>}
+                {isVisible('email') && <SortableTh sorting={sorting} column="email" className="text-left py-2 px-4 font-medium">Email</SortableTh>}
+                {isVisible('phone') && <SortableTh sorting={sorting} column="phone" className="text-left py-2 px-4 font-medium">Phone</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('tags') && <SortableTh sorting={sorting} column="tags" className="text-left py-2 px-4 font-medium">Tags</SortableTh>}
+                {isVisible('username') && <SortableTh sorting={sorting} column="username" className="text-left py-2 px-4 font-medium">Linked User</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
             </thead>
@@ -433,7 +454,7 @@ export function EmployeesPage() {
                   </td>
                 </tr>
               ) : (
-                employees.map((employee, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (employee, i) => (
                   <tr
                     key={employee.id}
                     onClick={() => { setActiveIndex(i); openView(employee) }}
@@ -484,7 +505,7 @@ export function EmployeesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

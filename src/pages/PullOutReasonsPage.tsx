@@ -17,6 +17,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -49,14 +54,14 @@ interface PullOutReason {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'name', label: 'Name' },
-    { key: 'active', label: 'Active', type: 'boolean' },
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
   )
   columns.push(
-    { key: 'createdBy', label: 'Created by' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'createdBy', label: 'Created by', sortable: true },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -81,11 +86,14 @@ export function PullOutReasonsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: reasons, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PullOutReason>('/pull-out-reasons', {
+  const grouping = useRowGrouping(COLUMNS, 'pull-out-reasons')
+  const sorting = useListSort(COLUMNS)
+  const { items: reasons, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<PullOutReason>('/pull-out-reasons', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load pull-out reasons.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: reasonSearchText,
   })
 
@@ -109,8 +117,10 @@ export function PullOutReasonsPage() {
   const canUpdate = hasPermission('UPDATE_PULL_OUT_REASON')
   const canDeleteReason = hasPermission('DELETE_PULL_OUT_REASON')
 
+  const view = useGroupedRows(grouping, reasons, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: reasons,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteReason ? handleDelete : undefined,
@@ -207,19 +217,24 @@ export function PullOutReasonsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<PullOutReason>(qs ? `/pull-out-reasons?${qs}` : '/pull-out-reasons', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(c => reasonSearchText(c).toLowerCase().includes(term)) : all
-    const rows = matching.map(c => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(c: PullOutReason) {
+    return {
       name: c.name,
       active: c.active ? 'Yes' : 'No',
       company: c.companyName,
       createdBy: resolveDisplayName(c.createdBy),
       updatedAt: formatDateTime(c.updatedAt),
-    }))
-    exportToXlsx('pull-out-reasons', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<PullOutReason>(qs ? `/pull-out-reasons?${qs}` : '/pull-out-reasons', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(c => reasonSearchText(c).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('pull-out-reasons', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeReason?.name ?? ''
@@ -234,6 +249,7 @@ export function PullOutReasonsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -322,11 +338,11 @@ export function PullOutReasonsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('createdBy') && <SortableTh sorting={sorting} column="createdBy" className="text-left py-2 px-4 font-medium">Created by</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -344,7 +360,7 @@ export function PullOutReasonsPage() {
                   </td>
                 </tr>
               ) : (
-                reasons.map((reason, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (reason, i) => (
                   <tr
                     key={reason.id}
                     onClick={() => { setActiveIndex(i); openView(reason) }}
@@ -391,7 +407,7 @@ export function PullOutReasonsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

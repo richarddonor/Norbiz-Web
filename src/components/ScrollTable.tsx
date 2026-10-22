@@ -17,7 +17,7 @@ interface Props {
 }
 
 /** A list/report table that scrolls inside its own box, both ways, with a sticky header
- * (column titles + filter row). Cells don't wrap. Put it in a height-bounded flex column —
+ * (column titles + filter row) and, when there is one, a sticky grand-total footer. Cells don't wrap. Put it in a height-bounded flex column —
  * page `flex h-full flex-col`, Card and CardContent `flex min-h-0 flex-col` — so it shrinks to
  * the viewport and both scrollbars stay on screen instead of below 50 rows of page. */
 export function ScrollTable({ activeIndex = -1, className, children }: Props) {
@@ -42,6 +42,8 @@ export function ScrollTable({ activeIndex = -1, className, children }: Props) {
           'w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap',
           // Collapsed borders don't travel with a sticky header, so its bottom edge is a shadow.
           '[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-20 [&_thead]:bg-[hsl(var(--card))] [&_thead]:shadow-[0_1px_0_hsl(var(--border))]',
+          // The grand-total footer (`GrandTotalRow`) stays in view the same way, at the bottom.
+          '[&_tfoot]:sticky [&_tfoot]:bottom-0 [&_tfoot]:z-20 [&_tfoot]:bg-[hsl(var(--card))] [&_tfoot]:shadow-[0_-1px_0_hsl(var(--border))]',
         )}
       >
         {children}

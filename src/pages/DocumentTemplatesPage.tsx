@@ -18,6 +18,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -72,12 +77,12 @@ type TemplateForm = {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
-  columns.push({ key: 'name', label: 'Name' }, { key: 'documentType', label: 'Document Type' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
+  columns.push({ key: 'name', label: 'Name', sortable: true }, { key: 'documentType', label: 'Document Type', sortable: true })
   columns.push(
-    { key: 'defaultTemplate', label: 'Default', type: 'boolean' },
-    { key: 'active', label: 'Active', type: 'boolean' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'defaultTemplate', label: 'Default', sortable: true, type: 'boolean' },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -111,11 +116,14 @@ export function DocumentTemplatesPage() {
     [t.name, documentTypeLabel(t.documentType), t.companyName, t.active ? 'active' : 'inactive'].join(' ')
 
   const inRecordTab = useIsRecordTab()
-  const { items: templates, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DocumentTemplate>('/document-templates', {
+  const grouping = useRowGrouping(COLUMNS, 'document-templates')
+  const sorting = useListSort(COLUMNS)
+  const { items: templates, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<DocumentTemplate>('/document-templates', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load document templates.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText,
   })
 
@@ -135,8 +143,10 @@ export function DocumentTemplatesPage() {
 
   const canManage = hasPermission('MANAGE_DOCUMENT_TEMPLATES')
 
+  const view = useGroupedRows(grouping, templates, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: templates,
+    view,
     onView: openView,
     onEdit: canManage ? openEdit : undefined,
     onDelete: canManage ? handleDelete : undefined,
@@ -226,6 +236,18 @@ export function DocumentTemplatesPage() {
   const tabTitle = mode === 'create' ? 'New Document Template' : mode === 'edit' ? `Edit ${recordName}` : recordName || 'Document Template'
   const ro = mode === 'view'
 
+  /** One row's displayed value per column key: what grouping groups by. */
+  function listRow(t: DocumentTemplate) {
+    return {
+      company: t.companyName,
+      name: t.name,
+      documentType: documentTypeLabel(t.documentType),
+      defaultTemplate: t.defaultTemplate ? 'Yes' : 'No',
+      active: t.active ? 'Yes' : 'No',
+      updatedAt: formatDateTime(t.updatedAt),
+    }
+  }
+
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (<>
@@ -234,6 +256,7 @@ export function DocumentTemplatesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           {canManage && (
             <Button onClick={openCreate}>
               <Plus className="w-4 h-4" />
@@ -333,12 +356,12 @@ export function DocumentTemplatesPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('documentType') && <th className="text-left py-2 px-4 font-medium">Document Type</th>}
-                {isVisible('defaultTemplate') && <th className="text-left py-2 px-4 font-medium">Default</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('documentType') && <SortableTh sorting={sorting} column="documentType" className="text-left py-2 px-4 font-medium">Document Type</SortableTh>}
+                {isVisible('defaultTemplate') && <SortableTh sorting={sorting} column="defaultTemplate" className="text-left py-2 px-4 font-medium">Default</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -357,7 +380,7 @@ export function DocumentTemplatesPage() {
                   </td>
                 </tr>
               ) : (
-                templates.map((template, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (template, i) => (
                   <tr
                     key={template.id}
                     onClick={() => { setActiveIndex(i); openView(template) }}
@@ -418,7 +441,7 @@ export function DocumentTemplatesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

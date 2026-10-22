@@ -12,9 +12,20 @@ interface Props {
   onPageChange: (page: number) => void
   /** shows a "Rows" selector when set — pass `usePagedList`'s `setPageSize` */
   onPageSizeChange?: (size: number) => void
+  /** Replaces the page controls with this text — pass `useGroupedRows`'s `summary`, which is
+   * set while the rows are grouped (every row is on one page then). */
+  summary?: string
 }
 
-export function Pagination({ page, totalPages, totalElements, pageSize, onPageChange, onPageSizeChange }: Props) {
+export function Pagination({ page, totalPages, totalElements, pageSize, onPageChange, onPageSizeChange, summary }: Props) {
+  if (summary !== undefined) {
+    return (
+      <div className="flex items-center px-4 py-3 border-t border-[hsl(var(--border))] text-sm text-[hsl(var(--muted-foreground))]">
+        {summary}
+      </div>
+    )
+  }
+
   const from = totalElements === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(page * pageSize, totalElements)
 

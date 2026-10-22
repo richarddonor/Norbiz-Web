@@ -16,6 +16,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -105,12 +110,15 @@ export function DeletedRecordsPage() {
 
   const inRecordTab = useIsRecordTab()
   const endpoint = `/master-data/${type || 'BRAND'}/deleted`
-  const { items: records, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DeletedRecord>(endpoint, {
+  const grouping = useRowGrouping(COLUMNS, 'deleted-records')
+  const sorting = useListSort(COLUMNS)
+  const { items: records, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<DeletedRecord>(endpoint, {
+    all: grouping.active,
     enabled: !inRecordTab && !!type,
     pageSizeKey: 'master-data.deleted',
     onError: () => toast('Failed to load deleted records.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: deletedRecordSearchText,
   })
 
@@ -123,8 +131,10 @@ export function DeletedRecordsPage() {
   })
   const { isVisible, menu: columnMenu } = useColumnVisibility('deleted-records')
 
+  const view = useGroupedRows(grouping, records, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: records,
+    view,
     onView: r => openView(toRef(type as MasterDataType, r)),
     enabled: !inRecordTab && zone === 'content',
   })
@@ -142,21 +152,26 @@ export function DeletedRecordsPage() {
     rec.close()
   }
 
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(r: DeletedRecord) {
+    return {
+      company: r.companyName ?? '',
+      code: r.code ?? '',
+      name: r.name ?? '',
+      deletedBy: resolveDisplayName(r.deletedBy),
+      deletedAt: formatDateTime(r.deletedAt),
+    }
+  }
+
   async function handleExport() {
     if (!type) return
     try {
-      const qs = filtersToQueryString(debouncedFilters)
+      const qs = filtersToQueryString(sorting.apply(debouncedFilters))
       const all = await fetchAllContent<DeletedRecord>(qs ? `${endpoint}?${qs}` : endpoint, 100000)
       const term = debouncedSearch.trim().toLowerCase()
       const matching = term ? all.filter(r => deletedRecordSearchText(r).toLowerCase().includes(term)) : all
-      const rows = matching.map(r => ({
-        company: r.companyName ?? '',
-        code: r.code ?? '',
-        name: r.name ?? '',
-        deletedBy: resolveDisplayName(r.deletedBy),
-        deletedAt: formatDateTime(r.deletedAt),
-      }))
-      exportToXlsx(`deleted-${MASTER_DATA_TYPES[type].label.toLowerCase().replace(/\s+/g, '-')}-records`, COLUMNS.filter(c => isVisible(c.key)), rows)
+      const rows = matching.map(listRow)
+      exportToXlsx(`deleted-${MASTER_DATA_TYPES[type].label.toLowerCase().replace(/\s+/g, '-')}-records`, COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
     } catch {
       toast('Failed to export deleted records.', 'error')
     }
@@ -183,6 +198,7 @@ export function DeletedRecordsPage() {
             </div>
             <ReloadButton onReload={reload} loading={listLoading} />
             <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+            <GroupByMenu grouping={grouping} view={view} status={allRows} />
             <Button variant="outline" onClick={handleExport} disabled={!type}>
               <FileDown className="w-4 h-4" />
               Export
@@ -230,11 +246,11 @@ export function DeletedRecordsPage() {
               <ScrollTable activeIndex={activeIndex}>
                 <thead>
                   <tr className="border-b border-[hsl(var(--border))]">
-                    {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                    {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
-                    {isVisible('name') && <th className={cn('text-left py-2 px-4 font-medium', PINNED_TH)}>Name</th>}
-                    {isVisible('deletedBy') && <th className="text-left py-2 px-4 font-medium">Deleted by</th>}
-                    {isVisible('deletedAt') && <th className="text-left py-2 px-4 font-medium">Deleted at</th>}
+                    {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                    {isVisible('code') && <SortableTh sorting={sorting} column="code" className="text-left py-2 px-4 font-medium">Code</SortableTh>}
+                    {isVisible('name') && <SortableTh sorting={sorting} column="name" className={cn('text-left py-2 px-4 font-medium', PINNED_TH)}>Name</SortableTh>}
+                    {isVisible('deletedBy') && <SortableTh sorting={sorting} column="deletedBy" className="text-left py-2 px-4 font-medium">Deleted by</SortableTh>}
+                    {isVisible('deletedAt') && <SortableTh sorting={sorting} column="deletedAt" className="text-left py-2 px-4 font-medium">Deleted at</SortableTh>}
                     <th className="py-2 px-4" />
                   </tr>
                   <ColumnFilterRow
@@ -254,7 +270,7 @@ export function DeletedRecordsPage() {
                       </td>
                     </tr>
                   ) : (
-                    records.map((r, i) => (
+                    groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (r, i) => (
                       <tr
                         key={r.id}
                         data-active={i === activeIndex || undefined}
@@ -279,7 +295,7 @@ export function DeletedRecordsPage() {
                   )}
                 </tbody>
               </ScrollTable>
-              <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+              <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
             </>)}
           </CardContent>
         </Card>

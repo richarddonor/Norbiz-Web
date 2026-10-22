@@ -18,6 +18,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -62,9 +67,9 @@ function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
   if (showCompanyColumn) columns.push({ key: 'companies', label: 'Companies' })
   columns.push(
-    { key: 'displayName', label: 'Display Name' },
-    { key: 'username', label: 'Username' },
-    { key: 'email', label: 'Email' },
+    { key: 'displayName', label: 'Display Name', sortable: true },
+    { key: 'username', label: 'Username', sortable: true },
+    { key: 'email', label: 'Email', sortable: true },
     { key: 'roles', label: 'Roles' },
   )
   return columns
@@ -167,11 +172,14 @@ export function UsersPage() {
   const allRoles = useMemo<Role[]>(
     () => roleOptions.filter(r => r.code !== 'SUPER_ADMIN').map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })),
     [roleOptions])
-  const { items: users, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<User>('/users', {
+  const grouping = useRowGrouping(COLUMNS, 'users')
+  const sorting = useListSort(COLUMNS)
+  const { items: users, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<User>('/users', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load users.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: userSearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([])
@@ -197,8 +205,10 @@ export function UsersPage() {
   const canDeleteUser = hasPermission('DELETE_USER')
   const canResetPassword = hasPermission('RESET_USER_PASSWORD')
 
+  const view = useGroupedRows(grouping, users, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: users,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteUser ? handleDelete : undefined,
@@ -324,19 +334,24 @@ export function UsersPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<User>(qs ? `/users?${qs}` : '/users', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(u => userSearchText(u).toLowerCase().includes(term)) : all
-    const rows = matching.map(u => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(u: User) {
+    return {
       displayName: u.displayName ?? '',
       username: u.username,
       email: u.email,
       roles: u.roles.join(', '),
       companies: u.companies.map(c => c.name).join(', '),
-    }))
-    exportToXlsx('users', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<User>(qs ? `/users?${qs}` : '/users', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(u => userSearchText(u).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('users', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const ro = mode === 'view'
@@ -351,6 +366,7 @@ export function UsersPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -477,11 +493,11 @@ export function UsersPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('companies') && <th className="text-left py-2 px-4 font-medium">Companies</th>}
-                {isVisible('displayName') && <th className="text-left py-2 px-4 font-medium">Display Name</th>}
-                {isVisible('username') && <th className="text-left py-2 px-4 font-medium">Username</th>}
-                {isVisible('email') && <th className="text-left py-2 px-4 font-medium">Email</th>}
-                {isVisible('roles') && <th className="text-left py-2 px-4 font-medium">Roles</th>}
+                {showCompanyColumn && isVisible('companies') && <SortableTh sorting={sorting} column="companies" className="text-left py-2 px-4 font-medium">Companies</SortableTh>}
+                {isVisible('displayName') && <SortableTh sorting={sorting} column="displayName" className="text-left py-2 px-4 font-medium">Display Name</SortableTh>}
+                {isVisible('username') && <SortableTh sorting={sorting} column="username" className="text-left py-2 px-4 font-medium">Username</SortableTh>}
+                {isVisible('email') && <SortableTh sorting={sorting} column="email" className="text-left py-2 px-4 font-medium">Email</SortableTh>}
+                {isVisible('roles') && <SortableTh sorting={sorting} column="roles" className="text-left py-2 px-4 font-medium">Roles</SortableTh>}
                 <th className={STICKY_ACTIONS} />
               </tr>
               <ColumnFilterRow
@@ -499,7 +515,7 @@ export function UsersPage() {
                   </td>
                 </tr>
               ) : (
-                users.map((user, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (user, i) => (
                   <tr
                     key={user.id}
                     onClick={() => { setActiveIndex(i); openView(user) }}
@@ -548,7 +564,7 @@ export function UsersPage() {
             </tbody>
           </ScrollTable>
           </div>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

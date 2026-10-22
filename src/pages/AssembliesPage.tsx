@@ -19,6 +19,11 @@ import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
@@ -96,15 +101,15 @@ const EMPTY_OUTPUT: OutputDraft = { itemId: '', billOfMaterialId: '', quantity: 
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'referenceNumber', label: 'Reference #' },
-    { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'warehouse', label: 'Warehouse' },
+    { key: 'referenceNumber', label: 'Reference #', sortable: true },
+    { key: 'sheetNumber', label: 'Sheet #', sortable: true },
+    { key: 'warehouse', label: 'Warehouse', sortable: true },
     { key: 'outputs', label: 'Outputs' },
-    { key: 'date', label: 'Assembly Date', type: 'date' },
+    { key: 'date', label: 'Assembly Date', sortable: true, type: 'date' },
     ORIGIN_COLUMN,
-    { key: 'voided', label: 'Voided', type: 'boolean' },
+    { key: 'voided', label: 'Voided', sortable: true, type: 'boolean' },
   )
   return columns
 }
@@ -154,11 +159,14 @@ export function AssembliesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: assemblies, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Assembly>('/assemblies', {
+  const grouping = useRowGrouping(COLUMNS, 'assemblies')
+  const sorting = useListSort(COLUMNS)
+  const { items: assemblies, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<Assembly>('/assemblies', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load assemblies.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: assemblySearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
@@ -201,8 +209,10 @@ export function AssembliesPage() {
   const [voiding, setVoiding] = useState(false)
   const activity = useTransactionActivity('ASSEMBLY', inRecordTab && mode === 'view' ? activeAssembly?.id : null, activeAssembly?.referenceNumber, activeAssembly?.voided)
 
+  const view = useGroupedRows(grouping, assemblies, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: assemblies,
+    view,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -320,12 +330,9 @@ export function AssembliesPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<Assembly>(qs ? `/assemblies?${qs}` : '/assemblies', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(a => assemblySearchText(a).toLowerCase().includes(term)) : all
-    const rows = matching.map(a => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(a: Assembly) {
+    return {
       referenceNumber: a.referenceNumber,
       sheetNumber: a.sheetNumber ?? '',
       warehouse: a.warehouseName,
@@ -334,8 +341,16 @@ export function AssembliesPage() {
       origin: originLabel(a.origin),
       voided: a.voided ? 'Yes' : '',
       company: a.companyName,
-    }))
-    exportToXlsx('assemblies', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<Assembly>(qs ? `/assemblies?${qs}` : '/assemblies', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(a => assemblySearchText(a).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('assemblies', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   function printFailed() {
@@ -373,6 +388,7 @@ export function AssembliesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -588,14 +604,14 @@ export function AssembliesPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
-                {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
-                {isVisible('outputs') && <th className="text-left py-2 px-4 font-medium">Outputs</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Assembly Date</th>}
-                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
-                {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('referenceNumber') && <SortableTh sorting={sorting} column="referenceNumber" className="text-left py-2 px-4 font-medium">Reference #</SortableTh>}
+                {isVisible('sheetNumber') && <SortableTh sorting={sorting} column="sheetNumber" className="text-left py-2 px-4 font-medium">Sheet #</SortableTh>}
+                {isVisible('warehouse') && <SortableTh sorting={sorting} column="warehouse" className="text-left py-2 px-4 font-medium">Warehouse</SortableTh>}
+                {isVisible('outputs') && <SortableTh sorting={sorting} column="outputs" className="text-left py-2 px-4 font-medium">Outputs</SortableTh>}
+                {isVisible('date') && <SortableTh sorting={sorting} column="date" className="text-left py-2 px-4 font-medium">Assembly Date</SortableTh>}
+                {isVisible('origin') && <SortableTh sorting={sorting} column="origin" className="text-left py-2 px-4 font-medium">Origin</SortableTh>}
+                {isVisible('voided') && <SortableTh sorting={sorting} column="voided" className="text-left py-2 px-4 font-medium">Voided</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -614,7 +630,7 @@ export function AssembliesPage() {
                   </td>
                 </tr>
               ) : (
-                assemblies.map((assembly, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (assembly, i) => (
                   <tr
                     key={assembly.id}
                     onClick={() => { setActiveIndex(i); openView(assembly) }}
@@ -653,7 +669,7 @@ export function AssembliesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

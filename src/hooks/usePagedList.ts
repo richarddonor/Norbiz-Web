@@ -23,6 +23,15 @@ interface Options<T> {
    * totals reflect search + column filters together. Changing only the term
    * never refetches. */
   search?: string
+  /** Load every row matching the column `filters` (and `search`) onto one page — the same
+   * full-set fetch as "search all", refused above `SEARCH_ALL_LIMIT`. Row grouping
+   * (`useRowGrouping`) turns it on, since groups have to span every page. */
+  all?: boolean
+  /** Fetch the grand totals of the amount/quantity columns over every row matching the filters
+   * (`totals=true`, once per filter set — see the backend's docs/LIST_FILTERING.md → Totals).
+   * Only for endpoints that support it. While the full set is loaded (`all`/search) the hook
+   * doesn't fetch them: the page sums `allItems` itself, so the totals follow the search term. */
+  totals?: boolean
   /** per-column filter values, keyed by the backend's filter query param name — sent to the server on every fetch */
   filters?: Record<string, string>
   /** lowercase blob of every searchable field on the item, including columns the user has hidden */
@@ -44,6 +53,18 @@ export interface SearchAllStatus {
   scanned: number
   /** the column-filtered set exceeds `SEARCH_ALL_LIMIT`; the search wasn't run */
   tooMany: boolean
+  loading: boolean
+}
+
+/** Grand totals keyed by column key, or `'too-many'` when more rows match than the backend will
+ * total in Java (its `ListTotals.LIMIT`, 50000) — the footer then asks to narrow the filters. */
+export type ListTotals = Record<string, number> | 'too-many'
+
+/** State of the `all` option's full-set fetch, for `GroupByMenu` to report. */
+export interface AllRowsStatus {
+  active: boolean
+  /** rows matching the column filters when that exceeds `SEARCH_ALL_LIMIT` (nothing was loaded), else null */
+  tooMany: number | null
   loading: boolean
 }
 
@@ -125,6 +146,9 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
   const filtersKey = JSON.stringify(filters)
   const term = search.trim().toLowerCase()
   const searching = term !== ''
+  const all = options?.all ?? false
+  // Search-all and all-rows modes share one full-set fetch.
+  const fullMode = searching || all
 
   const [page, setPage] = useState(1)
   const [pagedResult, setPagedResult] = useState<PageResponse<T> | null>(null)
@@ -161,19 +185,36 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
 
   // Normal mode: one backend page.
   useEffect(() => {
-    if (!enabled || searching) return
+    if (!enabled || fullMode) return
     Promise.resolve()
       .then(() => setLoading(true))
       .then(() => apiFetch<PageResponse<T>>(buildQuery(endpoint, page, pageSize, filters)))
       .then(setPagedResult)
       .catch(() => options?.onError?.())
       .finally(() => setLoading(false))
-  }, [endpoint, page, pageSize, filtersKey, reloadToken, enabled, searching])
+  }, [endpoint, page, pageSize, filtersKey, reloadToken, enabled, fullMode])
 
-  // Search-all mode: every row matching the column filters, fetched once per
-  // filter set / reload — typing a different term reuses it.
+  // Grand totals: one tiny request per filter set (the sort doesn't change them), only when the
+  // page isn't holding the full set itself.
+  const [serverTotals, setServerTotals] = useState<ListTotals | null>(null)
+  const wantTotals = enabled && (options?.totals ?? false) && !fullMode
+  const totalsFilters = Object.fromEntries(Object.entries(filters).filter(([key]) => key !== 'sort'))
+  const totalsKey = JSON.stringify(totalsFilters)
   useEffect(() => {
-    if (!enabled || !searching) return
+    if (!wantTotals) return
+    let cancelled = false
+    Promise.resolve()
+      .then(() => setServerTotals(null))
+      .then(() => apiFetch<PageResponse<T> & { totals?: Record<string, number>; totalsTooMany?: boolean }>(`${buildQuery(endpoint, 1, 1, totalsFilters)}&totals=true`))
+      .then(res => { if (!cancelled) setServerTotals(res.totalsTooMany ? 'too-many' : res.totals ?? {}) })
+      .catch(() => { if (!cancelled) options?.onError?.() })
+    return () => { cancelled = true }
+  }, [endpoint, totalsKey, reloadToken, wantTotals])
+
+  // Search-all / all-rows mode: every row matching the column filters, fetched once
+  // per filter set / reload — typing a different term reuses it.
+  useEffect(() => {
+    if (!enabled || !fullMode) return
     let cancelled = false
     const qs = filtersToQueryString(filters)
     const url = qs ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}${qs}` : endpoint
@@ -194,20 +235,22 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
       .catch(() => { if (!cancelled) options?.onError?.() })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [endpoint, filtersKey, reloadToken, enabled, searching])
+  }, [endpoint, filtersKey, reloadToken, enabled, fullMode])
 
   const searchTextFn = options?.searchText
 
   const matches = useMemo(() => {
-    if (!searching || !fullSet || fullSet.tooMany !== null) return null
+    if (!fullMode || !fullSet || fullSet.tooMany !== null) return null
+    if (!searching) return fullSet.rows
     return fullSet.rows.filter(item => (searchTextFn?.(item) ?? '').toLowerCase().includes(term))
-  }, [searching, fullSet, term, searchTextFn])
+  }, [fullMode, searching, fullSet, term, searchTextFn])
 
   const items = useMemo(() => {
-    if (!searching) return pagedResult?.content ?? []
+    if (!fullMode) return pagedResult?.content ?? []
     if (!matches) return []
+    if (all) return matches
     return matches.slice((page - 1) * pageSize, page * pageSize)
-  }, [searching, pagedResult, matches, page, pageSize])
+  }, [fullMode, all, pagedResult, matches, page, pageSize])
 
   const searchAll: SearchAllStatus = {
     active: searching,
@@ -216,16 +259,27 @@ export function usePagedList<T>(endpoint: string, options?: Options<T>) {
     loading: searching && loading,
   }
 
+  const allRows: AllRowsStatus = {
+    active: all,
+    tooMany: all && fullSet?.tooMany != null ? fullSet.tooMany : null,
+    loading: all && loading,
+  }
+
   return {
     items,
-    page,
+    page: all ? 1 : page,
     setPage,
     pageSize,
     setPageSize,
-    totalPages: searching ? Math.max(1, Math.ceil((matches?.length ?? 0) / pageSize)) : pagedResult?.totalPages ?? 1,
-    totalElements: searching ? matches?.length ?? 0 : pagedResult?.totalElements ?? 0,
+    totalPages: all ? 1 : searching ? Math.max(1, Math.ceil((matches?.length ?? 0) / pageSize)) : pagedResult?.totalPages ?? 1,
+    totalElements: fullMode ? matches?.length ?? 0 : pagedResult?.totalElements ?? 0,
     loading,
     searchAll,
+    allRows,
+    /** every row matching the filters and search term while the full set is loaded, else null */
+    allItems: matches,
+    /** server grand totals keyed by column key (`totals` option, not while the full set is loaded) */
+    totals: wantTotals ? serverTotals : null,
     reload: () => listChanges.dispatchEvent(new CustomEvent('change', { detail: base })),
   }
 }

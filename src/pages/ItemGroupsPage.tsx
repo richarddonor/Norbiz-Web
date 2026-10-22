@@ -17,6 +17,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -62,16 +67,16 @@ type GroupForm = {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'name', label: 'Name' },
-    { key: 'description', label: 'Description' },
-    { key: 'bnInitials', label: 'BN Initials' },
-    { key: 'commissionRate', label: 'Commission %' },
-    { key: 'focalCommissionRate', label: 'Focal Commission %' },
-    { key: 'active', label: 'Active', type: 'boolean' },
-    { key: 'createdBy', label: 'Created by' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'description', label: 'Description', sortable: true },
+    { key: 'bnInitials', label: 'BN Initials', sortable: true },
+    { key: 'commissionRate', label: 'Commission %', sortable: true },
+    { key: 'focalCommissionRate', label: 'Focal Commission %', sortable: true },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
+    { key: 'createdBy', label: 'Created by', sortable: true },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -119,11 +124,14 @@ export function ItemGroupsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: groups, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ItemGroup>('/item-groups', {
+  const grouping = useRowGrouping(COLUMNS, 'item-groups')
+  const sorting = useListSort(COLUMNS)
+  const { items: groups, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<ItemGroup>('/item-groups', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load item groups.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: groupSearchText,
   })
 
@@ -146,8 +154,10 @@ export function ItemGroupsPage() {
   const canUpdate = hasPermission('UPDATE_ITEM_GROUP')
   const canDeleteGroup = hasPermission('DELETE_ITEM_GROUP')
 
+  const view = useGroupedRows(grouping, groups, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: groups,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteGroup ? handleDelete : undefined,
@@ -248,12 +258,9 @@ export function ItemGroupsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<ItemGroup>(qs ? `/item-groups?${qs}` : '/item-groups', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(g => groupSearchText(g).toLowerCase().includes(term)) : all
-    const rows = matching.map(g => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(g: ItemGroup) {
+    return {
       name: g.name,
       description: g.description ?? '',
       bnInitials: g.bnInitials ?? '',
@@ -263,8 +270,16 @@ export function ItemGroupsPage() {
       company: g.companyName,
       createdBy: resolveDisplayName(g.createdBy),
       updatedAt: formatDateTime(g.updatedAt),
-    }))
-    exportToXlsx('item-groups', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<ItemGroup>(qs ? `/item-groups?${qs}` : '/item-groups', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(g => groupSearchText(g).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('item-groups', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeGroup?.name ?? ''
@@ -279,6 +294,7 @@ export function ItemGroupsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -417,15 +433,15 @@ export function ItemGroupsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('description') && <th className="text-left py-2 px-4 font-medium">Description</th>}
-                {isVisible('bnInitials') && <th className="text-left py-2 px-4 font-medium">BN Initials</th>}
-                {isVisible('commissionRate') && <th className="text-right py-2 px-4 font-medium">Commission %</th>}
-                {isVisible('focalCommissionRate') && <th className="text-right py-2 px-4 font-medium">Focal Commission %</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('description') && <SortableTh sorting={sorting} column="description" className="text-left py-2 px-4 font-medium">Description</SortableTh>}
+                {isVisible('bnInitials') && <SortableTh sorting={sorting} column="bnInitials" className="text-left py-2 px-4 font-medium">BN Initials</SortableTh>}
+                {isVisible('commissionRate') && <SortableTh sorting={sorting} column="commissionRate" className="text-right py-2 px-4 font-medium">Commission %</SortableTh>}
+                {isVisible('focalCommissionRate') && <SortableTh sorting={sorting} column="focalCommissionRate" className="text-right py-2 px-4 font-medium">Focal Commission %</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('createdBy') && <SortableTh sorting={sorting} column="createdBy" className="text-left py-2 px-4 font-medium">Created by</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -444,7 +460,7 @@ export function ItemGroupsPage() {
                   </td>
                 </tr>
               ) : (
-                groups.map((group, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (group, i) => (
                   <tr
                     key={group.id}
                     onClick={() => { setActiveIndex(i); openView(group) }}
@@ -495,7 +511,7 @@ export function ItemGroupsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

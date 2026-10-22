@@ -18,6 +18,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -94,14 +99,14 @@ function formOf(bom: BillOfMaterial): FormState {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'code', label: 'Code' },
-    { key: 'item', label: 'Output Item' },
+    { key: 'code', label: 'Code', sortable: true },
+    { key: 'item', label: 'Output Item', sortable: true },
     { key: 'components', label: 'Components' },
-    { key: 'active', label: 'Active', type: 'boolean' },
-    { key: 'createdBy', label: 'Created by' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
+    { key: 'createdBy', label: 'Created by', sortable: true },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -127,11 +132,14 @@ export function BillsOfMaterialsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: boms, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<BillOfMaterial>('/bills-of-materials', {
+  const grouping = useRowGrouping(COLUMNS, 'bills-of-materials')
+  const sorting = useListSort(COLUMNS)
+  const { items: boms, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<BillOfMaterial>('/bills-of-materials', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load bills of materials.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: bomSearchText,
   })
 
@@ -160,8 +168,10 @@ export function BillsOfMaterialsPage() {
   const canUpdate = hasPermission('UPDATE_BILL_OF_MATERIAL')
   const canDeleteBom = hasPermission('DELETE_BILL_OF_MATERIAL')
 
+  const view = useGroupedRows(grouping, boms, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: boms,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteBom ? handleDelete : undefined,
@@ -297,12 +307,9 @@ export function BillsOfMaterialsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<BillOfMaterial>(qs ? `/bills-of-materials?${qs}` : '/bills-of-materials', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(b => bomSearchText(b).toLowerCase().includes(term)) : all
-    const rows = matching.map(b => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(b: BillOfMaterial) {
+    return {
       code: b.code,
       item: `${b.itemCode} — ${b.itemName}`,
       components: b.components.map(c => `${c.itemCode} × ${c.quantity}`).join(', '),
@@ -310,8 +317,16 @@ export function BillsOfMaterialsPage() {
       company: b.companyName,
       createdBy: resolveDisplayName(b.createdBy),
       updatedAt: formatDateTime(b.updatedAt),
-    }))
-    exportToXlsx('bills-of-materials', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<BillOfMaterial>(qs ? `/bills-of-materials?${qs}` : '/bills-of-materials', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(b => bomSearchText(b).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('bills-of-materials', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeBom?.code ?? ''
@@ -326,6 +341,7 @@ export function BillsOfMaterialsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -482,13 +498,13 @@ export function BillsOfMaterialsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
-                {isVisible('item') && <th className="text-left py-2 px-4 font-medium">Output Item</th>}
-                {isVisible('components') && <th className="text-left py-2 px-4 font-medium">Components</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('code') && <SortableTh sorting={sorting} column="code" className="text-left py-2 px-4 font-medium">Code</SortableTh>}
+                {isVisible('item') && <SortableTh sorting={sorting} column="item" className="text-left py-2 px-4 font-medium">Output Item</SortableTh>}
+                {isVisible('components') && <SortableTh sorting={sorting} column="components" className="text-left py-2 px-4 font-medium">Components</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('createdBy') && <SortableTh sorting={sorting} column="createdBy" className="text-left py-2 px-4 font-medium">Created by</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -507,7 +523,7 @@ export function BillsOfMaterialsPage() {
                   </td>
                 </tr>
               ) : (
-                boms.map((bom, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (bom, i) => (
                   <tr
                     key={bom.id}
                     onClick={() => { setActiveIndex(i); openView(bom) }}
@@ -556,7 +572,7 @@ export function BillsOfMaterialsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

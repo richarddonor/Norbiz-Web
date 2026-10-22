@@ -15,6 +15,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -40,8 +45,8 @@ interface Permission {
 }
 
 const COLUMNS: readonly ColumnDef[] = [
-  { key: 'displayName', label: 'Display Name' },
-  { key: 'name', label: 'Name' },
+  { key: 'displayName', label: 'Display Name', sortable: true },
+  { key: 'name', label: 'Name', sortable: true },
   { key: 'permissions', label: 'Permissions' },
 ]
 
@@ -160,11 +165,14 @@ export function RolesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: roles, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Role>('/roles', {
+  const grouping = useRowGrouping(COLUMNS, 'roles')
+  const sorting = useListSort(COLUMNS)
+  const { items: roles, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<Role>('/roles', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load roles.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: roleSearchText,
   })
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
@@ -187,8 +195,10 @@ export function RolesPage() {
   const canUpdate = hasPermission('UPDATE_ROLE')
   const canDeleteRole = hasPermission('DELETE_ROLE')
 
+  const view = useGroupedRows(grouping, roles, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: roles,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteRole ? handleDelete : undefined,
@@ -304,17 +314,22 @@ export function RolesPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<Role>(qs ? `/roles?${qs}` : '/roles', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(r => roleSearchText(r).toLowerCase().includes(term)) : all
-    const rows = matching.map(r => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(r: Role) {
+    return {
       displayName: r.displayName ?? '',
       name: r.name,
       permissions: r.permissions.join(', '),
-    }))
-    exportToXlsx('roles', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<Role>(qs ? `/roles?${qs}` : '/roles', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(r => roleSearchText(r).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('roles', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const ro = mode === 'view'
@@ -329,6 +344,7 @@ export function RolesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -409,9 +425,9 @@ export function RolesPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {isVisible('displayName') && <th className="text-left py-2 px-4 font-medium">Display Name</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('permissions') && <th className="text-left py-2 px-4 font-medium">Permissions</th>}
+                {isVisible('displayName') && <SortableTh sorting={sorting} column="displayName" className="text-left py-2 px-4 font-medium">Display Name</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('permissions') && <SortableTh sorting={sorting} column="permissions" className="text-left py-2 px-4 font-medium">Permissions</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -429,7 +445,7 @@ export function RolesPage() {
                   </td>
                 </tr>
               ) : (
-                roles.map((role, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (role, i) => (
                   <tr
                     key={role.id}
                     onClick={() => { setActiveIndex(i); openView(role) }}
@@ -467,7 +483,7 @@ export function RolesPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

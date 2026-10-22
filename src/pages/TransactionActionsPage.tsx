@@ -18,6 +18,11 @@ import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { TRANSACTION_TYPES, transactionTypeLabel, type TransactionType } from '@/hooks/useTransactionActivity'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -85,16 +90,16 @@ const CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'transactionType', label: 'Transaction Type' },
-    { key: 'code', label: 'Code' },
-    { key: 'name', label: 'Name' },
+    { key: 'transactionType', label: 'Transaction Type', sortable: true },
+    { key: 'code', label: 'Code', sortable: true },
+    { key: 'name', label: 'Name', sortable: true },
     { key: 'allowedRoles', label: 'Allowed Roles' },
     { key: 'prerequisites', label: 'Prerequisites' },
-    { key: 'sortOrder', label: 'Order' },
-    { key: 'active', label: 'Active', type: 'boolean' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'sortOrder', label: 'Order', sortable: true },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -157,11 +162,14 @@ export function TransactionActionsPage() {
   // Roles are system-wide; MANAGE_TRANSACTION_ACTIONS unlocks the role lookup (no VIEW_ROLE needed).
   const roleOptions = useLookup<LookupOption>('roles', null, { global: true, enabled: inRecordTab, onError: () => toast('Failed to load roles.', 'error') })
   const roles = useMemo<RoleOption[]>(() => roleOptions.map(r => ({ id: r.id, name: r.code ?? '', displayName: r.name })), [roleOptions])
-  const { items: definitions, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<ActionDefinition>('/transaction-action-definitions', {
+  const grouping = useRowGrouping(COLUMNS, 'transaction-actions')
+  const sorting = useListSort(COLUMNS)
+  const { items: definitions, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<ActionDefinition>('/transaction-action-definitions', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load transaction actions.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: definitionSearchText,
   })
 
@@ -182,8 +190,10 @@ export function TransactionActionsPage() {
 
   const canManage = hasPermission('MANAGE_TRANSACTION_ACTIONS')
 
+  const view = useGroupedRows(grouping, definitions, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: definitions,
+    view,
     onView: openView,
     onEdit: canManage ? openEdit : undefined,
     onDelete: canManage ? handleDelete : undefined,
@@ -311,12 +321,9 @@ export function TransactionActionsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<ActionDefinition>(qs ? `/transaction-action-definitions?${qs}` : '/transaction-action-definitions', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(d => definitionSearchText(d).toLowerCase().includes(term)) : all
-    const rows = matching.map(d => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(d: ActionDefinition) {
+    return {
       company: d.companyName,
       transactionType: transactionTypeLabel(d.transactionType),
       code: d.code,
@@ -326,8 +333,16 @@ export function TransactionActionsPage() {
       sortOrder: d.sortOrder,
       active: d.active ? 'Yes' : 'No',
       updatedAt: formatDateTime(d.updatedAt),
-    }))
-    exportToXlsx('transaction-actions', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<ActionDefinition>(qs ? `/transaction-action-definitions?${qs}` : '/transaction-action-definitions', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(d => definitionSearchText(d).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('transaction-actions', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   function handleCompanyChange(companyId: number | '') {
@@ -354,6 +369,7 @@ export function TransactionActionsPage() {
           />
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -534,15 +550,15 @@ export function TransactionActionsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('transactionType') && <th className="text-left py-2 px-4 font-medium">Transaction Type</th>}
-                {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('allowedRoles') && <th className="text-left py-2 px-4 font-medium">Allowed Roles</th>}
-                {isVisible('prerequisites') && <th className="text-left py-2 px-4 font-medium">Prerequisites</th>}
-                {isVisible('sortOrder') && <th className="text-right py-2 px-4 font-medium">Order</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('transactionType') && <SortableTh sorting={sorting} column="transactionType" className="text-left py-2 px-4 font-medium">Transaction Type</SortableTh>}
+                {isVisible('code') && <SortableTh sorting={sorting} column="code" className="text-left py-2 px-4 font-medium">Code</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('allowedRoles') && <SortableTh sorting={sorting} column="allowedRoles" className="text-left py-2 px-4 font-medium">Allowed Roles</SortableTh>}
+                {isVisible('prerequisites') && <SortableTh sorting={sorting} column="prerequisites" className="text-left py-2 px-4 font-medium">Prerequisites</SortableTh>}
+                {isVisible('sortOrder') && <SortableTh sorting={sorting} column="sortOrder" className="text-right py-2 px-4 font-medium">Order</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -561,7 +577,7 @@ export function TransactionActionsPage() {
                   </td>
                 </tr>
               ) : (
-                definitions.map((definition, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (definition, i) => (
                   <tr
                     key={definition.id}
                     onClick={() => { setActiveIndex(i); openView(definition) }}
@@ -612,7 +628,7 @@ export function TransactionActionsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

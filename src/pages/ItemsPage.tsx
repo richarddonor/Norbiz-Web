@@ -5,7 +5,7 @@ import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection, DocLines } from '@/components/ui/doc-form'
+import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection, DocLines, DocCheck } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
@@ -17,6 +17,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -43,16 +48,17 @@ interface CompanyOption {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'image', label: 'Image' },
-    { key: 'itemCode', label: 'Item Code' },
-    { key: 'name', label: 'Name' },
-    { key: 'category', label: 'Category' },
-    { key: 'group', label: 'Item Group' },
+    { key: 'image', label: 'Image', groupable: false },
+    { key: 'itemCode', label: 'Item Code', sortable: true },
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'category', label: 'Category', sortable: true },
+    { key: 'group', label: 'Item Group', sortable: true },
     { key: 'skus', label: 'SKUs' },
     { key: 'unitPrice', label: 'Unit Price' },
     { key: 'tags', label: 'Tags' },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
   )
   return columns
 }
@@ -110,6 +116,7 @@ type ItemForm = {
   skus: SkuLine[] | null
   prices: Record<PriceType, string>
   tags: Set<string>
+  active: boolean
 }
 
 function emptyPrices(): Record<PriceType, string> {
@@ -130,6 +137,7 @@ function formToPayload(form: ItemForm, companyId: number) {
       .filter(t => form.prices[t] !== '')
       .map(t => ({ priceType: t, amount: Number(form.prices[t]) })),
     tags: Array.from(form.tags),
+    active: form.active,
   }
 }
 
@@ -146,6 +154,7 @@ function itemToForm(item: Item): ItemForm {
     skus: item.skuLines ? item.skuLines.map(l => ({ skuCode: l.skuCode, unitPrice: String(l.unitPrice), brandName: l.brandName ?? null })) : null,
     prices,
     tags: new Set(item.tags),
+    active: item.active,
   }
 }
 
@@ -154,7 +163,7 @@ function itemUnitPrice(item: Item): string {
 }
 
 function itemSearchText(item: Item): string {
-  return [item.itemCode, item.name, item.itemCategoryName, item.itemGroupName ?? '', item.companyName, ...item.skus, itemUnitPrice(item), ...item.tags].join(' ')
+  return [item.itemCode, item.name, item.itemCategoryName, item.itemGroupName ?? '', item.companyName, ...item.skus, itemUnitPrice(item), ...item.tags, item.active ? 'active' : 'inactive'].join(' ')
 }
 
 // ── Image display / picker ────────────────────────────────────────────────────
@@ -304,6 +313,10 @@ function ItemFormFields({
               <Input id="form-name" value={form.name} maxLength={255} readOnly={ro}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required={!ro} />
             </DocCell>
+            <DocCell label="Status">
+              <DocCheck id="form-active" label="Active" checked={form.active} disabled={ro}
+                onChange={active => setForm(f => ({ ...f, active }))} />
+            </DocCell>
           </DocRow>
           <DocRow>
             <TagCheckboxes label="Tags" options={ITEM_TAGS} selected={form.tags} readOnly={ro}
@@ -418,11 +431,14 @@ export function ItemsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim()) || !!photoFilter
 
   const inRecordTab = useIsRecordTab()
-  const { items: pageItems, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Item>('/items', {
+  const grouping = useRowGrouping(COLUMNS, 'items')
+  const sorting = useListSort(COLUMNS)
+  const { items: pageItems, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<Item>('/items', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load items.', 'error'),
     search: debouncedSearch,
-    filters: listFilters,
+    filters: sorting.apply(listFilters),
     searchText: itemSearchText,
   })
   // At most 20 photo matches, so they fit on one page and sorting the page sorts them all.
@@ -439,7 +455,7 @@ export function ItemsPage() {
     fetchRecord: id => fetchAllContent<Item>('/items', 100000).then(all => { const found = all.find(r => String(r.id) === id); if (!found) throw new Error('not found'); return found }),
   })
   const [activeItem, setActiveItem]   = useState<Item | null>(null)
-  const [form, setForm]               = useState<ItemForm>({ itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set() })
+  const [form, setForm]               = useState<ItemForm>({ itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set(), active: true })
   const [companyId, setCompanyId]     = useState<number | ''>('')
   // Categories belong to the item's company: the picked company on create, the record's own otherwise.
   const categoryCompanyId = (mode === 'create' ? companyId : activeItem?.companyId) || activeCompanyId
@@ -471,8 +487,10 @@ export function ItemsPage() {
   const canFindByPhoto = recognitionAvailable && !!activeCompanyId
   const [photoDialog, setPhotoDialog] = useState<'filter' | 'find' | null>(null)
 
+  const view = useGroupedRows(grouping, items, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteItem ? handleDelete : undefined,
@@ -517,7 +535,7 @@ export function ItemsPage() {
   function openCreate() {
     if (!rec.isRecordTab) return rec.open('create')
     setActiveItem(null)
-    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set(['INVENTORY']) }
+    const nextForm: ItemForm = { itemCode: '', name: '', categoryId: '', groupId: '', skus: [], prices: emptyPrices(), tags: new Set(['INVENTORY']), active: true }
     const nextCompanyId = activeCompanyId ?? ''
     setForm(nextForm)
     setCompanyId(nextCompanyId)
@@ -660,13 +678,9 @@ export function ItemsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(listFilters)
-    const all = await fetchAllContent<Item>(qs ? `/items?${qs}` : '/items', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(item => itemSearchText(item).toLowerCase().includes(term)) : all
-    if (photoFilter) matching.sort((a, b) => (photoSimilarity.get(b.id) ?? 0) - (photoSimilarity.get(a.id) ?? 0))
-    const rows = matching.map(item => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(item: Item) {
+    return {
       itemCode: item.itemCode,
       name: item.name,
       category: item.itemCategoryName,
@@ -675,8 +689,18 @@ export function ItemsPage() {
       skus: item.skus.join(', '),
       unitPrice: formatCurrency(itemUnitPrice(item)),
       tags: item.tags.join(', '),
-    }))
-    exportToXlsx('items', COLUMNS.filter(c => c.key !== 'image' && isVisible(c.key)), rows)
+      active: item.active ? 'Yes' : 'No',
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(listFilters))
+    const all = await fetchAllContent<Item>(qs ? `/items?${qs}` : '/items', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(item => itemSearchText(item).toLowerCase().includes(term)) : all
+    if (photoFilter) matching.sort((a, b) => (photoSimilarity.get(b.id) ?? 0) - (photoSimilarity.get(a.id) ?? 0))
+    const rows = matching.map(listRow)
+    exportToXlsx('items', COLUMNS.filter(c => c.key !== 'image' && isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeItem?.name ?? ''
@@ -690,6 +714,7 @@ export function ItemsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -808,15 +833,16 @@ export function ItemsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
                 {isVisible('image') && <th className="text-left py-2 px-4 font-medium w-12" />}
-                {isVisible('itemCode') && <th className="text-left py-2 px-4 font-medium">Item Code</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('category') && <th className="text-left py-2 px-4 font-medium">Category</th>}
-                {isVisible('group') && <th className="text-left py-2 px-4 font-medium">Item Group</th>}
-                {isVisible('skus') && <th className="text-left py-2 px-4 font-medium">SKUs</th>}
-                {isVisible('unitPrice') && <th className="text-right py-2 px-4 font-medium">Unit Price</th>}
-                {isVisible('tags') && <th className="text-left py-2 px-4 font-medium">Tags</th>}
+                {isVisible('itemCode') && <SortableTh sorting={sorting} column="itemCode" className="text-left py-2 px-4 font-medium">Item Code</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('category') && <SortableTh sorting={sorting} column="category" className="text-left py-2 px-4 font-medium">Category</SortableTh>}
+                {isVisible('group') && <SortableTh sorting={sorting} column="group" className="text-left py-2 px-4 font-medium">Item Group</SortableTh>}
+                {isVisible('skus') && <SortableTh sorting={sorting} column="skus" className="text-left py-2 px-4 font-medium">SKUs</SortableTh>}
+                {isVisible('unitPrice') && <SortableTh sorting={sorting} column="unitPrice" className="text-right py-2 px-4 font-medium">Unit Price</SortableTh>}
+                {isVisible('tags') && <SortableTh sorting={sorting} column="tags" className="text-left py-2 px-4 font-medium">Tags</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -835,7 +861,7 @@ export function ItemsPage() {
                   </td>
                 </tr>
               ) : (
-                items.map((item, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (item, i) => (
                   <tr
                     key={item.id}
                     onClick={() => { setActiveIndex(i); openView(item) }}
@@ -885,6 +911,18 @@ export function ItemsPage() {
                         {item.tags.length > 0 ? item.tags.join(', ') : '—'}
                       </td>
                     )}
+                    {isVisible('active') && (
+                      <td className="py-2 px-4">
+                        <span className={cn(
+                          'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium',
+                          item.active
+                            ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]'
+                            : 'bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))]'
+                        )}>
+                          {item.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    )}
                     <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(item)}>
@@ -907,7 +945,7 @@ export function ItemsPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

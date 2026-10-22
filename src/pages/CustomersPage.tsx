@@ -18,6 +18,11 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useContentFocus } from '@/components/AppLayout'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
+import { GroupByMenu } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ReloadButton } from '@/components/ReloadButton'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -70,16 +75,16 @@ type CustomerForm = {
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'code', label: 'Code' },
-    { key: 'name', label: 'Name' },
-    { key: 'type', label: 'Type' },
+    { key: 'code', label: 'Code', sortable: true },
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'type', label: 'Type', sortable: true },
   )
   columns.push(
-    { key: 'active', label: 'Active', type: 'boolean' },
-    { key: 'createdBy', label: 'Created by' },
-    { key: 'updatedAt', label: 'Last updated', type: 'date' },
+    { key: 'active', label: 'Active', sortable: true, type: 'boolean' },
+    { key: 'createdBy', label: 'Created by', sortable: true },
+    { key: 'updatedAt', label: 'Last updated', sortable: true, type: 'date' },
   )
   return columns
 }
@@ -112,11 +117,14 @@ export function CustomersPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: customers, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<Customer>('/customers', {
+  const grouping = useRowGrouping(COLUMNS, 'customers')
+  const sorting = useListSort(COLUMNS)
+  const { items: customers, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows } = usePagedList<Customer>('/customers', {
+    all: grouping.active,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load customers.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: customerSearchText,
   })
 
@@ -139,8 +147,10 @@ export function CustomersPage() {
   const canUpdate = hasPermission('UPDATE_CUSTOMER')
   const canDeleteCustomer = hasPermission('DELETE_CUSTOMER')
 
+  const view = useGroupedRows(grouping, customers, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: customers,
+    view,
     onView: openView,
     onEdit: canUpdate ? openEdit : undefined,
     onDelete: canDeleteCustomer ? handleDelete : undefined,
@@ -236,12 +246,9 @@ export function CustomersPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<Customer>(qs ? `/customers?${qs}` : '/customers', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(c => customerSearchText(c).toLowerCase().includes(term)) : all
-    const rows = matching.map(c => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(c: Customer) {
+    return {
       code: c.code ?? '',
       name: c.name,
       type: TYPE_LABELS[c.type],
@@ -249,8 +256,16 @@ export function CustomersPage() {
       active: c.active ? 'Yes' : 'No',
       createdBy: resolveDisplayName(c.createdBy),
       updatedAt: formatDateTime(c.updatedAt),
-    }))
-    exportToXlsx('customers', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<Customer>(qs ? `/customers?${qs}` : '/customers', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(c => customerSearchText(c).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('customers', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   const recordName = activeCustomer?.name ?? ''
@@ -265,6 +280,7 @@ export function CustomersPage() {
         <div className="flex flex-wrap items-center gap-2">
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -393,13 +409,13 @@ export function CustomersPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('code') && <th className="text-left py-2 px-4 font-medium">Code</th>}
-                {isVisible('name') && <th className="text-left py-2 px-4 font-medium">Name</th>}
-                {isVisible('type') && <th className="text-left py-2 px-4 font-medium">Type</th>}
-                {isVisible('active') && <th className="text-left py-2 px-4 font-medium">Active</th>}
-                {isVisible('createdBy') && <th className="text-left py-2 px-4 font-medium">Created by</th>}
-                {isVisible('updatedAt') && <th className="text-left py-2 px-4 font-medium">Last updated</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('code') && <SortableTh sorting={sorting} column="code" className="text-left py-2 px-4 font-medium">Code</SortableTh>}
+                {isVisible('name') && <SortableTh sorting={sorting} column="name" className="text-left py-2 px-4 font-medium">Name</SortableTh>}
+                {isVisible('type') && <SortableTh sorting={sorting} column="type" className="text-left py-2 px-4 font-medium">Type</SortableTh>}
+                {isVisible('active') && <SortableTh sorting={sorting} column="active" className="text-left py-2 px-4 font-medium">Active</SortableTh>}
+                {isVisible('createdBy') && <SortableTh sorting={sorting} column="createdBy" className="text-left py-2 px-4 font-medium">Created by</SortableTh>}
+                {isVisible('updatedAt') && <SortableTh sorting={sorting} column="updatedAt" className="text-left py-2 px-4 font-medium">Last updated</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -417,7 +433,7 @@ export function CustomersPage() {
                   </td>
                 </tr>
               ) : (
-                customers.map((customer, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (customer, i) => (
                   <tr
                     key={customer.id}
                     onClick={() => { setActiveIndex(i); openView(customer) }}
@@ -466,7 +482,7 @@ export function CustomersPage() {
               )}
             </tbody>
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

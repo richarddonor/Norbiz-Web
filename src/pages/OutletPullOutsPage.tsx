@@ -20,6 +20,11 @@ import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
+import { useRowGrouping, useGroupedRows, useGrandTotals } from '@/hooks/useRowGrouping'
+import { GroupByMenu, GrandTotalRow } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
@@ -96,17 +101,17 @@ const EMPTY_LINE: LineDraft = { itemId: '', quantity: '', unitPrice: '' }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'referenceNumber', label: 'Reference #' },
-    { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'outlet', label: 'Outlet' },
-    { key: 'reason', label: 'Reason' },
+    { key: 'referenceNumber', label: 'Reference #', sortable: true },
+    { key: 'sheetNumber', label: 'Sheet #', sortable: true },
+    { key: 'outlet', label: 'Outlet', sortable: true },
+    { key: 'reason', label: 'Reason', sortable: true },
     { key: 'status', label: 'Receiving' },
-    { key: 'date', label: 'Pull-out Date', type: 'date' },
-    { key: 'total', label: 'Total Amount' },
+    { key: 'date', label: 'Pull-out Date', sortable: true, type: 'date' },
+    { key: 'total', label: 'Total Amount', total: 'currency' },
     ORIGIN_COLUMN,
-    { key: 'voided', label: 'Voided', type: 'boolean' },
+    { key: 'voided', label: 'Voided', sortable: true, type: 'boolean' },
   )
   return columns
 }
@@ -147,11 +152,15 @@ export function OutletPullOutsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: pullOuts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<OutletPullOut>('/outlet-pull-outs', {
+  const grouping = useRowGrouping(COLUMNS, 'outlet-pull-outs')
+  const sorting = useListSort(COLUMNS)
+  const { items: pullOuts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows, allItems, totals } = usePagedList<OutletPullOut>('/outlet-pull-outs', {
+    all: grouping.active,
+    totals: true,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load outlet pull-outs.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: pullOutSearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
@@ -195,8 +204,11 @@ export function OutletPullOutsPage() {
   const [voiding, setVoiding] = useState(false)
   const activity = useTransactionActivity('OUTLET_PULL_OUT', inRecordTab && mode === 'view' ? activePullOut?.id : null, activePullOut?.referenceNumber, activePullOut?.voided)
 
+  const view = useGroupedRows(grouping, pullOuts, listRow)
+  const grandTotals = useGrandTotals(COLUMNS, allItems, totals, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: pullOuts,
+    view,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -328,12 +340,9 @@ export function OutletPullOutsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<OutletPullOut>(qs ? `/outlet-pull-outs?${qs}` : '/outlet-pull-outs', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(r => pullOutSearchText(r).toLowerCase().includes(term)) : all
-    const rows = matching.map(r => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(r: OutletPullOut) {
+    return {
       referenceNumber: r.referenceNumber,
       sheetNumber: r.sheetNumber ?? '',
       outlet: r.customerName,
@@ -344,8 +353,16 @@ export function OutletPullOutsPage() {
       voided: r.voided ? 'Yes' : '',
       origin: originLabel(r.origin),
       company: r.companyName,
-    }))
-    exportToXlsx('outlet-pull-outs', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<OutletPullOut>(qs ? `/outlet-pull-outs?${qs}` : '/outlet-pull-outs', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(r => pullOutSearchText(r).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('outlet-pull-outs', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   function printFailed() {
@@ -399,6 +416,7 @@ export function OutletPullOutsPage() {
           />
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -640,16 +658,16 @@ export function OutletPullOutsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
-                {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
-                {isVisible('outlet') && <th className="text-left py-2 px-4 font-medium">Outlet</th>}
-                {isVisible('reason') && <th className="text-left py-2 px-4 font-medium">Reason</th>}
-                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Receiving</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Pull-out Date</th>}
-                {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
-                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
-                {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('referenceNumber') && <SortableTh sorting={sorting} column="referenceNumber" className="text-left py-2 px-4 font-medium">Reference #</SortableTh>}
+                {isVisible('sheetNumber') && <SortableTh sorting={sorting} column="sheetNumber" className="text-left py-2 px-4 font-medium">Sheet #</SortableTh>}
+                {isVisible('outlet') && <SortableTh sorting={sorting} column="outlet" className="text-left py-2 px-4 font-medium">Outlet</SortableTh>}
+                {isVisible('reason') && <SortableTh sorting={sorting} column="reason" className="text-left py-2 px-4 font-medium">Reason</SortableTh>}
+                {isVisible('status') && <SortableTh sorting={sorting} column="status" className="text-left py-2 px-4 font-medium">Receiving</SortableTh>}
+                {isVisible('date') && <SortableTh sorting={sorting} column="date" className="text-left py-2 px-4 font-medium">Pull-out Date</SortableTh>}
+                {isVisible('total') && <SortableTh sorting={sorting} column="total" className="text-right py-2 px-4 font-medium">Total Amount</SortableTh>}
+                {isVisible('origin') && <SortableTh sorting={sorting} column="origin" className="text-left py-2 px-4 font-medium">Origin</SortableTh>}
+                {isVisible('voided') && <SortableTh sorting={sorting} column="voided" className="text-left py-2 px-4 font-medium">Voided</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -668,7 +686,7 @@ export function OutletPullOutsPage() {
                   </td>
                 </tr>
               ) : (
-                pullOuts.map((pullOut, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (pullOut, i) => (
                   <tr
                     key={pullOut.id}
                     onClick={() => { setActiveIndex(i); openView(pullOut) }}
@@ -704,8 +722,9 @@ export function OutletPullOutsPage() {
                 ))
               )}
             </tbody>
+            <GrandTotalRow columns={COLUMNS} isVisible={isVisible} totals={grandTotals} />
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

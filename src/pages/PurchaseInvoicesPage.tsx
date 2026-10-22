@@ -20,6 +20,11 @@ import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
+import { useRowGrouping, useGroupedRows, useGrandTotals } from '@/hooks/useRowGrouping'
+import { GroupByMenu, GrandTotalRow } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
@@ -116,18 +121,18 @@ interface FeeDraft {
 
 function buildColumns(showCompanyColumn: boolean, canViewCostPrice: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'referenceNumber', label: 'Reference #' },
-    { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'warehouse', label: 'Warehouse' },
-    { key: 'supplier', label: 'Supplier' },
-    { key: 'purchaseOrder', label: 'Purchase Order' },
-    { key: 'date', label: 'Invoice Date', type: 'date' },
-    { key: 'paymentStatus', label: 'Payment Status' },
+    { key: 'referenceNumber', label: 'Reference #', sortable: true },
+    { key: 'sheetNumber', label: 'Sheet #', sortable: true },
+    { key: 'warehouse', label: 'Warehouse', sortable: true },
+    { key: 'supplier', label: 'Supplier', sortable: true },
+    { key: 'purchaseOrder', label: 'Purchase Order', sortable: true },
+    { key: 'date', label: 'Invoice Date', sortable: true, type: 'date' },
+    { key: 'paymentStatus', label: 'Payment Status', sortable: true },
   )
-  if (canViewCostPrice) columns.push({ key: 'netPayable', label: 'Net Payable' })
-  columns.push(ORIGIN_COLUMN, { key: 'voided', label: 'Voided', type: 'boolean' })
+  if (canViewCostPrice) columns.push({ key: 'netPayable', label: 'Net Payable', total: 'currency' })
+  columns.push(ORIGIN_COLUMN, { key: 'voided', label: 'Voided', sortable: true, type: 'boolean' })
   return columns
 }
 
@@ -155,11 +160,15 @@ export function PurchaseInvoicesPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: invoices, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<PurchaseInvoice>('/purchase-invoices', {
+  const grouping = useRowGrouping(COLUMNS, 'purchase-invoices')
+  const sorting = useListSort(COLUMNS)
+  const { items: invoices, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows, allItems, totals } = usePagedList<PurchaseInvoice>('/purchase-invoices', {
+    all: grouping.active,
+    totals: true,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load purchase invoices.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: invoiceSearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
@@ -207,8 +216,11 @@ export function PurchaseInvoicesPage() {
   const [voiding, setVoiding] = useState(false)
   const activity = useTransactionActivity('PURCHASE_INVOICE', inRecordTab && mode === 'view' ? activeInvoice?.id : null, activeInvoice?.referenceNumber, activeInvoice?.voided)
 
+  const view = useGroupedRows(grouping, invoices, listRow)
+  const grandTotals = useGrandTotals(COLUMNS, allItems, totals, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: invoices,
+    view,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -389,12 +401,9 @@ export function PurchaseInvoicesPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<PurchaseInvoice>(qs ? `/purchase-invoices?${qs}` : '/purchase-invoices', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(i => invoiceSearchText(i).toLowerCase().includes(term)) : all
-    const rows = matching.map(i => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(i: PurchaseInvoice) {
+    return {
       referenceNumber: i.referenceNumber,
       sheetNumber: i.sheetNumber ?? '',
       warehouse: i.warehouseName,
@@ -406,8 +415,16 @@ export function PurchaseInvoicesPage() {
       voided: i.voided ? 'Yes' : '',
       origin: originLabel(i.origin),
       company: i.companyName,
-    }))
-    exportToXlsx('purchase-invoices', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<PurchaseInvoice>(qs ? `/purchase-invoices?${qs}` : '/purchase-invoices', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(i => invoiceSearchText(i).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('purchase-invoices', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   function printFailed() {
@@ -452,6 +469,7 @@ export function PurchaseInvoicesPage() {
           />
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -785,17 +803,17 @@ export function PurchaseInvoicesPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
-                {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">Warehouse</th>}
-                {isVisible('supplier') && <th className="text-left py-2 px-4 font-medium">Supplier</th>}
-                {isVisible('purchaseOrder') && <th className="text-left py-2 px-4 font-medium">Purchase Order</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Invoice Date</th>}
-                {isVisible('paymentStatus') && <th className="text-left py-2 px-4 font-medium">Payment Status</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('referenceNumber') && <SortableTh sorting={sorting} column="referenceNumber" className="text-left py-2 px-4 font-medium">Reference #</SortableTh>}
+                {isVisible('sheetNumber') && <SortableTh sorting={sorting} column="sheetNumber" className="text-left py-2 px-4 font-medium">Sheet #</SortableTh>}
+                {isVisible('warehouse') && <SortableTh sorting={sorting} column="warehouse" className="text-left py-2 px-4 font-medium">Warehouse</SortableTh>}
+                {isVisible('supplier') && <SortableTh sorting={sorting} column="supplier" className="text-left py-2 px-4 font-medium">Supplier</SortableTh>}
+                {isVisible('purchaseOrder') && <SortableTh sorting={sorting} column="purchaseOrder" className="text-left py-2 px-4 font-medium">Purchase Order</SortableTh>}
+                {isVisible('date') && <SortableTh sorting={sorting} column="date" className="text-left py-2 px-4 font-medium">Invoice Date</SortableTh>}
+                {isVisible('paymentStatus') && <SortableTh sorting={sorting} column="paymentStatus" className="text-left py-2 px-4 font-medium">Payment Status</SortableTh>}
                 {canViewCostPrice && isVisible('netPayable') && <th className="text-right py-2 px-4 font-medium">Net Payable</th>}
-                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
-                {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
+                {isVisible('origin') && <SortableTh sorting={sorting} column="origin" className="text-left py-2 px-4 font-medium">Origin</SortableTh>}
+                {isVisible('voided') && <SortableTh sorting={sorting} column="voided" className="text-left py-2 px-4 font-medium">Voided</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -814,7 +832,7 @@ export function PurchaseInvoicesPage() {
                   </td>
                 </tr>
               ) : (
-                invoices.map((invoice, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (invoice, i) => (
                   <tr
                     key={invoice.id}
                     onClick={() => { setActiveIndex(i); openView(invoice) }}
@@ -851,8 +869,9 @@ export function PurchaseInvoicesPage() {
                 ))
               )}
             </tbody>
+            <GrandTotalRow columns={COLUMNS} isVisible={isVisible} totals={grandTotals} />
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

@@ -16,6 +16,11 @@ import type { TransactionType } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useLookup, type LookupOption } from '@/lib/lookups'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
+import { useRowGrouping, useGroupedRows, useGrandTotals } from '@/hooks/useRowGrouping'
+import { GroupByMenu, GrandTotalRow } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
 import { ReloadButton } from '@/components/ReloadButton'
@@ -90,30 +95,30 @@ interface DetailedReportConfig {
 
 function buildColumns(config: DetailedReportConfig, showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'referenceNumber', label: 'Reference #' },
-    { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'date', label: 'Date', type: 'date' },
-    { key: 'warehouse', label: 'Warehouse' },
+    { key: 'referenceNumber', label: 'Reference #', sortable: true },
+    { key: 'sheetNumber', label: 'Sheet #', sortable: true },
+    { key: 'date', label: 'Date', sortable: true, type: 'date' },
+    { key: 'warehouse', label: 'Warehouse', sortable: true },
   )
-  if (config.counterparty) columns.push({ key: 'counterparty', label: config.counterparty.label })
+  if (config.counterparty) columns.push({ key: 'counterparty', label: config.counterparty.label, sortable: true })
   if (config.agent) columns.push({ key: 'agent', label: 'Agent' })
   if (config.sourceLabel) columns.push({ key: 'sourceReferenceNumber', label: config.sourceLabel })
   columns.push(
     { key: 'remarks', label: 'Remarks' },
-    { key: 'lineNumber', label: 'Line #' },
-    { key: 'itemCode', label: 'Item Code' },
-    { key: 'itemName', label: 'Item Name' },
-    { key: 'quantity', label: 'Quantity' },
-    { key: 'quantityLoaded', label: config.loadedLabel },
+    { key: 'lineNumber', label: 'Line #', sortable: true },
+    { key: 'itemCode', label: 'Item Code', sortable: true },
+    { key: 'itemName', label: 'Item Name', sortable: true },
+    { key: 'quantity', label: 'Quantity', sortable: true, total: 'quantity' },
+    { key: 'quantityLoaded', label: config.loadedLabel, total: 'quantity' },
   )
   if (config.priceLabel) columns.push({ key: 'price', label: config.priceLabel })
   if (config.discount) columns.push({ key: 'discountPercentage', label: 'Discount %' })
-  if (config.priceLabel) columns.push({ key: 'amount', label: 'Amount' })
+  if (config.priceLabel) columns.push({ key: 'amount', label: 'Amount', total: 'currency' })
   columns.push(
     ORIGIN_COLUMN,
-    { key: 'voided', label: 'Voided', type: 'boolean' },
+    { key: 'voided', label: 'Voided', sortable: true, type: 'boolean' },
     { key: 'createdBy', label: 'Posted By' },
   )
   return columns
@@ -150,11 +155,14 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   const combinedFilters: Record<string, string> = { ...debouncedFilters, warehouseId, itemId }
   if (config.counterparty) combinedFilters[config.counterparty.param] = counterpartyId
   if (config.agent) combinedFilters.agentId = agentId
-
-  const { items: rows, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll } = usePagedList<DetailedReportRow>(config.endpoint, {
+  const grouping = useRowGrouping(COLUMNS, config.key)
+  const sorting = useListSort(COLUMNS)
+  const { items: rows, page, setPage, pageSize, setPageSize, totalPages, totalElements, loading: listLoading, reload, searchAll, allRows, allItems, totals } = usePagedList<DetailedReportRow>(config.endpoint, {
+    all: grouping.active,
+    totals: true,
     onError: () => toast(`Failed to load ${config.title}.`, 'error'),
     search: debouncedSearch,
-    filters: combinedFilters,
+    filters: sorting.apply(combinedFilters),
     searchText: rowSearchText,
   })
   // Filter-bar options for the session's active company — inactive records included, since
@@ -177,8 +185,11 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
   const canDrillDown = drillDown.canOpen(config.transactionType)
   const visibleColumns = COLUMNS.filter(c => isVisible(c.key))
 
+  const view = useGroupedRows(grouping, rows, listRow)
+  const grandTotals = useGrandTotals(COLUMNS, allItems, totals, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: rows,
+    view,
     onView: row => drillDown.open(config.transactionType, row.transactionId),
     enabled: zone === 'content',
   })
@@ -213,13 +224,18 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
     }
   }
 
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(r: DetailedReportRow) {
+    return Object.fromEntries(COLUMNS.map(c => [c.key, cellText(r, c.key)]))
+  }
+
   async function handleExport() {
-    const qs = filtersToQueryString(combinedFilters)
+    const qs = filtersToQueryString(sorting.apply(combinedFilters))
     const all = await fetchAllContent<DetailedReportRow>(qs ? `${config.endpoint}?${qs}` : config.endpoint, 100000)
     const term = debouncedSearch.trim().toLowerCase()
     const matching = term ? all.filter(r => rowSearchText(r).toLowerCase().includes(term)) : all
-    const exportRows = matching.map(r => Object.fromEntries(COLUMNS.map(c => [c.key, cellText(r, c.key)])))
-    exportToXlsx(config.key, visibleColumns, exportRows)
+    const exportRows = matching.map(listRow)
+    exportToXlsx(config.key, visibleColumns, exportRows, grouping)
   }
 
   return (
@@ -263,6 +279,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
           />
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -277,7 +294,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
                 {visibleColumns.map(c => (
-                  <th key={c.key} className={cn('py-2 px-4 font-medium', NUMERIC.has(c.key) ? 'text-right' : 'text-left', c.key === PINNED && PINNED_TH)}>{c.label}</th>
+                  <SortableTh key={c.key} sorting={sorting} column={c.key} className={cn('py-2 px-4 font-medium', NUMERIC.has(c.key) ? 'text-right' : 'text-left', c.key === PINNED && PINNED_TH)}>{c.label}</SortableTh>
                 ))}
               </tr>
               <ColumnFilterRow
@@ -298,7 +315,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
                   </td>
                 </tr>
               ) : (
-                rows.map((row, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (row, i) => (
                   <tr
                     key={row.id}
                     onClick={() => { setActiveIndex(i); drillDown.open(config.transactionType, row.transactionId) }}
@@ -329,8 +346,9 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
                 ))
               )}
             </tbody>
+            <GrandTotalRow columns={COLUMNS} isVisible={isVisible} totals={grandTotals} />
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
     </div>

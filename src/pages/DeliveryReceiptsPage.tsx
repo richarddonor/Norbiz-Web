@@ -20,6 +20,11 @@ import { useTransactionActivity } from '@/hooks/useTransactionActivity'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { PrintButton } from '@/components/PrintButton'
+import { useRowGrouping, useGroupedRows, useGrandTotals } from '@/hooks/useRowGrouping'
+import { GroupByMenu, GrandTotalRow } from '@/components/RowGrouping'
+import { groupedRows } from '@/components/groupedRows'
+import { useListSort } from '@/hooks/useListSort'
+import { SortableTh } from '@/components/SortableTh'
 import { ColumnsMenu, type ColumnDef } from '@/components/ColumnsMenu'
 import { OriginBadge, OriginNotice } from '@/components/TransactionOrigin'
 import { ORIGIN_COLUMN, originLabel, type TransactionOrigin } from '@/lib/transactionOrigin'
@@ -96,17 +101,17 @@ const EMPTY_LINE: LineDraft = { itemId: '', quantity: '', unitPrice: '' }
 
 function buildColumns(showCompanyColumn: boolean): readonly ColumnDef[] {
   const columns: ColumnDef[] = []
-  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company' })
+  if (showCompanyColumn) columns.push({ key: 'company', label: 'Company', sortable: true })
   columns.push(
-    { key: 'referenceNumber', label: 'Reference #' },
-    { key: 'sheetNumber', label: 'Sheet #' },
-    { key: 'customer', label: 'Customer' },
-    { key: 'warehouse', label: 'From Warehouse' },
+    { key: 'referenceNumber', label: 'Reference #', sortable: true },
+    { key: 'sheetNumber', label: 'Sheet #', sortable: true },
+    { key: 'customer', label: 'Customer', sortable: true },
+    { key: 'warehouse', label: 'From Warehouse', sortable: true },
     { key: 'status', label: 'Outlet Receiving' },
-    { key: 'date', label: 'Delivery Date', type: 'date' },
-    { key: 'total', label: 'Total Amount' },
+    { key: 'date', label: 'Delivery Date', sortable: true, type: 'date' },
+    { key: 'total', label: 'Total Amount', total: 'currency' },
     ORIGIN_COLUMN,
-    { key: 'voided', label: 'Voided', type: 'boolean' },
+    { key: 'voided', label: 'Voided', sortable: true, type: 'boolean' },
   )
   return columns
 }
@@ -148,11 +153,15 @@ export function DeliveryReceiptsPage() {
   const isFiltering = !!debouncedSearch.trim() || Object.values(debouncedFilters).some(v => v.trim())
 
   const inRecordTab = useIsRecordTab()
-  const { items: receipts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
+  const grouping = useRowGrouping(COLUMNS, 'delivery-receipts')
+  const sorting = useListSort(COLUMNS)
+  const { items: receipts, page, setPage, pageSize, setPageSize, totalPages, totalElements, reload, loading: listLoading, searchAll, allRows, allItems, totals } = usePagedList<DeliveryReceipt>('/delivery-receipts', {
+    all: grouping.active,
+    totals: true,
     enabled: !inRecordTab,
     onError: () => toast('Failed to load delivery receipts.', 'error'),
     search: debouncedSearch,
-    filters: debouncedFilters,
+    filters: sorting.apply(debouncedFilters),
     searchText: receiptSearchText,
   })
   const [allCompanies, setAllCompanies] = useState<CompanyOption[]>([])
@@ -204,8 +213,11 @@ export function DeliveryReceiptsPage() {
   const [voiding, setVoiding] = useState(false)
   const activity = useTransactionActivity('DELIVERY_RECEIPT', inRecordTab && mode === 'view' ? activeReceipt?.id : null, activeReceipt?.referenceNumber, activeReceipt?.voided)
 
+  const view = useGroupedRows(grouping, receipts, listRow)
+  const grandTotals = useGrandTotals(COLUMNS, allItems, totals, listRow)
   const { activeIndex, setActiveIndex } = useListKeyboardNav({
     items: receipts,
+    view,
     onView: openView,
     enabled: !inRecordTab && zone === 'content',
   })
@@ -354,12 +366,9 @@ export function DeliveryReceiptsPage() {
     }
   }
 
-  async function handleExport() {
-    const qs = filtersToQueryString(debouncedFilters)
-    const all = await fetchAllContent<DeliveryReceipt>(qs ? `/delivery-receipts?${qs}` : '/delivery-receipts', 100000)
-    const term = debouncedSearch.trim().toLowerCase()
-    const matching = term ? all.filter(r => receiptSearchText(r).toLowerCase().includes(term)) : all
-    const rows = matching.map(r => ({
+  /** One row's displayed value per column key: the export row, and what grouping groups by. */
+  function listRow(r: DeliveryReceipt) {
+    return {
       referenceNumber: r.referenceNumber,
       sheetNumber: r.sheetNumber ?? '',
       customer: r.customerName,
@@ -370,8 +379,16 @@ export function DeliveryReceiptsPage() {
       voided: r.voided ? 'Yes' : '',
       origin: originLabel(r.origin),
       company: r.companyName,
-    }))
-    exportToXlsx('delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows)
+    }
+  }
+
+  async function handleExport() {
+    const qs = filtersToQueryString(sorting.apply(debouncedFilters))
+    const all = await fetchAllContent<DeliveryReceipt>(qs ? `/delivery-receipts?${qs}` : '/delivery-receipts', 100000)
+    const term = debouncedSearch.trim().toLowerCase()
+    const matching = term ? all.filter(r => receiptSearchText(r).toLowerCase().includes(term)) : all
+    const rows = matching.map(listRow)
+    exportToXlsx('delivery-receipts', COLUMNS.filter(c => isVisible(c.key)), rows, grouping)
   }
 
   function printFailed() {
@@ -418,6 +435,7 @@ export function DeliveryReceiptsPage() {
           />
           <ReloadButton onReload={reload} loading={listLoading} />
           <ColumnsMenu columns={COLUMNS} {...columnMenu} />
+          <GroupByMenu grouping={grouping} view={view} status={allRows} />
           <Button variant="outline" onClick={handleExport}>
             <FileDown className="w-4 h-4" />
             Export
@@ -676,16 +694,16 @@ export function DeliveryReceiptsPage() {
           <ScrollTable activeIndex={activeIndex}>
             <thead>
               <tr className="border-b border-[hsl(var(--border))]">
-                {showCompanyColumn && isVisible('company') && <th className="text-left py-2 px-4 font-medium">Company</th>}
-                {isVisible('referenceNumber') && <th className="text-left py-2 px-4 font-medium">Reference #</th>}
-                {isVisible('sheetNumber') && <th className="text-left py-2 px-4 font-medium">Sheet #</th>}
-                {isVisible('customer') && <th className="text-left py-2 px-4 font-medium">Customer</th>}
-                {isVisible('warehouse') && <th className="text-left py-2 px-4 font-medium">From Warehouse</th>}
-                {isVisible('status') && <th className="text-left py-2 px-4 font-medium">Outlet Receiving</th>}
-                {isVisible('date') && <th className="text-left py-2 px-4 font-medium">Delivery Date</th>}
-                {isVisible('total') && <th className="text-right py-2 px-4 font-medium">Total Amount</th>}
-                {isVisible('origin') && <th className="text-left py-2 px-4 font-medium">Origin</th>}
-                {isVisible('voided') && <th className="text-left py-2 px-4 font-medium">Voided</th>}
+                {showCompanyColumn && isVisible('company') && <SortableTh sorting={sorting} column="company" className="text-left py-2 px-4 font-medium">Company</SortableTh>}
+                {isVisible('referenceNumber') && <SortableTh sorting={sorting} column="referenceNumber" className="text-left py-2 px-4 font-medium">Reference #</SortableTh>}
+                {isVisible('sheetNumber') && <SortableTh sorting={sorting} column="sheetNumber" className="text-left py-2 px-4 font-medium">Sheet #</SortableTh>}
+                {isVisible('customer') && <SortableTh sorting={sorting} column="customer" className="text-left py-2 px-4 font-medium">Customer</SortableTh>}
+                {isVisible('warehouse') && <SortableTh sorting={sorting} column="warehouse" className="text-left py-2 px-4 font-medium">From Warehouse</SortableTh>}
+                {isVisible('status') && <SortableTh sorting={sorting} column="status" className="text-left py-2 px-4 font-medium">Outlet Receiving</SortableTh>}
+                {isVisible('date') && <SortableTh sorting={sorting} column="date" className="text-left py-2 px-4 font-medium">Delivery Date</SortableTh>}
+                {isVisible('total') && <SortableTh sorting={sorting} column="total" className="text-right py-2 px-4 font-medium">Total Amount</SortableTh>}
+                {isVisible('origin') && <SortableTh sorting={sorting} column="origin" className="text-left py-2 px-4 font-medium">Origin</SortableTh>}
+                {isVisible('voided') && <SortableTh sorting={sorting} column="voided" className="text-left py-2 px-4 font-medium">Voided</SortableTh>}
                 <th className="py-2 px-4" />
               </tr>
               <ColumnFilterRow
@@ -704,7 +722,7 @@ export function DeliveryReceiptsPage() {
                   </td>
                 </tr>
               ) : (
-                receipts.map((receipt, i) => (
+                groupedRows(view, { isVisible, activeIndex, onActivate: setActiveIndex }, (receipt, i) => (
                   <tr
                     key={receipt.id}
                     onClick={() => { setActiveIndex(i); openView(receipt) }}
@@ -745,8 +763,9 @@ export function DeliveryReceiptsPage() {
                 ))
               )}
             </tbody>
+            <GrandTotalRow columns={COLUMNS} isVisible={isVisible} totals={grandTotals} />
           </ScrollTable>
-          <Pagination page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <Pagination summary={view.summary} page={page} totalPages={totalPages} totalElements={totalElements} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </CardContent>
       </Card>
       </>)}

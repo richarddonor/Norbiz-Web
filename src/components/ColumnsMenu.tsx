@@ -19,6 +19,14 @@ export interface ColumnDef {
   type?: 'text' | 'date' | 'boolean' | 'select'
   /** The choices for a `type: 'select'` filter; `value` is sent to the backend as-is. */
   options?: { value: string; label: string }[]
+  /** `false` keeps the column out of the Group by menu (e.g. an image thumbnail). */
+  groupable?: boolean
+  /** The header sorts the list by this column (`useListSort`). Only set it for keys the endpoint's
+   * backend `SORTABLE` map lists — anything else is a 400. Computed values can't be sorted. */
+  sortable?: boolean
+  /** An amount/quantity column: summed in group headers and the grand-total footer
+   * (`GrandTotalRow`), formatted as currency or quantity. Never a unit price or a percentage. */
+  total?: 'currency' | 'quantity'
 }
 
 interface Props {
