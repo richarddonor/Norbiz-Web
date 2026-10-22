@@ -9,13 +9,14 @@ import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocCheck, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab } from '@/hooks/useRecordTab'
+import { RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { ResetPasswordDialog } from '@/components/ResetPasswordDialog'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useContentFocus } from '@/components/AppLayout'
+import { useContentFocus } from '@/hooks/useContentFocus'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
@@ -232,7 +233,8 @@ export function UsersPage() {
 
   function toggleSet(prev: Set<number>, id: number): Set<number> {
     const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
     return next
   }
 

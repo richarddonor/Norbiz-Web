@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, LogOut, CircleUser, Search, KeyRound, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
@@ -17,22 +17,9 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { useHotkeys } from '@/hooks/useHotkeys'
-import { WorkspaceProvider, useTabInstance } from '@/context/WorkspaceContext'
+import { WorkspaceProvider } from '@/context/WorkspaceProvider'
+import { LayoutZoneContext, type FocusZone } from '@/hooks/useContentFocus'
 import { WorkspaceTabBar, WorkspacePanels } from '@/components/WorkspaceTabs'
-
-/** `'inactive'` means the page is in a workspace tab the user isn't looking at. */
-export type FocusZone = 'content' | 'sidebar' | 'inactive'
-
-const LayoutZoneContext = createContext<FocusZone>('content')
-
-/** Pages read this to know whether they currently own keyboard input — not while the
- * sidebar has arrow-key focus, and not while their tab is hidden behind another one —
- * so they can suspend their hotkeys and row navigation otherwise. */
-export function useContentFocus(): { zone: FocusZone } {
-  const zone = useContext(LayoutZoneContext)
-  const { active } = useTabInstance()
-  return { zone: active ? zone : 'inactive' }
-}
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 

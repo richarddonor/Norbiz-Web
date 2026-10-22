@@ -8,13 +8,14 @@ import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocText, DocSection, DocLines, DocCheck } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChangeHistory } from '@/components/ChangeHistory'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab } from '@/hooks/useRecordTab'
+import { RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useContentFocus } from '@/components/AppLayout'
+import { useContentFocus } from '@/hooks/useContentFocus'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
@@ -179,18 +180,15 @@ function ItemImage({
   cacheBust?: number
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [preview, setPreview] = useState<string | null>(
-    currentPath ? imageUrl(currentPath, cacheBust) : null,
-  )
-
-  useEffect(() => {
-    setPreview(currentPath ? imageUrl(currentPath, cacheBust) : null)
-  }, [currentPath, cacheBust])
+  const saved = currentPath ? imageUrl(currentPath, cacheBust) : null
+  // A picked file previews until the saved image changes (e.g. after the save uploads it).
+  const [picked, setPicked] = useState<{ over: string | null; url: string } | null>(null)
+  const preview = picked && picked.over === saved ? picked.url : saved
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     if (file) {
-      setPreview(URL.createObjectURL(file))
+      setPicked({ over: saved, url: URL.createObjectURL(file) })
       onFileSelected(file)
     }
   }

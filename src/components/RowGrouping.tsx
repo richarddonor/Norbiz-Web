@@ -128,7 +128,7 @@ function ColumnAlignedCells({ columns, values, lead, cellClassName }: {
   )
 }
 
-export function formatTotal(kind: ColumnDef['total'], value: number | undefined): string {
+function formatTotal(kind: ColumnDef['total'], value: number | undefined): string {
   if (value === undefined) return ''
   return kind === 'currency' ? formatCurrency(value) : formatQuantity(value)
 }

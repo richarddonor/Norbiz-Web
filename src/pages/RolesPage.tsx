@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DocSheet, DocRow, DocCell, DocHeader, DocSection } from '@/components/ui/doc-form'
 import { Card, CardContent } from '@/components/ui/card'
-import { useRecordTab, useIsRecordTab, RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
+import { useRecordTab, useIsRecordTab } from '@/hooks/useRecordTab'
+import { RecordSheet, RECORD_ACTIONS, CloseButton } from '@/components/RecordTab'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useDirtyGuard } from '@/hooks/useDirtyGuard'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useContentFocus } from '@/components/AppLayout'
+import { useContentFocus } from '@/hooks/useContentFocus'
 import { usePagedList, fetchAllContent, filtersToQueryString } from '@/hooks/usePagedList'
 import { useColumnVisibility } from '@/hooks/useColumnVisibility'
 import { useRowGrouping, useGroupedRows } from '@/hooks/useRowGrouping'
@@ -259,7 +260,8 @@ export function RolesPage() {
   function togglePermission(name: string) {
     setForm(prev => {
       const next = new Set(prev.selectedPermissions)
-      next.has(name) ? next.delete(name) : next.add(name)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
       return { ...prev, selectedPermissions: next }
     })
   }
