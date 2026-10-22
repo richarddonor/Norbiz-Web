@@ -398,7 +398,7 @@ export function MemoPage({ config }: { config: MemoConfig }) {
                 />
                 {applies && (
                   <OpenItemLinesEditor
-                    title={`Apply To (optional — or later with a ${partyLabel} Credit Application)`}
+                    title={`Apply To (optional — or later as a credit on a ${partyLabel} Payment)`}
                     items={charges}
                     rows={applications}
                     onChange={setApplications}

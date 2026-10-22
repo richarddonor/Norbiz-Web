@@ -448,8 +448,6 @@ const CUSTOMER_MEMO = accounting('Customer Memo', 'customer-memos', 'CUSTOMER_ME
 const SUPPLIER_MEMO = accounting('Supplier Memo', 'supplier-memos', 'SUPPLIER_MEMO', SUPPLIER)
 const CUSTOMER_PAYMENT = accounting('Customer Payment', 'customer-payments', 'CUSTOMER_PAYMENT', CUSTOMER)
 const SUPPLIER_PAYMENT = accounting('Supplier Payment', 'supplier-payments', 'SUPPLIER_PAYMENT', SUPPLIER)
-const CUSTOMER_CREDIT_APPLICATION = accounting('Customer Credit Application', 'customer-credit-applications', 'CUSTOMER_CREDIT_APPLICATION', CUSTOMER)
-const SUPPLIER_CREDIT_APPLICATION = accounting('Supplier Credit Application', 'supplier-credit-applications', 'SUPPLIER_CREDIT_APPLICATION', SUPPLIER)
 const CUSTOMER_REFUND = accounting('Customer Refund', 'customer-refunds', 'CUSTOMER_REFUND', CUSTOMER)
 const SUPPLIER_REFUND = accounting('Supplier Refund', 'supplier-refunds', 'SUPPLIER_REFUND', SUPPLIER)
 const DEPOSIT = accounting('Deposit', 'deposits', 'DEPOSIT')
@@ -473,8 +471,6 @@ export const CustomerMemoDetailedPage = () => <TransactionDetailedReport config=
 export const SupplierMemoDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_MEMO} />
 export const CustomerPaymentDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_PAYMENT} />
 export const SupplierPaymentDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_PAYMENT} />
-export const CustomerCreditApplicationDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_CREDIT_APPLICATION} />
-export const SupplierCreditApplicationDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_CREDIT_APPLICATION} />
 export const CustomerRefundDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_REFUND} />
 export const SupplierRefundDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_REFUND} />
 export const DepositDetailedPage = () => <TransactionDetailedReport config={DEPOSIT} />

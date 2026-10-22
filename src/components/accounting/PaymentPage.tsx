@@ -23,10 +23,10 @@ import { byLineNumber } from '@/lib/utils'
 import { AccountingList, VoidedBadge, type ListColumn } from '@/components/accounting/AccountingList'
 import { AllocationLines, OpenItemLinesEditor } from '@/components/accounting/OpenItemLines'
 import { useCompanyOptions } from '@/components/accounting/useCompanyOptions'
-import { EMPTY_OPEN_ITEM_LINE, useOpenItems, validOpenItemLines, type OpenItemLineDraft } from '@/lib/openItems'
+import { EMPTY_OPEN_ITEM_LINE, splitApplications, useOpenItems, validOpenItemLines, type OpenItemLineDraft } from '@/lib/openItems'
 import {
-  cents, ISSUED_MODES, modeLabel, RECEIVED_MODES, statusLabel, sum, tenderLabel, todayIso,
-  type AccountingDocument, type Allocation, type BankAccountLookupOption, type IssuedTender, type ReceivedTender,
+  cents, ISSUED_MODES, modeLabel, RECEIVED_MODES, sourceTypeLabel, statusLabel, sum, tenderLabel, todayIso,
+  type AccountingDocument, type Allocation, type BankAccountLookupOption, type IssuedTender, type OpenItemSourceType, type ReceivedTender,
 } from '@/lib/accounting'
 
 type FormMode = 'view' | 'create'
@@ -44,6 +44,28 @@ interface Payment extends AccountingDocument {
   unappliedAmount: string
   tenders: Tender[]
   applications: Allocation[] | null
+  // What the payment paid, per charge (from its tenders / from existing credits), and the existing credits it used.
+  paidDocuments: PaidDocument[] | null
+  creditsUsed: CreditUsed[] | null
+  creditsUsedAmount: string | null
+}
+
+interface PaidDocument {
+  chargeItemId: number
+  sourceType: OpenItemSourceType
+  documentType: string
+  referenceNumber: string
+  paidAmount: string
+  creditAmount: string
+  amount: string
+}
+
+interface CreditUsed {
+  creditItemId: number
+  sourceType: OpenItemSourceType
+  documentType: string
+  referenceNumber: string
+  amount: string
 }
 
 interface TenderDraft {
@@ -56,10 +78,31 @@ interface TenderDraft {
   officialReceiptNumber: string
   provisionalReceiptNumber: string
   replacesTenderId: number | ''
+  // CREDIT mode only: the party's existing credit (memo, advance) used as payment.
+  creditItemId: number | ''
 }
 
+// Pseudo-mode for a tender line that uses an existing credit instead of money. It is not sent as a tender: its amount
+// goes to the backend as credit → charge pairs (`credits`), applied before the real tenders.
+const CREDIT_MODE = 'CREDIT'
+
 function emptyTender(mode: string): TenderDraft {
-  return { mode, amount: '', checkNumber: '', checkDate: todayIso(), bankId: '', bankAccountId: '', officialReceiptNumber: '', provisionalReceiptNumber: '', replacesTenderId: '' }
+  return { mode, amount: '', checkNumber: '', checkDate: todayIso(), bankId: '', bankAccountId: '', officialReceiptNumber: '', provisionalReceiptNumber: '',
+    replacesTenderId: '', creditItemId: '' }
+}
+
+// One row of the view's Payment table: a tender, or an existing credit the payment used.
+interface PaymentLineView {
+  key: string
+  lineNumber: number
+  mode: string
+  number: string
+  checkDate: string | null
+  bank: string
+  receipt: string
+  status: string
+  unapplied: string | null
+  amount: string | number
 }
 
 export interface PaymentConfig {
@@ -70,7 +113,9 @@ export interface PaymentConfig {
 
 // Customer and supplier payments (docs/ACCOUNTING.md): one or more tenders, optionally applied to the party's open
 // charges; whatever stays unapplied is an advance. Customer tenders are received (cash, checks, transfers, cards);
-// supplier tenders are issued from our bank accounts.
+// supplier tenders are issued from our bank accounts. A line can also use one of the party's existing credits (supplier
+// debit memo, customer credit memo, earlier advance) as a mode of payment; credits are applied before the tenders, and
+// a payment may be made of credits alone — it is the only place existing credits get applied after posting.
 export function PaymentPage({ config }: { config: PaymentConfig }) {
   const { toast } = useToast()
   const { hasPermission, activeCompanyId, showCompanyColumn } = useAuth()
@@ -80,7 +125,8 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
   const partyLabel = customer ? 'Customer' : 'Supplier'
   const permission = customer ? 'CUSTOMER_PAYMENT' : 'SUPPLIER_PAYMENT'
   const transactionType = customer ? 'CUSTOMER_PAYMENT' : 'SUPPLIER_PAYMENT'
-  const modes = customer ? RECEIVED_MODES : ISSUED_MODES
+  const creditModeLabel = customer ? 'Credit Memo / Advance' : 'Debit Memo / Advance'
+  const modes = [...(customer ? RECEIVED_MODES : ISSUED_MODES), { value: CREDIT_MODE, label: creditModeLabel }]
   const defaultMode = customer ? 'CASH' : 'CHECK'
 
   const COLUMNS = useMemo(() => {
@@ -96,6 +142,8 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
       { key: 'date', label: 'Payment Date', sortable: true, filterable: true, type: 'date', value: r => formatDate(r.paymentDate) },
       { key: 'tenders', label: 'Tenders', value: r => r.tenders.map(tenderLabel).join(', ') },
       { key: 'checkNumber', label: 'Check #', filterable: true, mono: true, value: r => r.tenders.map(t => t.checkNumber).filter(Boolean).join(', ') },
+      { key: 'paid', label: 'Paid', value: r => (r.paidDocuments ?? []).map(d => d.referenceNumber).join(', ') },
+      { key: 'creditsUsed', label: 'Credits Used', value: r => (r.creditsUsed ?? []).map(c => `${c.referenceNumber} (${formatCurrency(c.amount)})`).join(', ') },
     )
     if (customer) columns.push({ key: 'receiptNumber', label: 'OR / PR #', filterable: true, muted: true,
       value: r => (r.tenders as ReceivedTender[]).flatMap(t => [t.officialReceiptNumber, t.provisionalReceiptNumber]).filter(Boolean).join(', ') })
@@ -136,7 +184,10 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
   const banks = useLookup<LookupOption>('banks', lookupCompanyId, { enabled: creating && customer, onError: () => toast('Failed to load banks.', 'error') })
   const accounts = useLookup<BankAccountLookupOption>('bank-accounts', lookupCompanyId, { enabled: creating, onError: () => toast('Failed to load bank accounts.', 'error') })
   const charges = useOpenItems(lookupCompanyId, customer ? 'RECEIVABLE' : 'PAYABLE', partyId, 'CHARGE', creating)
-  const total = cents(sum(tenders.map(t => t.amount)))
+  const credits = useOpenItems(lookupCompanyId, customer ? 'RECEIVABLE' : 'PAYABLE', partyId, 'CREDIT', creating)
+  const creditById = new Map(credits.map(o => [o.id, o]))
+  const total = cents(sum(tenders.filter(t => t.mode !== CREDIT_MODE).map(t => t.amount)))
+  const creditsUsed = cents(sum(tenders.filter(t => t.mode === CREDIT_MODE).map(t => t.amount)))
 
   const canCreate = hasPermission(`CREATE_${permission}`)
   const canVoid = hasPermission(`VOID_${permission}`)
@@ -185,12 +236,19 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
   }
 
   function updateTender(index: number, patch: Partial<TenderDraft>) {
-    setTenders(prev => prev.map((t, i) => i === index ? { ...t, ...patch } : t))
+    setTenders(prev => prev.map((t, i) => {
+      if (i !== index) return t
+      const next = { ...t, ...patch }
+      // Picking a credit suggests using all that is left of it.
+      if (patch.creditItemId && !t.amount) next.amount = creditById.get(patch.creditItemId)?.balance ?? ''
+      return next
+    }))
   }
 
   // Which tender fields a mode uses (mirrors the backend's validation).
   function needs(t: TenderDraft) {
     return {
+      credit: t.mode === CREDIT_MODE,
       check: t.mode === 'CHECK',
       reference: t.mode === 'CHECK' || t.mode === 'BANK_TRANSFER' || t.mode === 'CREDIT_CARD',
       bank: customer && t.mode === 'CHECK',
@@ -202,9 +260,22 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
     e.preventDefault()
     if (!companyId) return toast('Select a company.', 'error')
     if (!partyId) return toast(`Select a ${config.side}.`, 'error')
-    const filled = tenders.filter(t => t.amount.trim() !== '')
-    if (filled.length === 0) return toast('Add at least one tender with an amount.', 'error')
-    for (const t of filled) {
+    const filled = tenders.filter(t => t.amount.trim() !== '' || (t.mode === CREDIT_MODE && t.creditItemId !== ''))
+    const money = filled.filter(t => t.mode !== CREDIT_MODE)
+    const creditTenders = filled.filter(t => t.mode === CREDIT_MODE)
+    // Money, credits, or both: a payment made of credits alone applies existing credits with nothing paid.
+    if (filled.length === 0) return toast("Add at least one tender (money or a credit) with an amount.", "error")
+    const usedByCredit = new Map<number, number>()
+    for (const t of creditTenders) {
+      if (t.creditItemId === '') return toast(`Pick the ${creditModeLabel.toLowerCase()} on every credit line.`, 'error')
+      if (!(Number(t.amount) > 0)) return toast('Tender amounts must be greater than zero.', 'error')
+      usedByCredit.set(t.creditItemId, cents((usedByCredit.get(t.creditItemId) ?? 0) + Number(t.amount)))
+    }
+    for (const [id, used] of usedByCredit) {
+      const item = creditById.get(id)
+      if (item && used > Number(item.balance)) return toast(`${item.referenceNumber}: ${formatCurrency(used)} is more than its unapplied ${formatCurrency(item.balance)}.`, 'error')
+    }
+    for (const t of money) {
       const n = needs(t)
       if (!(Number(t.amount) > 0)) return toast('Tender amounts must be greater than zero.', 'error')
       if (n.check && (!t.checkNumber.trim() || !t.checkDate)) return toast('Checks need a check number and date.', 'error')
@@ -213,9 +284,17 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
     }
     const result = validOpenItemLines(applications, charges)
     if ('error' in result) return toast(result.error, 'error')
-    if (sum(result.lines.map(a => a.amount)) > total) return toast('The applications exceed the amount paid.', 'error')
-    const advance = cents(total - sum(result.lines.map(a => a.amount)))
-    const confirmText = `Post this ${config.side} payment of ${formatCurrency(total)}?` + (advance > 0 ? ` ${formatCurrency(advance)} stays unapplied as an advance.` : '')
+    const appliedTotal = cents(sum(result.lines.map(a => a.amount)))
+    if (appliedTotal > cents(total + creditsUsed)) return toast('The applications exceed the amount paid plus the credits used.', 'error')
+    // A credit only does something once it is applied, so the credits used must all go to Apply To lines.
+    if (appliedTotal < creditsUsed) return toast(`Apply at least ${formatCurrency(creditsUsed)} under Apply To so the credits used are fully applied.`, 'error')
+    const { creditPairs, tenderLines } = splitApplications(result.lines,
+      creditTenders.map(t => ({ creditItemId: t.creditItemId as number, amount: cents(Number(t.amount)) })))
+    const advance = cents(total - sum(tenderLines.map(a => a.amount)))
+    const confirmText = (money.length === 0
+      ? `Post this ${config.side} payment using ${formatCurrency(creditsUsed)} of existing credits (no money paid)?`
+      : `Post this ${config.side} payment of ${formatCurrency(total)}?` + (creditsUsed > 0 ? ` ${formatCurrency(creditsUsed)} of existing credits is also used.` : ''))
+      + (advance > 0 ? ` ${formatCurrency(advance)} stays unapplied as an advance.` : '')
       + ' This cannot be edited afterward — only voided.'
     if (!window.confirm(confirmText)) return
     setLoading(true)
@@ -229,7 +308,7 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
           voucherNumber: !customer && voucherNumber ? voucherNumber : undefined,
           sheetNumber: sheetNumber || null,
           remarks: remarks || null,
-          tenders: filled.map(t => {
+          tenders: money.map(t => {
             const n = needs(t)
             return {
               mode: t.mode,
@@ -245,7 +324,8 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
               replacesTenderId: t.replacesTenderId || null,
             }
           }),
-          applications: result.lines.length ? result.lines : null,
+          applications: tenderLines.length ? tenderLines : null,
+          credits: creditPairs.length ? creditPairs : null,
         }),
       })
       toast(`${partyLabel} payment posted successfully.`, 'success')
@@ -260,7 +340,7 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
 
   async function handleVoid() {
     if (!active) return
-    if (!window.confirm(`Void ${config.side} payment "${active.referenceNumber}"? Its applications are reversed. This cannot be undone.`)) return
+    if (!window.confirm(`Void ${config.side} payment "${active.referenceNumber}"? Its applications, including the credits it used, are reversed. This cannot be undone.`)) return
     setVoiding(true)
     try {
       setActive(await apiFetch<Payment>(`${config.endpoint}/${active.id}/void`, { method: 'POST' }))
@@ -276,6 +356,28 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
   const tabTitle = mode === 'create' ? `New ${partyLabel} Payment` : active?.referenceNumber || `${partyLabel} Payment`
   const applied = sum(applications.map(a => a.amount))
 
+  // View mode: the tenders, then one line per existing credit the payment used.
+  const activeCreditsUsed = cents(Number(active?.creditsUsedAmount ?? 0))
+  const viewLines: PaymentLineView[] = active ? [
+    ...byLineNumber(active.tenders).map(t => ({
+      key: `t${t.id}`,
+      mode: modeLabel(t.mode),
+      number: t.checkNumber ?? '',
+      checkDate: t.checkDate,
+      bank: customer ? ((t as ReceivedTender).bankName ?? (t as ReceivedTender).depositBankAccountName ?? '') : ((t as IssuedTender).bankAccountName ?? ''),
+      receipt: [(t as ReceivedTender).officialReceiptNumber, (t as ReceivedTender).provisionalReceiptNumber].filter(Boolean).join(' / '),
+      status: statusLabel(t.status) + ((t as ReceivedTender).bounceReason ? ` (${(t as ReceivedTender).bounceReason})` : ''),
+      unapplied: t.unappliedAmount as string | null,
+      amount: t.amount as string | number,
+    })),
+    ...(active.creditsUsed ?? []).map(c => ({
+      key: `c${c.creditItemId}`, mode: c.documentType, number: c.referenceNumber, checkDate: null, bank: '', receipt: '',
+      status: 'Used', unapplied: null, amount: c.amount,
+    })),
+  ].map((l, i) => ({ ...l, lineNumber: i + 1 })) : []
+  // The allocation trail is only worth showing when something was undone (a bounced/cancelled check, a void).
+  const hasReversals = (active?.applications ?? []).some(a => a.reversed)
+
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
       {!inRecordTab && (
@@ -285,7 +387,8 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
           listKey={config.endpoint.slice(1)}
           columns={COLUMNS}
           searchText={r => [r.referenceNumber, r.sheetNumber ?? '', r.voucherNumber ?? '', r.customerName ?? '', r.supplierName ?? '',
-            r.tenders.map(t => `${tenderLabel(t)} ${t.checkNumber ?? ''}`).join(' '), r.remarks ?? '', r.companyName].join(' ')}
+            r.tenders.map(t => `${tenderLabel(t)} ${t.checkNumber ?? ''}`).join(' '), (r.paidDocuments ?? []).map(d => d.referenceNumber).join(' '),
+            (r.creditsUsed ?? []).map(c => c.referenceNumber).join(' '), r.remarks ?? '', r.companyName].join(' ')}
           onOpen={openView}
           noun={`${config.side} payments`}
           totals
@@ -315,30 +418,40 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                 </DocRow>
                 <DocSection title="Payment" />
                 <DocLines
-                  rows={byLineNumber(active.tenders)}
-                  rowKey={t => t.id}
-                  lineNumber={t => t.lineNumber}
+                  rows={viewLines}
+                  rowKey={l => l.key}
+                  lineNumber={l => l.lineNumber}
                   columns={[
-                    { key: 'mode', label: 'Mode', width: '8rem', render: t => modeLabel(t.mode) },
-                    { key: 'number', label: 'Check / Ref #', render: t => t.checkNumber ?? '' },
-                    { key: 'date', label: 'Check Date', width: '7rem', render: t => formatDate(t.checkDate) },
-                    {
-                      key: 'bank', label: customer ? 'Bank / Account' : 'Account',
-                      render: t => customer ? ((t as ReceivedTender).bankName ?? (t as ReceivedTender).depositBankAccountName ?? '') : ((t as IssuedTender).bankAccountName ?? ''),
-                    },
-                    ...(customer ? [{ key: 'or', label: 'OR / PR #', width: '8rem',
-                      render: (t: Tender) => [(t as ReceivedTender).officialReceiptNumber, (t as ReceivedTender).provisionalReceiptNumber].filter(Boolean).join(' / ') }] : []),
-                    { key: 'status', label: 'Status', width: '9rem', render: t => statusLabel(t.status) + ((t as ReceivedTender).bounceReason ? ` (${(t as ReceivedTender).bounceReason})` : '') },
-                    { key: 'unapplied', label: 'Unapplied', align: 'right', width: '8rem', render: t => formatCurrency(t.unappliedAmount) },
-                    { key: 'amount', label: 'Amount', align: 'right', width: '8rem', render: t => formatCurrency(t.amount) },
+                    { key: 'mode', label: 'Mode', width: '10rem', render: l => l.mode },
+                    { key: 'number', label: 'Check / Ref #', render: l => l.number },
+                    { key: 'date', label: 'Check Date', width: '7rem', render: l => formatDate(l.checkDate) },
+                    { key: 'bank', label: customer ? 'Bank / Account' : 'Account', render: l => l.bank },
+                    ...(customer ? [{ key: 'or', label: 'OR / PR #', width: '8rem', render: (l: PaymentLineView) => l.receipt }] : []),
+                    { key: 'status', label: 'Status', width: '9rem', render: l => l.status },
+                    { key: 'unapplied', label: 'Unapplied', align: 'right', width: '8rem', render: l => l.unapplied === null ? '' : formatCurrency(l.unapplied) },
+                    { key: 'amount', label: 'Amount', align: 'right', width: '8rem', render: l => formatCurrency(l.amount) },
                   ]}
                 />
-                <AllocationLines title="Applied To" allocations={active.applications ?? []} side="charge" />
+                <DocSection title="Paid" />
+                <DocLines
+                  rows={active.paidDocuments ?? []}
+                  rowKey={d => d.chargeItemId}
+                  minRows={1}
+                  columns={[
+                    { key: 'type', label: 'Document', width: '12rem', render: d => d.documentType },
+                    { key: 'reference', label: 'Reference #', render: d => d.referenceNumber },
+                    { key: 'paid', label: 'By Payment', align: 'right', width: '9rem', render: d => formatCurrency(d.paidAmount) },
+                    { key: 'credit', label: 'By Credits', align: 'right', width: '9rem', render: d => Number(d.creditAmount) > 0 ? formatCurrency(d.creditAmount) : '' },
+                    { key: 'amount', label: 'Total Paid', align: 'right', width: '9rem', render: d => formatCurrency(d.amount) },
+                  ]}
+                />
+                {hasReversals && <AllocationLines title="Application History" allocations={active.applications ?? []} side="charge" />}
                 <DocRow cols="3fr 2fr">
                   <DocCell label="Remarks"><DocText>{active.remarks}</DocText></DocCell>
                   <DocTotals entries={[
                     { label: 'Total Paid', value: formatCurrency(active.totalAmount), grand: true },
-                    { label: 'Applied', value: formatCurrency(active.appliedAmount) },
+                    ...(activeCreditsUsed > 0 ? [{ label: 'Credits Used', value: formatCurrency(activeCreditsUsed) }] : []),
+                    { label: 'Applied', value: formatCurrency(cents(Number(active.appliedAmount) + activeCreditsUsed)) },
                     { label: 'Unapplied (advance)', value: formatCurrency(active.unappliedAmount) },
                   ]} />
                 </DocRow>
@@ -387,7 +500,7 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                 <DocRow>
                   <DocCell label={partyLabel} htmlFor="pay-party" required>
                     <SearchableSelect id="pay-party" value={partyId === '' ? '' : String(partyId)}
-                      onChange={v => { setPartyId(v ? Number(v) : ''); setApplications([EMPTY_OPEN_ITEM_LINE]) }}
+                      onChange={v => { setPartyId(v ? Number(v) : ''); setApplications([EMPTY_OPEN_ITEM_LINE]); setTenders(prev => prev.map(t => t.mode === CREDIT_MODE ? { ...t, creditItemId: '', amount: '' } : t)) }}
                       options={parties.map(p => ({ value: String(p.id), label: p.code ? `${p.code} — ${p.name}` : p.name }))}
                       disabled={!companyId} autoFocus={!showCompanyColumn} />
                   </DocCell>
@@ -399,7 +512,7 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                     {
                       key: 'mode', label: 'Mode', width: '9rem', required: true,
                       render: (t, i) => (
-                        <SearchableSelect value={t.mode} onChange={v => updateTender(i, { mode: v || defaultMode })}
+                        <SearchableSelect value={t.mode} onChange={v => updateTender(i, { mode: v || defaultMode, creditItemId: '', replacesTenderId: v === CREDIT_MODE ? '' : t.replacesTenderId })}
                           options={modes.map(m => ({ value: m.value, label: m.label }))} />
                       ),
                     },
@@ -411,8 +524,14 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                       ),
                     },
                     {
-                      key: 'number', label: 'Check / Ref #', width: '9rem',
-                      render: (t, i) => needs(t).reference
+                      key: 'number', label: 'Check / Ref # / Credit', width: '13rem',
+                      render: (t, i) => needs(t).credit
+                        ? <SearchableSelect value={t.creditItemId === '' ? '' : String(t.creditItemId)} onChange={v => updateTender(i, { creditItemId: v ? Number(v) : '' })}
+                            options={credits
+                              .filter(o => o.id === t.creditItemId || !tenders.some(x => x.mode === CREDIT_MODE && x.creditItemId === o.id))
+                              .map(o => ({ value: String(o.id), label: `${o.referenceNumber} — ${sourceTypeLabel(o.sourceType)} · ${formatCurrency(o.balance)}` }))}
+                            emptyText={partyId === '' ? `Select a ${config.side} first.` : `This ${config.side} has no unapplied credits.`} />
+                        : needs(t).reference
                         ? <Input aria-label={`Tender ${i + 1} check or reference number`} value={t.checkNumber} maxLength={50} onChange={e => updateTender(i, { checkNumber: e.target.value })} />
                         : <span className="text-[hsl(var(--muted-foreground))]">—</span>,
                     },
@@ -434,20 +553,20 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                       render: (t, i) => needs(t).account
                         ? <SearchableSelect value={t.bankAccountId === '' ? '' : String(t.bankAccountId)} onChange={v => updateTender(i, { bankAccountId: v ? Number(v) : '' })}
                             options={accounts.map(a => ({ value: String(a.id), label: `${a.name} (${a.accountNumber})` }))} />
-                        : <span className="text-[hsl(var(--muted-foreground))]">{customer && t.mode !== 'OTHERS' ? 'via Deposit' : '—'}</span>,
+                        : <span className="text-[hsl(var(--muted-foreground))]">{customer && t.mode !== 'OTHERS' && t.mode !== CREDIT_MODE ? 'via Deposit' : '—'}</span>,
                     },
                     ...(customer ? [{
                       key: 'or', label: 'OR #', width: '7rem',
-                      render: (t: TenderDraft, i: number) => <Input aria-label={`Tender ${i + 1} OR number`} value={t.officialReceiptNumber} maxLength={50}
+                      render: (t: TenderDraft, i: number) => needs(t).credit ? <span className="text-[hsl(var(--muted-foreground))]">—</span> : <Input aria-label={`Tender ${i + 1} OR number`} value={t.officialReceiptNumber} maxLength={50}
                         onChange={e => updateTender(i, { officialReceiptNumber: e.target.value })} />,
                     }, {
                       key: 'pr', label: 'PR #', width: '7rem',
-                      render: (t: TenderDraft, i: number) => <Input aria-label={`Tender ${i + 1} PR number`} value={t.provisionalReceiptNumber} maxLength={50}
+                      render: (t: TenderDraft, i: number) => needs(t).credit ? <span className="text-[hsl(var(--muted-foreground))]">—</span> : <Input aria-label={`Tender ${i + 1} PR number`} value={t.provisionalReceiptNumber} maxLength={50}
                         onChange={e => updateTender(i, { provisionalReceiptNumber: e.target.value })} />,
                     }] : []),
                     ...(replaceable.length > 0 ? [{
                       key: 'replaces', label: customer ? 'Replaces Bounced' : 'Replaces Cancelled', width: '11rem',
-                      render: (t: TenderDraft, i: number) => (
+                      render: (t: TenderDraft, i: number) => needs(t).credit ? <span className="text-[hsl(var(--muted-foreground))]">—</span> : (
                         <SearchableSelect value={t.replacesTenderId === '' ? '' : String(t.replacesTenderId)}
                           onChange={v => updateTender(i, { replacesTenderId: v ? Number(v) : '' })} placeholder="None"
                           options={replaceable.map(r => ({ value: String(r.id), label: `${tenderLabel(r)} · ${formatCurrency(r.amount)} (${r.paymentReferenceNumber})` }))} />
@@ -475,7 +594,7 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                   items={charges}
                   rows={applications}
                   onChange={setApplications}
-                  available={total}
+                  available={cents(total + creditsUsed)}
                   disabled={partyId === ''}
                   emptyHint={partyId === '' ? `Select a ${config.side} first.` : `No open ${customer ? 'receivables' : 'payables'} for this ${config.side}.`}
                 />
@@ -485,8 +604,9 @@ export function PaymentPage({ config }: { config: PaymentConfig }) {
                   </DocCell>
                   <DocTotals entries={[
                     { label: 'Total Paid', value: formatCurrency(total), grand: true },
+                    ...(creditsUsed > 0 ? [{ label: 'Credits Used', value: formatCurrency(creditsUsed) }] : []),
                     { label: 'Applied', value: formatCurrency(applied) },
-                    { label: 'Unapplied (advance)', value: formatCurrency(Math.max(0, cents(total - applied))) },
+                    { label: 'Unapplied (advance)', value: formatCurrency(Math.max(0, cents(total - Math.max(0, applied - creditsUsed)))) },
                   ]} />
                 </DocRow>
                 <TransactionHistory pending />

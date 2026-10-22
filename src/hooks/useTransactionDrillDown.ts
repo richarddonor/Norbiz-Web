@@ -25,8 +25,6 @@ const TRANSACTION_PATHS: Record<TransactionType, string> = {
   SUPPLIER_MEMO: '/supplier-memos',
   CUSTOMER_PAYMENT: '/customer-payments',
   SUPPLIER_PAYMENT: '/supplier-payments',
-  CUSTOMER_CREDIT_APPLICATION: '/customer-credit-applications',
-  SUPPLIER_CREDIT_APPLICATION: '/supplier-credit-applications',
   CUSTOMER_REFUND: '/customer-refunds',
   SUPPLIER_REFUND: '/supplier-refunds',
   DEPOSIT: '/deposits',

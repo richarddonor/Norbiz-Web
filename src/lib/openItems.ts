@@ -26,6 +26,29 @@ export function useOpenItems(companyId: number | '' | null | undefined, side: Ac
   })
 }
 
+/**
+ * Splits a payment's applications between the existing credits it uses (memos, advances: applied first, in the order
+ * given) and its own tenders (the rest). The backend takes the credits as explicit credit → charge pairs.
+ */
+export function splitApplications(applications: { openItemId: number; amount: number }[], credits: { creditItemId: number; amount: number }[]) {
+  const creditPairs: { creditItemId: number; chargeItemId: number; amount: number }[] = []
+  const tenderLines: { openItemId: number; amount: number }[] = []
+  let index = 0
+  let left = credits[0]?.amount ?? 0
+  for (const a of applications) {
+    let need = a.amount
+    while (need > 0 && index < credits.length) {
+      const take = cents(Math.min(need, left))
+      if (take > 0) creditPairs.push({ creditItemId: credits[index].creditItemId, chargeItemId: a.openItemId, amount: take })
+      need = cents(need - take)
+      left = cents(left - take)
+      if (left <= 0) left = credits[++index]?.amount ?? 0
+    }
+    if (need > 0) tenderLines.push({ openItemId: a.openItemId, amount: need })
+  }
+  return { creditPairs, tenderLines }
+}
+
 export function openItemOptionLabel(o: OpenItem): string {
   const due = o.dueDate ? ` · due ${formatDate(o.dueDate)}` : ''
   return `${o.referenceNumber} — ${sourceTypeLabel(o.sourceType)}${due} · balance ${formatCurrency(o.balance)}`

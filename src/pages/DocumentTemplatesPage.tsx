@@ -57,8 +57,6 @@ const DOCUMENT_TYPES = [
   { value: 'SUPPLIER_MEMO', label: 'Supplier Memo' },
   { value: 'CUSTOMER_PAYMENT', label: 'Customer Payment' },
   { value: 'SUPPLIER_PAYMENT', label: 'Supplier Payment' },
-  { value: 'CUSTOMER_CREDIT_APPLICATION', label: 'Customer Credit Application' },
-  { value: 'SUPPLIER_CREDIT_APPLICATION', label: 'Supplier Credit Application' },
   { value: 'CUSTOMER_REFUND', label: 'Customer Refund' },
   { value: 'SUPPLIER_REFUND', label: 'Supplier Refund' },
   { value: 'DEPOSIT', label: 'Deposit' },
