@@ -51,6 +51,7 @@ const reports: (NavItem & { parent: (typeof reportCategories)[number]['to'] })[]
   { to: '/reports/pull-out-receipt-detailed', label: 'Pull-out Receipt - Detailed', icon: FileSpreadsheet, permission: 'VIEW_PULL_OUT_RECEIPT_DETAILED_REPORT', parent: '/reports/sales', description: 'Pulled-out stock received at the main warehouse, one row per line item.' },
   { to: '/reports/assembly-detailed', label: 'Assembly - Detailed', icon: FileSpreadsheet, permission: 'VIEW_ASSEMBLY_DETAILED_REPORT', parent: '/reports/inventory', description: 'Assemblies, one row per output or raw material.' },
   { to: '/reports/sales-invoice-detailed', label: 'Sales Invoice - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SALES_INVOICE_DETAILED_REPORT', parent: '/reports/sales', description: 'Sales invoices, one row per line item.' },
+  { to: '/reports/sales-invoice-return-detailed', label: 'Sales Invoice Return - Detailed', icon: FileSpreadsheet, permission: 'VIEW_SALES_INVOICE_RETURN_DETAILED_REPORT', parent: '/reports/sales', description: 'Sales invoice returns, one row per returned line, with the invoice it came from.' },
   // AR/AP (../Norbiz/docs/ACCOUNTING.md "Reports")
   { to: '/reports/ar-aging', label: 'Accounts Receivable Aging', icon: Hourglass, permission: 'VIEW_AR_REPORT', parent: '/reports/accounting', description: 'What customers owe, by how overdue, as of a date.' },
   { to: '/reports/ap-aging', label: 'Accounts Payable Aging', icon: Hourglass, permission: 'VIEW_AP_REPORT', parent: '/reports/accounting', description: 'What we owe suppliers, by how overdue, as of a date.' },
@@ -118,6 +119,7 @@ export const navItems: NavItem[] = [
   { to: '/purchase-invoices', label: 'Purchase Invoices', icon: Receipt, permission: 'VIEW_PURCHASE_INVOICE', group: 'Purchases', recordLabel: 'Purchase Invoice' },
   { to: '/purchase-receipts', label: 'Purchase Receipts', icon: PackageCheck, permission: 'VIEW_PURCHASE_RECEIPT', group: 'Purchases', recordLabel: 'Purchase Receipt' },
   { to: '/sales-invoices', label: 'Sales Invoices', icon: ReceiptText, permission: 'VIEW_SALES_INVOICE', group: 'Receivables', recordLabel: 'Sales Invoice' },
+  { to: '/sales-invoice-returns', label: 'Sales Invoice Returns', icon: Undo2, permission: 'VIEW_SALES_INVOICE_RETURN', group: 'Receivables', recordLabel: 'Sales Invoice Return' },
   { to: '/customer-payments', label: 'Customer Payments', icon: Wallet, permission: 'VIEW_CUSTOMER_PAYMENT', group: 'Receivables', recordLabel: 'Customer Payment' },
   { to: '/customer-memos', label: 'Customer Memos', icon: NotebookPen, permission: 'VIEW_CUSTOMER_MEMO', group: 'Receivables', recordLabel: 'Customer Memo' },
   { to: '/customer-refunds', label: 'Customer Refunds', icon: RotateCcw, permission: 'VIEW_CUSTOMER_REFUND', group: 'Receivables', recordLabel: 'Customer Refund' },

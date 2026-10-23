@@ -37,7 +37,7 @@ import {
   InventoryAdjustmentDetailedPage, OutletReceiptDetailedPage, PurchaseOrderDetailedPage,
   PurchaseInvoiceDetailedPage, PurchaseReceiptDetailedPage, DeliveryReceiptDetailedPage,
   OutletDeliveryReceiptDetailedPage, OutletDeliveryReturnDetailedPage, StockTransferDetailedPage,
-  OutletPullOutDetailedPage, PullOutReceiptDetailedPage, AssemblyDetailedPage, SalesInvoiceDetailedPage,
+  OutletPullOutDetailedPage, PullOutReceiptDetailedPage, AssemblyDetailedPage, SalesInvoiceDetailedPage, SalesInvoiceReturnDetailedPage,
   CustomerMemoDetailedPage, SupplierMemoDetailedPage, CustomerPaymentDetailedPage, SupplierPaymentDetailedPage,
   CustomerRefundDetailedPage, SupplierRefundDetailedPage,
   DepositDetailedPage, BankReconciliationDetailedPage, StatementOfAccountDetailedPage,
@@ -47,6 +47,7 @@ import { DocumentTemplateDesignerPage } from '@/pages/DocumentTemplateDesignerPa
 import { TransactionActionsPage } from '@/pages/TransactionActionsPage'
 import { DeletedRecordsPage } from '@/pages/DeletedRecordsPage'
 import { SalesInvoicesPage } from '@/pages/SalesInvoicesPage'
+import { SalesInvoiceReturnsPage } from '@/pages/SalesInvoiceReturnsPage'
 import { CustomerMemosPage, SupplierMemosPage } from '@/pages/MemoPages'
 import { CustomerPaymentsPage, SupplierPaymentsPage } from '@/pages/PaymentPages'
 import { CustomerRefundsPage, SupplierRefundsPage } from '@/pages/CreditAndRefundPages'
@@ -103,6 +104,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/pull-out-receipt-detailed': PullOutReceiptDetailedPage,
   '/reports/assembly-detailed': AssemblyDetailedPage,
   '/reports/sales-invoice-detailed': SalesInvoiceDetailedPage,
+  '/reports/sales-invoice-return-detailed': SalesInvoiceReturnDetailedPage,
   '/reports/ar-aging': ArAgingPage,
   '/reports/ap-aging': ApAgingPage,
   '/reports/customer-ledger': CustomerLedgerPage,
@@ -120,6 +122,7 @@ const pageComponents: Record<string, ComponentType> = {
   '/reports/bank-reconciliation-detailed': BankReconciliationDetailedPage,
   '/reports/statement-of-account-detailed': StatementOfAccountDetailedPage,
   '/sales-invoices': SalesInvoicesPage,
+  '/sales-invoice-returns': SalesInvoiceReturnsPage,
   '/customer-payments': CustomerPaymentsPage,
   '/customer-memos': CustomerMemosPage,
   '/customer-refunds': CustomerRefundsPage,

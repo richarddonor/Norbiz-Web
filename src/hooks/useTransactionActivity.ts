@@ -8,7 +8,7 @@ import type { PageResponse } from '@/hooks/usePagedList'
 export type TransactionType = 'INVENTORY_ADJUSTMENT' | 'PURCHASE_ORDER' | 'PURCHASE_INVOICE' | 'PURCHASE_RECEIPT'
   | 'DELIVERY_RECEIPT' | 'OUTLET_RECEIPT' | 'OUTLET_DELIVERY_RECEIPT' | 'OUTLET_DELIVERY_RETURN'
   | 'STOCK_TRANSFER' | 'OUTLET_PULL_OUT' | 'PULL_OUT_RECEIPT' | 'ASSEMBLY'
-  | 'SALES_INVOICE' | 'CUSTOMER_MEMO' | 'SUPPLIER_MEMO' | 'CUSTOMER_PAYMENT' | 'SUPPLIER_PAYMENT'
+  | 'SALES_INVOICE' | 'SALES_INVOICE_RETURN' | 'CUSTOMER_MEMO' | 'SUPPLIER_MEMO' | 'CUSTOMER_PAYMENT' | 'SUPPLIER_PAYMENT'
   | 'CUSTOMER_REFUND' | 'SUPPLIER_REFUND' | 'DEPOSIT' | 'BANK_RECONCILIATION' | 'STATEMENT_OF_ACCOUNT'
 
 // Mirrors the backend's TransactionType enum — add an entry when a new transaction type is registered there.
@@ -26,6 +26,7 @@ export const TRANSACTION_TYPES: { value: TransactionType; label: string }[] = [
   { value: 'PULL_OUT_RECEIPT', label: 'Pull-out Receipt' },
   { value: 'ASSEMBLY', label: 'Assembly' },
   { value: 'SALES_INVOICE', label: 'Sales Invoice' },
+  { value: 'SALES_INVOICE_RETURN', label: 'Sales Invoice Return' },
   { value: 'CUSTOMER_MEMO', label: 'Customer Memo' },
   { value: 'SUPPLIER_MEMO', label: 'Supplier Memo' },
   { value: 'CUSTOMER_PAYMENT', label: 'Customer Payment' },

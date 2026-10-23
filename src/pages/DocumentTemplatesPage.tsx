@@ -53,6 +53,7 @@ const DOCUMENT_TYPES = [
   { value: 'PULL_OUT_RECEIPT', label: 'Pull-out Receipt' },
   { value: 'ASSEMBLY', label: 'Assembly' },
   { value: 'SALES_INVOICE', label: 'Sales Invoice' },
+  { value: 'SALES_INVOICE_RETURN', label: 'Sales Invoice Return' },
   { value: 'CUSTOMER_MEMO', label: 'Customer Memo' },
   { value: 'SUPPLIER_MEMO', label: 'Supplier Memo' },
   { value: 'CUSTOMER_PAYMENT', label: 'Customer Payment' },

@@ -21,6 +21,7 @@ const TRANSACTION_PATHS: Record<TransactionType, string> = {
   PULL_OUT_RECEIPT: '/pull-out-receipts',
   ASSEMBLY: '/assemblies',
   SALES_INVOICE: '/sales-invoices',
+  SALES_INVOICE_RETURN: '/sales-invoice-returns',
   CUSTOMER_MEMO: '/customer-memos',
   SUPPLIER_MEMO: '/supplier-memos',
   CUSTOMER_PAYMENT: '/customer-payments',

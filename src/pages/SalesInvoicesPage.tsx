@@ -42,6 +42,8 @@ interface SalesInvoiceLine {
   discountPercentage: string
   lineNet: string
   lineNumber: number
+  /** returned so far by Sales Invoice Returns */
+  quantityLoaded: string
 }
 
 interface SalesInvoice {
@@ -75,6 +77,8 @@ interface SalesInvoice {
   voided: boolean
   voidedAt: string | null
   voidedBy: string | null
+  /** fully returned */
+  loaded: boolean
   origin: TransactionOrigin
   lines: SalesInvoiceLine[]
 }
@@ -271,8 +275,11 @@ export function SalesInvoicesPage() {
         discountPercentage: l.discountPercentage.trim() !== '' ? Number(l.discountPercentage) : null,
       }))
     }
-    if (draftNet <= 0) return toast('The invoice total must be greater than zero.', 'error')
-    if (!window.confirm('Post this sales invoice? This cannot be edited afterward — only voided.')) return
+    // A zero total is allowed (free goods, testers): it opens no receivable and is paid from the start.
+    const confirmText = draftNet === 0
+      ? 'Post this zero-value sales invoice? It bills nothing and cannot be edited afterward — only voided.'
+      : 'Post this sales invoice? This cannot be edited afterward — only voided.'
+    if (!window.confirm(confirmText)) return
     setLoading(true)
     try {
       await apiFetch<SalesInvoice>('/sales-invoices', { method: 'POST', body: JSON.stringify(body) })
@@ -304,6 +311,7 @@ export function SalesInvoicesPage() {
 
   const tabTitle = mode === 'create' ? 'New Sales Invoice' : active?.referenceNumber || 'Sales Invoice'
   const paid = !!active && Number(active.appliedAmount ?? 0) > 0
+  const returned = !!active && active.lines.some(l => Number(l.quantityLoaded) > 0)
 
   return (
     <div className={inRecordTab ? 'space-y-6' : 'flex h-full flex-col gap-6'}>
@@ -353,6 +361,7 @@ export function SalesInvoicesPage() {
                   columns={[
                     { key: 'item', label: 'Item', render: l => `${l.itemCode} — ${l.itemName}` },
                     { key: 'quantity', label: 'Quantity', align: 'right', width: '7rem', render: l => l.quantity },
+                    ...(returned ? [{ key: 'returned', label: 'Returned', align: 'right' as const, width: '6rem', render: (l: SalesInvoiceLine) => Number(l.quantityLoaded) ? l.quantityLoaded : '' }] : []),
                     { key: 'unitPrice', label: 'Unit Price', align: 'right', width: '8rem', render: l => formatCurrency(l.unitPrice) },
                     { key: 'discount', label: 'Disc %', align: 'right', width: '5rem', render: l => Number(l.discountPercentage) ? l.discountPercentage : '' },
                     { key: 'amount', label: 'Amount', align: 'right', width: '9rem', render: l => formatCurrency(l.lineNet) },
@@ -377,8 +386,9 @@ export function SalesInvoicesPage() {
               <div className={RECORD_ACTIONS}>
                 <TransactionActionsMenu activity={activity} voided={active.voided} />
                 {canVoid && !active.voided && (
-                  <Button type="button" variant="outline" onClick={handleVoid} loading={voiding} disabled={paid}
-                    title={paid ? 'Payments or credits are applied — void those first.' : undefined}>
+                  <Button type="button" variant="outline" onClick={handleVoid} loading={voiding} disabled={paid || returned}
+                    title={returned ? 'Items were returned against it — void the sales invoice return(s) first.'
+                      : paid ? 'Payments or credits are applied — void those first.' : undefined}>
                     <Ban className="w-4 h-4 text-[hsl(var(--destructive))]" />
                     Void
                   </Button>

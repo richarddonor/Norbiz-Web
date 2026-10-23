@@ -436,7 +436,12 @@ const OUTLET_DELIVERY_RETURN: DetailedReportConfig = {
 
 const SALES_INVOICE: DetailedReportConfig = {
   title: 'Sales Invoice - Detailed', endpoint: '/reports/detailed/sales-invoices', transactionType: 'SALES_INVOICE', key: 'sales-invoice-detailed',
-  counterparty: CUSTOMER, sourceLabel: 'DR #', loadedLabel: 'Qty Loaded', priceLabel: 'Unit Price', discount: true,
+  counterparty: CUSTOMER, sourceLabel: 'DR #', loadedLabel: 'Qty Returned', priceLabel: 'Unit Price', discount: true,
+}
+
+const SALES_INVOICE_RETURN: DetailedReportConfig = {
+  title: 'Sales Invoice Return - Detailed', endpoint: '/reports/detailed/sales-invoice-returns', transactionType: 'SALES_INVOICE_RETURN', key: 'sales-invoice-return-detailed',
+  counterparty: CUSTOMER, sourceLabel: 'SI #', loadedLabel: 'Qty Loaded', priceLabel: 'Net Unit Price',
 }
 
 // Accounting documents: one row per memo line / tender / application / refund line / deposited item / reconciliation line / statement line.
@@ -467,6 +472,7 @@ export const OutletPullOutDetailedPage = () => <TransactionDetailedReport config
 export const PullOutReceiptDetailedPage = () => <TransactionDetailedReport config={PULL_OUT_RECEIPT} />
 export const AssemblyDetailedPage = () => <TransactionDetailedReport config={ASSEMBLY} />
 export const SalesInvoiceDetailedPage = () => <TransactionDetailedReport config={SALES_INVOICE} />
+export const SalesInvoiceReturnDetailedPage = () => <TransactionDetailedReport config={SALES_INVOICE_RETURN} />
 export const CustomerMemoDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_MEMO} />
 export const SupplierMemoDetailedPage = () => <TransactionDetailedReport config={SUPPLIER_MEMO} />
 export const CustomerPaymentDetailedPage = () => <TransactionDetailedReport config={CUSTOMER_PAYMENT} />

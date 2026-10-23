@@ -4,7 +4,7 @@ import type { TransactionOrigin } from '@/lib/transactionOrigin'
 export type AccountSide = 'RECEIVABLE' | 'PAYABLE'
 export type OpenItemDirection = 'CHARGE' | 'CREDIT'
 export type OpenItemStatus = 'OPEN' | 'CLOSED' | 'VOIDED'
-export type OpenItemSourceType = 'SALES_INVOICE' | 'CUSTOMER_DEBIT_MEMO' | 'CUSTOMER_CREDIT_MEMO' | 'CUSTOMER_PAYMENT_TENDER'
+export type OpenItemSourceType = 'SALES_INVOICE' | 'CUSTOMER_DEBIT_MEMO' | 'CUSTOMER_CREDIT_MEMO' | 'SALES_INVOICE_RETURN' | 'CUSTOMER_PAYMENT_TENDER'
   | 'CUSTOMER_REFUND' | 'PURCHASE_INVOICE' | 'SUPPLIER_CREDIT_MEMO' | 'SUPPLIER_DEBIT_MEMO' | 'SUPPLIER_PAYMENT_TENDER' | 'SUPPLIER_REFUND'
 export type ReceivedPaymentMode = 'CASH' | 'CHECK' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'OTHERS'
 export type IssuedPaymentMode = 'CASH' | 'CHECK' | 'BANK_TRANSFER' | 'OTHERS'
@@ -143,6 +143,7 @@ const SOURCE_LABELS: Record<OpenItemSourceType, string> = {
   SALES_INVOICE: 'Sales Invoice',
   CUSTOMER_DEBIT_MEMO: 'Debit Memo',
   CUSTOMER_CREDIT_MEMO: 'Credit Memo',
+  SALES_INVOICE_RETURN: 'Sales Return',
   CUSTOMER_PAYMENT_TENDER: 'Payment',
   CUSTOMER_REFUND: 'Refund',
   PURCHASE_INVOICE: 'Purchase Invoice',
