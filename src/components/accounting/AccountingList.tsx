@@ -60,7 +60,7 @@ interface Props<T extends { id: number }> {
   pinnedKey?: string
   /** Row buttons; defaults to an Eye that opens the row. */
   rowActions?: (row: T) => ReactNode
-  /** Rows shown dimmed (voided documents). */
+  /** Rows struck through in red (voided documents). */
   dimmed?: (row: T) => boolean
 }
 
@@ -176,7 +176,7 @@ export function AccountingList<T extends { id: number }>({
                     data-active={i === activeIndex || undefined}
                     className={cn(
                       'group border-b border-[hsl(var(--border))] last:border-0 cursor-pointer bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))] transition-colors',
-                      dimmed?.(row) && 'text-[hsl(var(--muted-foreground))]',
+                      dimmed?.(row) && 'row-voided',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >

@@ -555,6 +555,7 @@ export function InventoryAdjustmentsPage() {
                     onClick={() => { setActiveIndex(i); openView(adjustment) }}
                     className={cn(
                       'border-b border-[hsl(var(--border))] last:border-0 cursor-pointer hover:bg-[hsl(var(--secondary))] transition-colors',
+                      adjustment.voided && 'row-voided',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >

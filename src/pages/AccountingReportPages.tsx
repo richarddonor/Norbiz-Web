@@ -521,6 +521,7 @@ function OpenItemsPage({ side }: { side: AccountSide }) {
             options={['OPEN', 'CLOSED', 'VOIDED'].map(s => ({ value: s, label: statusLabel(s) }))} />
         </>}
         rowActions={() => null}
+        dimmed={o => o.status === 'VOIDED'}
       />
     </div>
   )

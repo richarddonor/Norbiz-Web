@@ -347,7 +347,7 @@ function TransactionDetailedReport({ config }: { config: DetailedReportConfig })
                     title={canDrillDown ? `Open ${row.referenceNumber}` : undefined}
                     className={cn(
                       'group border-b border-[hsl(var(--border))] last:border-0 cursor-pointer bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))] transition-colors',
-                      row.voided && 'text-[hsl(var(--muted-foreground))]',
+                      row.voided && 'row-voided',
                       i === activeIndex && 'bg-[hsl(var(--secondary))] ring-1 ring-inset ring-[hsl(var(--primary))]'
                     )}
                   >

@@ -81,6 +81,16 @@
   box-shadow: inset 0 -1px 0 hsl(var(--rule-soft));
 }
 
+/* Voided rows on list and report tables: struck through in red. Unlayered, so it beats the
+   cells' own text-colour utilities; row action buttons keep their colour. */
+.row-voided > td {
+  color: hsl(var(--destructive));
+  text-decoration-line: line-through;
+}
+.row-voided > td :not(button, button *) {
+  color: inherit;
+}
+
 #document-print-root {
   position: fixed;
   top: -99999px;
